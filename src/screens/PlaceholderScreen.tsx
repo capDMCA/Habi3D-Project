@@ -1,0 +1,137 @@
+import { useSessionStore } from '../stores/sessionStore';
+import type { ScreenName } from '../types';
+
+interface ScreenMeta {
+  title: string;
+  icon: string;
+  step: number;
+  description: string;
+  prev: ScreenName;
+  next: ScreenName | null;
+}
+
+const SCREEN_META: Record<string, ScreenMeta> = {
+  roomScan: {
+    title: 'Room Scan',
+    icon: '📷',
+    step: 4,
+    description:
+      'WebXR plane detection will scan your room to create a floor plane for furniture placement.',
+    prev: 'furnitureInput',
+    next: 'positionMap',
+  },
+  positionMap: {
+    title: 'Position Furniture',
+    icon: '📍',
+    step: 5,
+    description:
+      'Tap to place each furniture item on the AR floor plane at its current real-world position.',
+    prev: 'roomScan',
+    next: 'analysis',
+  },
+  analysis: {
+    title: 'Clearance Analysis',
+    icon: '🔍',
+    step: 5,
+    description:
+      'The clearance engine will analyze all 10 rules and display RED/YELLOW/GREEN color zones on the AR floor.',
+    prev: 'positionMap',
+    next: 'recommendation',
+  },
+  recommendation: {
+    title: 'Recommendations',
+    icon: '📋',
+    step: 6,
+    description:
+      'Step-by-step sequential recommendations to fix violations, ranked by Priority Score.',
+    prev: 'analysis',
+    next: 'surveyEnd',
+  },
+  surveyEnd: {
+    title: 'Post-Session Survey',
+    icon: '📝',
+    step: 6,
+    description:
+      'Complete the SUS usability questionnaire and post-session survey. Responses are saved to Supabase.',
+    prev: 'recommendation',
+    next: 'report',
+  },
+  report: {
+    title: 'Session Report',
+    icon: '📄',
+    step: 7,
+    description:
+      'Generate and download a PDF report with all clearance findings, scores, and recommendations.',
+    prev: 'surveyEnd',
+    next: null,
+  },
+};
+
+export default function PlaceholderScreen({ screenName }: { screenName: string }) {
+  const navigateTo = useSessionStore((s) => s.navigateTo);
+  const meta = SCREEN_META[screenName];
+
+  if (!meta) {
+    return (
+      <div className="screen">
+        <div className="placeholder-content">
+          <div className="placeholder-icon">❓</div>
+          <h3>Unknown Screen</h3>
+          <button className="btn btn-secondary mt-lg" onClick={() => navigateTo('entry')}>
+            Back to Start
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const completedSteps = meta.step - 1;
+
+  return (
+    <div className="screen">
+      {/* Header */}
+      <div className="screen-header">
+        <button className="back-btn" onClick={() => navigateTo(meta.prev)} aria-label="Go back">
+          ←
+        </button>
+        <div className="screen-header-info">
+          <span className="step-label">Step {meta.step} of 7</span>
+          <h2>{meta.title}</h2>
+        </div>
+      </div>
+
+      {/* Progress */}
+      <div className="progress-bar">
+        {Array.from({ length: 7 }, (_, i) => (
+          <div
+            key={i}
+            className={`progress-step ${
+              i < completedSteps ? 'completed' : i === completedSteps ? 'active' : ''
+            }`}
+          />
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="placeholder-content">
+        <div className="placeholder-icon">{meta.icon}</div>
+        <h3 style={{ marginBottom: 'var(--space-sm)' }}>Coming Soon</h3>
+        <p className="text-sm" style={{ color: 'var(--text-muted)', maxWidth: 280 }}>
+          {meta.description}
+        </p>
+      </div>
+
+      {/* Navigation */}
+      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+        {meta.next && (
+          <button className="btn btn-primary" onClick={() => navigateTo(meta.next!)}>
+            Continue →
+          </button>
+        )}
+        <button className="btn btn-secondary" onClick={() => navigateTo(meta.prev)}>
+          ← Back
+        </button>
+      </div>
+    </div>
+  );
+}
