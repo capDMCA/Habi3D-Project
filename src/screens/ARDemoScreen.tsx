@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import {
   createXRStore,
@@ -17,13 +17,47 @@ import { useSessionStore } from '../stores/sessionStore';
 const xrStore = createXRStore({
   offerSession: false,      // we control session entry manually
   emulate: false,           // no emulation — test real device
-  hitTest: 'required',
+  hitTest: true,            // optional feature (not 'required' — some devices reject that)
   planeDetection: true,
   domOverlay: true,
   handTracking: false,
   meshDetection: false,
   depthSensing: false,
 });
+
+/* ------------------------------------------------------------------ 
+   Diagnostics — checks device/browser AR capabilities
+   ------------------------------------------------------------------ */
+interface Diagnostics {
+  isHttps: boolean;
+  hasNavigatorXR: boolean;
+  arSupported: boolean | null; // null = still checking
+  userAgent: string;
+  error: string;
+}
+
+function useDiagnostics(): Diagnostics {
+  const [diag, setDiag] = useState<Diagnostics>({
+    isHttps: location.protocol === 'https:' || location.hostname === 'localhost',
+    hasNavigatorXR: typeof navigator !== 'undefined' && 'xr' in navigator,
+    arSupported: null,
+    userAgent: navigator.userAgent,
+    error: '',
+  });
+
+  useEffect(() => {
+    if (!diag.hasNavigatorXR) {
+      setDiag((d) => ({ ...d, arSupported: false, error: 'WebXR API not available in this browser' }));
+      return;
+    }
+    navigator.xr!.isSessionSupported('immersive-ar').then(
+      (supported) => setDiag((d) => ({ ...d, arSupported: supported, error: supported ? '' : 'immersive-ar not supported on this device' })),
+      (err) => setDiag((d) => ({ ...d, arSupported: false, error: String(err) })),
+    );
+  }, [diag.hasNavigatorXR]);
+
+  return diag;
+}
 
 /* ------------------------------------------------------------------ 
    Reticle — shows where the floor is detected via hit-test
@@ -239,8 +273,10 @@ const BOX_COLORS = ['#1F3864', '#2B4E8C', '#10B981', '#F59E0B', '#EF4444', '#8B5
 
 export default function ARDemoScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
+  const diag = useDiagnostics();
 
   const [arActive, setArActive] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const [placedObjects, setPlacedObjects] = useState<
     Array<{ position: THREE.Vector3; color: string }>
   >([]);
@@ -264,12 +300,18 @@ export default function ARDemoScreen() {
   }
 
   async function handleStartAR() {
+    setErrorMsg('');
     try {
-      await xrStore.enterAR();
-      setArActive(true);
-    } catch (err) {
+      const session = await xrStore.enterAR();
+      if (session) {
+        setArActive(true);
+      } else {
+        setErrorMsg('AR session returned empty. Your device may not support WebXR AR.');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error('Failed to start AR:', err);
-      alert('Could not start AR session. Make sure you are using HTTPS and a supported device.');
+      setErrorMsg(msg);
     }
   }
 
@@ -279,6 +321,8 @@ export default function ARDemoScreen() {
     setArActive(false);
     setPlacedObjects([]);
   }
+
+  const canLaunch = diag.isHttps && diag.arSupported === true;
 
   /* ---- Pre-AR info screen ---- */
   if (!arActive) {
@@ -294,33 +338,82 @@ export default function ARDemoScreen() {
           </div>
         </div>
 
-        {/* What this tests */}
+        {/* Device Diagnostics Card */}
         <div className="card">
           <div className="card-header">
-            <div className="card-icon card-icon-primary">📱</div>
+            <div className="card-icon card-icon-primary">🔍</div>
             <div>
-              <p className="card-title">WebXR AR Test</p>
-              <p className="card-subtitle">Verify your device supports AR</p>
+              <p className="card-title">Device Diagnostics</p>
+              <p className="card-subtitle">Checking your device capabilities</p>
             </div>
           </div>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: 16 }}>
-            This test opens your camera and checks:
-          </p>
-          <ul
-            style={{
-              fontSize: '0.875rem',
-              color: 'var(--text-secondary)',
-              paddingLeft: 20,
-              margin: '0 0 16px',
-              lineHeight: 1.8,
-            }}
-          >
-            <li>WebXR immersive-ar session</li>
-            <li>Floor detection (hit-test)</li>
-            <li>Plane detection</li>
-            <li>3D object placement on real surfaces</li>
-          </ul>
+
+          <div className="info-row">
+            <span className="info-label">Connection</span>
+            <span className="info-value">
+              {diag.isHttps
+                ? <span className="badge badge-success">✓ HTTPS</span>
+                : <span className="badge badge-danger">✗ Not HTTPS</span>}
+            </span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">WebXR API</span>
+            <span className="info-value">
+              {diag.hasNavigatorXR
+                ? <span className="badge badge-success">✓ Available</span>
+                : <span className="badge badge-danger">✗ Not available</span>}
+            </span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">AR Support</span>
+            <span className="info-value">
+              {diag.arSupported === null
+                ? <span className="badge">⏳ Checking…</span>
+                : diag.arSupported
+                ? <span className="badge badge-success">✓ Supported</span>
+                : <span className="badge badge-danger">✗ Not supported</span>}
+            </span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">URL</span>
+            <span className="info-value" style={{ fontSize: '0.75rem', wordBreak: 'break-all' }}>
+              {location.href}
+            </span>
+          </div>
+
+          {!diag.isHttps && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', marginTop: 12 }}>
+              ⚠️ WebXR requires HTTPS. You are on HTTP. Deploy to Vercel and use the HTTPS URL.
+            </p>
+          )}
+          {diag.hasNavigatorXR && diag.arSupported === false && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', marginTop: 12 }}>
+              ⚠️ Your browser/device does not support immersive-ar. Make sure you have:
+              <br />• Android Chrome 79+ with <strong>Google Play Services for AR (ARCore)</strong> installed
+              <br />• Or iOS Safari 15.4+ on iPhone/iPad with LiDAR
+            </p>
+          )}
+          {!diag.hasNavigatorXR && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', marginTop: 12 }}>
+              ⚠️ This browser does not have the WebXR API. Try <strong>Google Chrome</strong> on Android.
+            </p>
+          )}
         </div>
+
+        {/* Error message if AR failed */}
+        {errorMsg && (
+          <div className="card" style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)' }}>
+            <div className="card-header">
+              <div className="card-icon" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>⚠️</div>
+              <div>
+                <p className="card-title" style={{ color: 'var(--danger)' }}>AR Session Failed</p>
+              </div>
+            </div>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', margin: 0, wordBreak: 'break-word' }}>
+              {errorMsg}
+            </p>
+          </div>
+        )}
 
         {/* Instructions */}
         <div className="card">
@@ -350,8 +443,8 @@ export default function ARDemoScreen() {
         {/* Requirements */}
         <div className="card card-sm">
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            <strong>Requirements:</strong> Android Chrome 79+ with ARCore, or iOS Safari with
-            WebXR support · <strong>HTTPS connection required</strong> (use Vercel deploy URL)
+            <strong>Requirements:</strong> Android Chrome 79+ with ARCore installed, 
+            or iOS Safari 15.4+ · <strong>HTTPS required</strong>
           </p>
         </div>
 
@@ -361,8 +454,9 @@ export default function ARDemoScreen() {
           id="launch-ar-btn"
           className="btn btn-primary"
           onClick={handleStartAR}
+          disabled={!canLaunch}
         >
-          🚀 Launch AR Test
+          {!diag.isHttps ? '🔒 HTTPS Required' : diag.arSupported === false ? '❌ AR Not Supported' : '🚀 Launch AR Test'}
         </button>
       </div>
     );
