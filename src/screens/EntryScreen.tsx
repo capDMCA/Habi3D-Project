@@ -94,6 +94,29 @@ export default function EntryScreen() {
         </button>
       </div>
 
+      {/* Demo Mode — quick test without Supabase */}
+      <button
+        id="demo-session-btn"
+        className="btn btn-secondary"
+        style={{ maxWidth: 360, marginTop: 'var(--space-sm)', opacity: 0.7 }}
+        onClick={() => {
+          setParticipantCode('P00');
+          navigateTo('preSurvey');
+        }}
+      >
+        🧪 Start Demo Session
+      </button>
+
+      {/* AR Test — verify WebXR works on device */}
+      <button
+        id="ar-test-btn"
+        className="btn btn-secondary"
+        style={{ maxWidth: 360, marginTop: 'var(--space-xs)', opacity: 0.7 }}
+        onClick={() => navigateTo('arDemo')}
+      >
+        📱 Test AR Capabilities
+      </button>
+
       <p className="entry-footer">
         Mulberry Place · Acacia Estates · Taguig City
         <br />

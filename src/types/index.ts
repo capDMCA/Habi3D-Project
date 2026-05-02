@@ -1,5 +1,6 @@
 export type ScreenName =
   | 'entry'
+  | 'arDemo'
   | 'preSurvey'
   | 'unitSetup'
   | 'furnitureInput'

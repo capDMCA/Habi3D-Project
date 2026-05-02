@@ -1,5 +1,6 @@
 import { useSessionStore } from './stores/sessionStore';
 import EntryScreen from './screens/EntryScreen';
+import ARDemoScreen from './screens/ARDemoScreen';
 import PreSurveyScreen from './screens/PreSurveyScreen';
 import UnitSetupScreen from './screens/UnitSetupScreen';
 import FurnitureInputScreen from './screens/FurnitureInputScreen';
@@ -12,6 +13,8 @@ export default function App() {
   switch (currentScreen) {
     case 'entry':
       return <EntryScreen />;
+    case 'arDemo':
+      return <ARDemoScreen />;
     case 'preSurvey':
       return <PreSurveyScreen />;
     case 'unitSetup':
