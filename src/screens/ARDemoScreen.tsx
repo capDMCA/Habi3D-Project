@@ -291,6 +291,20 @@ export default function ARDemoScreen() {
     lastReticlePos.current = pos;
   }, []);
 
+  useEffect(() => {
+    return xrStore.subscribe((state, prevState) => {
+      if (state.session === prevState.session) return;
+
+      const hasSession = state.session != null;
+      setArActive(hasSession);
+
+      if (!hasSession) {
+        setPlacedObjects([]);
+        lastReticlePos.current = null;
+      }
+    });
+  }, []);
+
   function handlePlace() {
     if (!lastReticlePos.current) return;
     const color = BOX_COLORS[placedObjects.length % BOX_COLORS.length];
@@ -330,8 +344,7 @@ export default function ARDemoScreen() {
   const canLaunch = diag.isHttps && diag.arSupported === true;
 
   /* ---- Pre-AR info screen ---- */
-  if (!arActive) {
-    return (
+  const preARScreen = (
       <div className="screen">
         <div className="screen-header">
           <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
@@ -464,26 +477,37 @@ export default function ARDemoScreen() {
           {!diag.isHttps ? '🔒 HTTPS Required' : diag.arSupported === false ? '❌ AR Not Supported' : '🚀 Launch AR Test'}
         </button>
       </div>
-    );
-  }
+  );
 
   /* ---- AR session active ---- */
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999 }}>
-      <Canvas
-        style={{ position: 'absolute', inset: 0 }}
-        gl={{ antialias: true, alpha: true }}
+    <>
+      {!arActive && preARScreen}
+
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: arActive ? 9999 : -1,
+          visibility: arActive ? 'visible' : 'hidden',
+          pointerEvents: arActive ? 'auto' : 'none',
+        }}
       >
-        <XR store={xrStore}>
-          <ARScene placedObjects={placedObjects} onReticleUpdate={handleReticleUpdate} />
-          <AROverlayUI
-            objectCount={placedObjects.length}
-            onPlace={handlePlace}
-            onClear={handleClear}
-            onExit={handleExitAR}
-          />
-        </XR>
-      </Canvas>
-    </div>
+        <Canvas
+          style={{ position: 'absolute', inset: 0 }}
+          gl={{ antialias: true, alpha: true }}
+        >
+          <XR store={xrStore}>
+            <ARScene placedObjects={placedObjects} onReticleUpdate={handleReticleUpdate} />
+            <AROverlayUI
+              objectCount={placedObjects.length}
+              onPlace={handlePlace}
+              onClear={handleClear}
+              onExit={handleExitAR}
+            />
+          </XR>
+        </Canvas>
+      </div>
+    </>
   );
 }
