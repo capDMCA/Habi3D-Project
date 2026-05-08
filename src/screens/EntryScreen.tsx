@@ -1,47 +1,7 @@
-import { useState } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
-import { insertParticipant } from '../supabase';
 
 export default function EntryScreen() {
-  const [code, setCode] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const setParticipantCode = useSessionStore((s) => s.setParticipantCode);
-  const setParticipantId = useSessionStore((s) => s.setParticipantId);
   const navigateTo = useSessionStore((s) => s.navigateTo);
-
-  const isValidCode = /^P(0[1-9]|[12]\d|30)$/i.test(code.trim());
-
-  async function handleBegin() {
-    const trimmed = code.trim().toUpperCase();
-    if (!isValidCode) {
-      setError('Enter a valid participant code (P01–P30)');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const id = await insertParticipant(
-        trimmed,
-        'Mulberry Place',
-        '2-Bedroom Mid-Rise',
-        'TBD', // captured later or during session
-      );
-      setParticipantCode(trimmed);
-      setParticipantId(id);
-      navigateTo('preSurvey');
-    } catch (err) {
-      console.error('Supabase insert error:', err);
-      // Allow offline/demo usage — proceed without DB
-      setParticipantCode(trimmed);
-      navigateTo('preSurvey');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <div className="screen entry-screen">
@@ -60,65 +20,39 @@ export default function EntryScreen() {
         Furniture Spatial Clearance Analysis for Philippine Condominium Units
       </p>
 
-      {/* Participant Code Card */}
+      {/* Start Session Card */}
       <div className="card entry-card" id="entry-card">
-        <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
-          <label className="form-label" htmlFor="participant-code">
-            Participant Code
-          </label>
-          <input
-            id="participant-code"
-            className="form-input"
-            type="text"
-            placeholder="e.g. P01"
-            value={code}
-            onChange={(e) => {
-              setCode(e.target.value);
-              setError('');
-            }}
-            onKeyDown={(e) => e.key === 'Enter' && handleBegin()}
-            maxLength={3}
-            autoComplete="off"
-            style={{ textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.1em' }}
-          />
-          {error && <p className="form-error">{error}</p>}
-        </div>
-
         <button
           id="begin-session-btn"
           className="btn btn-primary"
-          onClick={handleBegin}
-          disabled={!code.trim() || loading}
+          onClick={() => navigateTo('preSurvey')}
         >
-          {loading ? 'Setting up…' : 'Begin Session'}
+          Begin Session
         </button>
       </div>
 
-      {/* Demo Mode — quick test without Supabase */}
+      {/* Demo Mode - quick test without Supabase */}
       <button
         id="demo-session-btn"
         className="btn btn-secondary"
         style={{ maxWidth: 360, marginTop: 'var(--space-sm)', opacity: 0.7 }}
-        onClick={() => {
-          setParticipantCode('P00');
-          navigateTo('unitSetup');
-        }}
+        onClick={() => navigateTo('unitSetup')}
       >
-        🧪 Start Demo Session
+        Start Demo Session
       </button>
 
-      {/* AR Test — verify WebXR works on device */}
+      {/* AR Test - verify WebXR works on device */}
       <button
         id="ar-test-btn"
         className="btn btn-secondary"
         style={{ maxWidth: 360, marginTop: 'var(--space-xs)', opacity: 0.7 }}
         onClick={() => navigateTo('arDemo')}
       >
-        📱 Test AR Capabilities
+        Test AR Capabilities
       </button>
 
       <p className="entry-footer">
-        Mulberry Place · Acacia Estates · Taguig City
+        Mulberry Place - Acacia Estates - Taguig City
         <br />
         Researcher-administered evaluation session
       </p>
