@@ -101,7 +101,7 @@ export default function EntryScreen() {
         style={{ maxWidth: 360, marginTop: 'var(--space-sm)', opacity: 0.7 }}
         onClick={() => {
           setParticipantCode('P00');
-          navigateTo('preSurvey');
+          navigateTo('unitSetup');
         }}
       >
         🧪 Start Demo Session

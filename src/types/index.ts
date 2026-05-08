@@ -4,6 +4,7 @@ export type ScreenName =
   | 'preSurvey'
   | 'unitSetup'
   | 'furnitureInput'
+  | 'dimensionVerification'
   | 'roomScan'
   | 'positionMap'
   | 'analysis'

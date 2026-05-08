@@ -37,24 +37,30 @@ interface Diagnostics {
 }
 
 function useDiagnostics(): Diagnostics {
-  const [diag, setDiag] = useState<Diagnostics>({
-    isHttps: location.protocol === 'https:' || location.hostname === 'localhost',
-    hasNavigatorXR: typeof navigator !== 'undefined' && 'xr' in navigator,
-    arSupported: null,
-    userAgent: navigator.userAgent,
-    error: '',
+  const [diag, setDiag] = useState<Diagnostics>(() => {
+    const hasNavigatorXR = typeof navigator !== 'undefined' && 'xr' in navigator;
+    return {
+      isHttps: location.protocol === 'https:' || location.hostname === 'localhost',
+      hasNavigatorXR,
+      arSupported: hasNavigatorXR ? null : false,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      error: hasNavigatorXR ? '' : 'WebXR API not available in this browser',
+    };
   });
 
   useEffect(() => {
-    if (!diag.hasNavigatorXR) {
-      setDiag((d) => ({ ...d, arSupported: false, error: 'WebXR API not available in this browser' }));
-      return;
+    if (diag.hasNavigatorXR && diag.arSupported === null) {
+      navigator.xr!.isSessionSupported('immersive-ar').then(
+        (supported) =>
+          setDiag((d) => ({
+            ...d,
+            arSupported: supported,
+            error: supported ? '' : 'immersive-ar not supported on this device',
+          })),
+        (err) => setDiag((d) => ({ ...d, arSupported: false, error: String(err) })),
+      );
     }
-    navigator.xr!.isSessionSupported('immersive-ar').then(
-      (supported) => setDiag((d) => ({ ...d, arSupported: supported, error: supported ? '' : 'immersive-ar not supported on this device' })),
-      (err) => setDiag((d) => ({ ...d, arSupported: false, error: String(err) })),
-    );
-  }, [diag.hasNavigatorXR]);
+  }, [diag.hasNavigatorXR, diag.arSupported]);
 
   return diag;
 }
@@ -76,7 +82,6 @@ function HitTestReticle({
     (results, getWorldMatrix) => {
       if (results.length === 0 || !reticleRef.current) return;
 
-      // Get world matrix of the first hit result
       const valid = getWorldMatrix(_matrix, results[0]);
       if (!valid) return;
 
@@ -85,7 +90,7 @@ function HitTestReticle({
       reticleRef.current.visible = true;
       onPositionUpdate(_position.clone());
     },
-    'viewer', // hit-test from the viewer's perspective (center of screen)
+    'viewer'
   );
 
   return (
@@ -370,8 +375,8 @@ export default function ARDemoScreen() {
               {diag.arSupported === null
                 ? <span className="badge">⏳ Checking…</span>
                 : diag.arSupported
-                ? <span className="badge badge-success">✓ Supported</span>
-                : <span className="badge badge-danger">✗ Not supported</span>}
+                  ? <span className="badge badge-success">✓ Supported</span>
+                  : <span className="badge badge-danger">✗ Not supported</span>}
             </span>
           </div>
           <div className="info-row">
@@ -443,7 +448,7 @@ export default function ARDemoScreen() {
         {/* Requirements */}
         <div className="card card-sm">
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            <strong>Requirements:</strong> Android Chrome 79+ with ARCore installed, 
+            <strong>Requirements:</strong> Android Chrome 79+ with ARCore installed,
             or iOS Safari 15.4+ · <strong>HTTPS required</strong>
           </p>
         </div>

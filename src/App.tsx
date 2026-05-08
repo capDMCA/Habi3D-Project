@@ -4,6 +4,7 @@ import ARDemoScreen from './screens/ARDemoScreen';
 import PreSurveyScreen from './screens/PreSurveyScreen';
 import UnitSetupScreen from './screens/UnitSetupScreen';
 import FurnitureInputScreen from './screens/FurnitureInputScreen';
+import DimensionVerificationScreen from './screens/DimensionVerificationScreen';
 import PlaceholderScreen from './screens/PlaceholderScreen';
 import './App.css';
 
@@ -21,6 +22,8 @@ export default function App() {
       return <UnitSetupScreen />;
     case 'furnitureInput':
       return <FurnitureInputScreen />;
+    case 'dimensionVerification':
+      return <DimensionVerificationScreen />;
     default:
       return <PlaceholderScreen screenName={currentScreen} />;
   }

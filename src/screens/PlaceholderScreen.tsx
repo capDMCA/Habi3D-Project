@@ -17,7 +17,7 @@ const SCREEN_META: Record<string, ScreenMeta> = {
     step: 4,
     description:
       'WebXR plane detection will scan your room to create a floor plane for furniture placement.',
-    prev: 'furnitureInput',
+    prev: 'dimensionVerification',
     next: 'positionMap',
   },
   positionMap: {

@@ -57,7 +57,7 @@ export default function FurnitureInputScreen() {
 
       <button
         className="btn btn-secondary"
-        onClick={() => navigateTo('roomScan')}
+        onClick={() => navigateTo('dimensionVerification')}
         style={{ marginTop: 'auto' }}
       >
         Continue to Room Scan →
