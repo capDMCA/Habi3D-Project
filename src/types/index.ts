@@ -12,17 +12,28 @@ export type ScreenName =
   | 'surveyEnd'
   | 'report';
 
-export type FurnitureShape = 'rectangle' | 'lshape' | 'round' | 'oval';
+export type FurnitureShape = 'rectangle' | 'l-shape' | 'round' | 'oval';
+
+export type FurnitureCategory =
+  | 'sofa'
+  | 'coffee_table'
+  | 'tv_stand'
+  | 'dining_table'
+  | 'dining_chair'
+  | 'cabinet'
+  | 'other';
 
 export interface FurnitureItem {
   id: string;
-  name: string;
+  label: string;
   shape: FurnitureShape;
+  category: FurnitureCategory;
+  lengthCm: number;
   widthCm: number;
-  depthCm: number;
-  x: number;
-  z: number;
-  rotation: number;
+  heightCm: number;
+  posX: number;
+  posZ: number;
+  rotationY: number;
 }
 
 export interface RoomDimensions {
