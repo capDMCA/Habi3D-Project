@@ -52,17 +52,24 @@ export interface ClearanceRule {
   description: string;
 }
 
+export type GapClassificationLevel = 'RED' | 'YELLOW' | 'GREEN';
+
 export interface Violation {
-  ruleId: string;
-  ruleName: string;
-  severity: 'red' | 'yellow';
-  severityWeight: number;
+  id: string;
+  ruleCode: string;
+  ruleLabel: string;
+  classification: 'RED' | 'YELLOW' | 'GREEN';
+  measuredCm: number;
+  requiredCm: number;
   shortfallCm: number;
   affectedEdgeLengthCm: number;
-  spatialImpactCm2: number;
+  severityWeight: 3 | 1;
   priorityScore: number;
-  description: string;
-  furnitureIds: string[];
+  furnitureId: string;
+  furnitureLabel: string;
+  fixDirectionLabel: string;
+  fixDirectionCm: number;
+  resolved: boolean;
 }
 
 export interface PreSurveyData {

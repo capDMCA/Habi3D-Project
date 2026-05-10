@@ -112,6 +112,25 @@ export const clearanceRules: ClearanceRule[] = [
   },
 ];
 
+export const CLEARANCE_RULES = clearanceRules;
+
+export function classifyGap(
+  measuredCm: number,
+  rule: ClearanceRule,
+): 'RED' | 'YELLOW' | 'GREEN' {
+  if (measuredCm < rule.violationThresholdCm) return 'RED';
+  if (measuredCm < rule.warningThresholdCm) return 'YELLOW';
+  return 'GREEN';
+}
+
+export function computePriorityScore(
+  severityWeight: 3 | 1,
+  shortfallCm: number,
+  affectedEdgeLengthCm: number,
+): number {
+  return severityWeight * Math.max(0, shortfallCm) * affectedEdgeLengthCm;
+}
+
 /**
  * Priority Score = VSW × SI
  *

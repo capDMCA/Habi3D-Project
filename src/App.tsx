@@ -6,6 +6,7 @@ import UnitSetupScreen from './screens/UnitSetupScreen';
 import FurnitureInputScreen from './screens/FurnitureInputScreen';
 import DimensionVerificationScreen from './screens/DimensionVerificationScreen';
 import PositionMapScreen from './screens/PositionMapScreen';
+import AnalysisScreen from './screens/AnalysisScreen';
 import PlaceholderScreen from './screens/PlaceholderScreen';
 import './App.css';
 
@@ -27,6 +28,8 @@ export default function App() {
       return <DimensionVerificationScreen />;
     case 'positionMap':
       return <PositionMapScreen />;
+    case 'analysis':
+      return <AnalysisScreen />;
     default:
       return <PlaceholderScreen screenName={currentScreen} />;
   }
