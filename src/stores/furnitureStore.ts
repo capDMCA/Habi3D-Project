@@ -5,6 +5,7 @@ interface FurnitureState {
   items: FurnitureItem[];
   addItem: (item: FurnitureItem) => void;
   updateItem: (id: string, updates: Partial<FurnitureItem>) => void;
+  updatePosition: (id: string, x: number, z: number, rot: number) => void;
   removeItem: (id: string) => void;
   clearAll: () => void;
 }
@@ -17,6 +18,14 @@ export const useFurnitureStore = create<FurnitureState>((set) => ({
     set((state) => ({
       items: state.items.map((item) =>
         item.id === id ? { ...item, ...updates } : item,
+      ),
+    })),
+  updatePosition: (id, x, z, rot) =>
+    set((state) => ({
+      items: state.items.map((item) =>
+        item.id === id
+          ? { ...item, posX: x, posZ: z, rotationY: rot }
+          : item,
       ),
     })),
   removeItem: (id) =>
