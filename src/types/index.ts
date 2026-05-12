@@ -1,7 +1,6 @@
 export type ScreenName =
   | 'entry'
   | 'arDemo'
-  | 'preSurvey'
   | 'unitSetup'
   | 'furnitureInput'
   | 'dimensionVerification'
@@ -72,11 +71,3 @@ export interface Violation {
   resolved: boolean;
 }
 
-export interface PreSurveyData {
-  residencyLength: string;
-  rearrangementFrequency: string;
-  priorAppUse: string;
-  baselineConfidence: number;
-  baselineStandardAwareness: number;
-  mainFrustration: string;
-}

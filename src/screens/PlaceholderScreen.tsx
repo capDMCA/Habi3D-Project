@@ -14,7 +14,7 @@ const SCREEN_META: Record<string, ScreenMeta> = {
   roomScan: {
     title: 'Room Scan',
     icon: '📷',
-    step: 4,
+    step: 3,
     description:
       'WebXR plane detection will scan your room to create a floor plane for furniture placement.',
     prev: 'dimensionVerification',
@@ -23,7 +23,7 @@ const SCREEN_META: Record<string, ScreenMeta> = {
   positionMap: {
     title: 'Position Furniture',
     icon: '📍',
-    step: 5,
+    step: 4,
     description:
       'Tap to place each furniture item on the AR floor plane at its current real-world position.',
     prev: 'roomScan',
@@ -59,7 +59,7 @@ const SCREEN_META: Record<string, ScreenMeta> = {
   report: {
     title: 'Session Report',
     icon: '📄',
-    step: 7,
+    step: 6,
     description:
       'Generate and download a PDF report with all clearance findings, scores, and recommendations.',
     prev: 'surveyEnd',
@@ -95,14 +95,14 @@ export default function PlaceholderScreen({ screenName }: { screenName: string }
           ←
         </button>
         <div className="screen-header-info">
-          <span className="step-label">Step {meta.step} of 7</span>
+          <span className="step-label">Step {meta.step} of 6</span>
           <h2>{meta.title}</h2>
         </div>
       </div>
 
       {/* Progress */}
       <div className="progress-bar">
-        {Array.from({ length: 7 }, (_, i) => (
+        {Array.from({ length: 6 }, (_, i) => (
           <div
             key={i}
             className={`progress-step ${

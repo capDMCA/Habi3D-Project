@@ -169,13 +169,12 @@ export default function AnalysisScreen() {
             &lt;
           </button>
           <div className="screen-header-info">
-            <span className="step-label">Step 6 of 7</span>
+            <span className="step-label">Step 5 of 6</span>
             <h2>Clearance Analysis</h2>
           </div>
         </div>
 
         <div className="progress-bar">
-          <div className="progress-step completed" />
           <div className="progress-step completed" />
           <div className="progress-step completed" />
           <div className="progress-step completed" />

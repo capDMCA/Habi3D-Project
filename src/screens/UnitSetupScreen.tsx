@@ -43,18 +43,17 @@ export default function UnitSetupScreen() {
     <div className="screen">
       {/* Header */}
       <div className="screen-header">
-        <button className="back-btn" onClick={() => navigateTo('preSurvey')} aria-label="Go back">
+        <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
           ←
         </button>
         <div className="screen-header-info">
-          <span className="step-label">Step 2 of 7</span>
+          <span className="step-label">Step 1 of 6</span>
           <h2>Confirm Your Unit</h2>
         </div>
       </div>
 
       {/* Progress */}
       <div className="progress-bar">
-        <div className="progress-step completed" />
         <div className="progress-step active" />
         <div className="progress-step" />
         <div className="progress-step" />

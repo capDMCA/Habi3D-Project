@@ -32,13 +32,12 @@ export default function DimensionVerificationScreen() {
           ←
         </button>
         <div className="screen-header-info">
-          <span className="step-label">Step 3 of 7</span>
+          <span className="step-label">Step 3 of 6</span>
           <h2>Verify Dimensions</h2>
         </div>
       </div>
 
       <div className="progress-bar">
-        <div className="progress-step completed" />
         <div className="progress-step completed" />
         <div className="progress-step completed" />
         <div className="progress-step active" />

@@ -199,14 +199,13 @@ export default function FurnitureInputScreen() {
             &lt;
           </button>
           <div className="screen-header-info">
-            <span className="step-label">Step 3 of 7</span>
+            <span className="step-label">Step 2 of 6</span>
             <h2>Map Your Furniture</h2>
           </div>
         </div>
 
         {/* Progress */}
         <div className="progress-bar">
-          <div className="progress-step completed" />
           <div className="progress-step completed" />
           <div className="progress-step active" />
           <div className="progress-step" />
@@ -412,7 +411,7 @@ export default function FurnitureInputScreen() {
         )}
 
         <button className="btn btn-secondary" onClick={() => navigateTo('dimensionVerification')}>
-          Continue to Room Scan
+          Verify Dimensions
         </button>
       </div>
 

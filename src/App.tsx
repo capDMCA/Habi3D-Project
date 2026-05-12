@@ -1,7 +1,6 @@
 import { useSessionStore } from './stores/sessionStore';
 import EntryScreen from './screens/EntryScreen';
 import ARDemoScreen from './screens/ARDemoScreen';
-import PreSurveyScreen from './screens/PreSurveyScreen';
 import UnitSetupScreen from './screens/UnitSetupScreen';
 import FurnitureInputScreen from './screens/FurnitureInputScreen';
 import DimensionVerificationScreen from './screens/DimensionVerificationScreen';
@@ -18,8 +17,6 @@ export default function App() {
       return <EntryScreen />;
     case 'arDemo':
       return <ARDemoScreen />;
-    case 'preSurvey':
-      return <PreSurveyScreen />;
     case 'unitSetup':
       return <UnitSetupScreen />;
     case 'furnitureInput':

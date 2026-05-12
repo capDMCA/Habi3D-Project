@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import type { PreSurveyData } from './types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -26,24 +25,6 @@ export async function insertParticipant(
 
   if (error) throw error;
   return data.id as string;
-}
-
-/** Insert pre-survey responses */
-export async function insertPreSurvey(
-  participantId: string,
-  survey: PreSurveyData,
-): Promise<void> {
-  const { error } = await supabase.from('pre_survey_responses').insert({
-    participant_id: participantId,
-    residency_length: survey.residencyLength,
-    rearrangement_frequency: survey.rearrangementFrequency,
-    prior_app_use: survey.priorAppUse,
-    baseline_confidence: survey.baselineConfidence,
-    baseline_standard_awareness: survey.baselineStandardAwareness,
-    main_frustration: survey.mainFrustration,
-  });
-
-  if (error) throw error;
 }
 
 /** Insert SUS survey responses (q1–q10 + computed score) */
