@@ -4,27 +4,30 @@ import type { RoomDimensions } from '../types';
 
 interface UnitOption {
   id: string;
+  group: 'Mid Unit' | 'Inner Unit' | 'Lettered Inner Unit';
   label: string;
   grossAreaSqm: number;
 }
 
 const UNIT_OPTIONS: UnitOption[] = [
-  { id: 'mid-65', label: '2 Bedroom mid unit', grossAreaSqm: 65 },
-  { id: 'mid-60', label: '2 Bedroom mid unit', grossAreaSqm: 60 },
-  { id: 'mid-57-5', label: '2 Bedroom mid unit', grossAreaSqm: 57.5 },
-  { id: 'inner-65', label: '2 Bedroom inner unit', grossAreaSqm: 65 },
-  { id: 'inner-60', label: '2 Bedroom inner unit', grossAreaSqm: 60 },
-  { id: 'inner-57-5', label: '2 Bedroom inner unit', grossAreaSqm: 57.5 },
-  { id: 'a-inner-64-5', label: '2 Bedroom A inner unit', grossAreaSqm: 64.5 },
-  { id: 'b-inner-67', label: '2 Bedroom B inner unit', grossAreaSqm: 67 },
-  { id: 'd-inner-69', label: '2 Bedroom D inner unit', grossAreaSqm: 69 },
-  { id: 'e-inner-67', label: '2 Bedroom E inner unit', grossAreaSqm: 67 },
-  { id: 'f-inner-69', label: '2 Bedroom F inner unit', grossAreaSqm: 69 },
-  { id: 'g-inner-69', label: '2 Bedroom G inner unit', grossAreaSqm: 69 },
-  { id: 'h-inner-67', label: '2 Bedroom H inner unit', grossAreaSqm: 67 },
-  { id: 'i-inner-67', label: '2 Bedroom I inner unit', grossAreaSqm: 67 },
-  { id: 'j-inner-73', label: '2 Bedroom J inner unit', grossAreaSqm: 73 },
+  { id: 'mid-65', group: 'Mid Unit', label: '2 Bedroom Mid Unit', grossAreaSqm: 65 },
+  { id: 'mid-60', group: 'Mid Unit', label: '2 Bedroom Mid Unit', grossAreaSqm: 60 },
+  { id: 'mid-57-5', group: 'Mid Unit', label: '2 Bedroom Mid Unit', grossAreaSqm: 57.5 },
+  { id: 'inner-65', group: 'Inner Unit', label: '2 Bedroom Inner Unit', grossAreaSqm: 65 },
+  { id: 'inner-60', group: 'Inner Unit', label: '2 Bedroom Inner Unit', grossAreaSqm: 60 },
+  { id: 'inner-57-5', group: 'Inner Unit', label: '2 Bedroom Inner Unit', grossAreaSqm: 57.5 },
+  { id: 'a-inner-64-5', group: 'Lettered Inner Unit', label: '2 Bedroom A Inner Unit', grossAreaSqm: 64.5 },
+  { id: 'b-inner-67', group: 'Lettered Inner Unit', label: '2 Bedroom B Inner Unit', grossAreaSqm: 67 },
+  { id: 'd-inner-69', group: 'Lettered Inner Unit', label: '2 Bedroom D Inner Unit', grossAreaSqm: 69 },
+  { id: 'e-inner-67', group: 'Lettered Inner Unit', label: '2 Bedroom E Inner Unit', grossAreaSqm: 67 },
+  { id: 'f-inner-69', group: 'Lettered Inner Unit', label: '2 Bedroom F Inner Unit', grossAreaSqm: 69 },
+  { id: 'g-inner-69', group: 'Lettered Inner Unit', label: '2 Bedroom G Inner Unit', grossAreaSqm: 69 },
+  { id: 'h-inner-67', group: 'Lettered Inner Unit', label: '2 Bedroom H Inner Unit', grossAreaSqm: 67 },
+  { id: 'i-inner-67', group: 'Lettered Inner Unit', label: '2 Bedroom I Inner Unit', grossAreaSqm: 67 },
+  { id: 'j-inner-73', group: 'Lettered Inner Unit', label: '2 Bedroom J Inner Unit', grossAreaSqm: 73 },
 ];
+
+const UNIT_GROUPS: UnitOption['group'][] = ['Mid Unit', 'Inner Unit', 'Lettered Inner Unit'];
 
 function formatSqm(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
@@ -96,15 +99,15 @@ export default function DimensionVerificationScreen() {
 
       <div className="card">
         <div className="card-header">
-          <div className="card-icon card-icon-primary">U</div>
+          <div className="card-icon card-icon-primary">1</div>
           <div>
-            <p className="card-title">Unit Type</p>
-            <p className="card-subtitle">Select the matching Mulberry Place unit</p>
+            <p className="card-title">What type of 2 bedroom unit do you live in?</p>
+            <p className="card-subtitle">Choose the closest unit type and gross floor area</p>
           </div>
         </div>
 
         <label className="form-label" htmlFor="unit-type">
-          Unit type and gross floor area
+          2 bedroom unit type
         </label>
         <select
           id="unit-type"
@@ -112,12 +115,33 @@ export default function DimensionVerificationScreen() {
           value={selectedUnitId}
           onChange={(event) => setSelectedUnitId(event.target.value)}
         >
-          {UNIT_OPTIONS.map((unit) => (
-            <option key={unit.id} value={unit.id}>
-              {unit.label} ({formatSqm(unit.grossAreaSqm)} sqm)
-            </option>
+          {UNIT_GROUPS.map((group) => (
+            <optgroup key={group} label={group}>
+              {UNIT_OPTIONS.filter((unit) => unit.group === group).map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.label} - {formatSqm(unit.grossAreaSqm)} sqm
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
+
+        <div
+          style={{
+            marginTop: 14,
+            padding: 12,
+            borderRadius: 8,
+            background: 'rgba(31, 56, 100, 0.04)',
+            border: '1px solid var(--border)',
+          }}
+        >
+          <p className="card-title" style={{ fontSize: '0.95rem' }}>
+            {selectedUnit.label}
+          </p>
+          <p className="card-subtitle">
+            {selectedUnit.group} type with {formatSqm(selectedUnit.grossAreaSqm)} sqm gross floor area
+          </p>
+        </div>
       </div>
 
       <div className="card">
