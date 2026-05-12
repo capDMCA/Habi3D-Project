@@ -1,30 +1,56 @@
 import { useState } from 'react';
-import { useSessionStore } from '../stores/sessionStore';
 import { MULBERRY_PLACE_2BR } from '../data/roomData';
+import { useSessionStore } from '../stores/sessionStore';
 import type { RoomDimensions } from '../types';
 
-const STEP = 10; // adjustment step in cm
+interface UnitOption {
+  id: string;
+  group: 'Mid Unit' | 'Inner Unit' | 'Lettered Inner Unit';
+  label: string;
+  grossAreaSqm: number;
+}
+
+const UNIT_OPTIONS: UnitOption[] = [
+  { id: 'mid-65', group: 'Mid Unit', label: '2 Bedroom Mid Unit', grossAreaSqm: 65 },
+  { id: 'mid-60', group: 'Mid Unit', label: '2 Bedroom Mid Unit', grossAreaSqm: 60 },
+  { id: 'mid-57-5', group: 'Mid Unit', label: '2 Bedroom Mid Unit', grossAreaSqm: 57.5 },
+  { id: 'inner-65', group: 'Inner Unit', label: '2 Bedroom Inner Unit', grossAreaSqm: 65 },
+  { id: 'inner-60', group: 'Inner Unit', label: '2 Bedroom Inner Unit', grossAreaSqm: 60 },
+  { id: 'inner-57-5', group: 'Inner Unit', label: '2 Bedroom Inner Unit', grossAreaSqm: 57.5 },
+  { id: 'a-inner-64-5', group: 'Lettered Inner Unit', label: '2 Bedroom A Inner Unit', grossAreaSqm: 64.5 },
+  { id: 'b-inner-67', group: 'Lettered Inner Unit', label: '2 Bedroom B Inner Unit', grossAreaSqm: 67 },
+  { id: 'd-inner-69', group: 'Lettered Inner Unit', label: '2 Bedroom D Inner Unit', grossAreaSqm: 69 },
+  { id: 'e-inner-67', group: 'Lettered Inner Unit', label: '2 Bedroom E Inner Unit', grossAreaSqm: 67 },
+  { id: 'f-inner-69', group: 'Lettered Inner Unit', label: '2 Bedroom F Inner Unit', grossAreaSqm: 69 },
+  { id: 'g-inner-69', group: 'Lettered Inner Unit', label: '2 Bedroom G Inner Unit', grossAreaSqm: 69 },
+  { id: 'h-inner-67', group: 'Lettered Inner Unit', label: '2 Bedroom H Inner Unit', grossAreaSqm: 67 },
+  { id: 'i-inner-67', group: 'Lettered Inner Unit', label: '2 Bedroom I Inner Unit', grossAreaSqm: 67 },
+  { id: 'j-inner-73', group: 'Lettered Inner Unit', label: '2 Bedroom J Inner Unit', grossAreaSqm: 73 },
+];
+
+const UNIT_GROUPS: UnitOption['group'][] = ['Mid Unit', 'Inner Unit', 'Lettered Inner Unit'];
+const STEP = 10;
 const MIN_DIM = 200;
 const MAX_DIM = 1000;
 
-function clamp(val: number) {
-  return Math.max(MIN_DIM, Math.min(MAX_DIM, val));
+function clamp(value: number) {
+  return Math.max(MIN_DIM, Math.min(MAX_DIM, value));
+}
+
+function formatSqm(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
 export default function UnitSetupScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const setRoomDimensions = useSessionStore((s) => s.setRoomDimensions);
 
+  const [selectedUnitId, setSelectedUnitId] = useState(UNIT_OPTIONS[0].id);
   const [dims, setDims] = useState<RoomDimensions>({
     ...MULBERRY_PLACE_2BR.defaultDimensions,
   });
 
-  function adjust(key: keyof RoomDimensions, delta: number) {
-    setDims((prev) => ({
-      ...prev,
-      [key]: clamp(prev[key] + delta),
-    }));
-  }
+  const selectedUnit = UNIT_OPTIONS.find((unit) => unit.id === selectedUnitId) ?? UNIT_OPTIONS[0];
 
   const livingAreaSqm = ((dims.livingWidthCm * dims.livingDepthCm) / 10000).toFixed(1);
   const diningAreaSqm = ((dims.diningWidthCm * dims.diningDepthCm) / 10000).toFixed(1);
@@ -33,6 +59,17 @@ export default function UnitSetupScreen() {
       dims.diningWidthCm * dims.diningDepthCm) /
     10000
   ).toFixed(1);
+  const evaluatedPercent = Math.min(
+    100,
+    Math.round((Number(totalSqm) / selectedUnit.grossAreaSqm) * 100),
+  );
+
+  function adjust(key: keyof RoomDimensions, delta: number) {
+    setDims((prev) => ({
+      ...prev,
+      [key]: clamp(prev[key] + delta),
+    }));
+  }
 
   function handleConfirm() {
     setRoomDimensions(dims);
@@ -41,10 +78,9 @@ export default function UnitSetupScreen() {
 
   return (
     <div className="screen">
-      {/* Header */}
       <div className="screen-header">
         <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
-          ←
+          &lt;
         </button>
         <div className="screen-header-info">
           <span className="step-label">Step 1 of 6</span>
@@ -52,7 +88,6 @@ export default function UnitSetupScreen() {
         </div>
       </div>
 
-      {/* Progress */}
       <div className="progress-bar">
         <div className="progress-step active" />
         <div className="progress-step" />
@@ -62,135 +97,114 @@ export default function UnitSetupScreen() {
         <div className="progress-step" />
       </div>
 
-      {/* Unit Info Card */}
       <div className="card">
         <div className="card-header">
-          <div className="card-icon card-icon-primary">🏢</div>
+          <div className="card-icon card-icon-primary">1</div>
           <div>
-            <p className="card-title">{MULBERRY_PLACE_2BR.name}</p>
-            <p className="card-subtitle">{MULBERRY_PLACE_2BR.unitType}</p>
+            <p className="card-title">What type of 2 bedroom unit do you live in?</p>
+            <p className="card-subtitle">Choose the closest Mulberry Place unit type</p>
           </div>
         </div>
+
+        <label className="form-label" htmlFor="unit-type">
+          2 bedroom unit type
+        </label>
+        <select
+          id="unit-type"
+          className="form-input form-select"
+          value={selectedUnitId}
+          onChange={(event) => setSelectedUnitId(event.target.value)}
+        >
+          {UNIT_GROUPS.map((group) => (
+            <optgroup key={group} label={group}>
+              {UNIT_OPTIONS.filter((unit) => unit.group === group).map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.label} - {formatSqm(unit.grossAreaSqm)} sqm
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+
+        <div
+          style={{
+            marginTop: 14,
+            padding: 12,
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            background: 'rgba(31, 56, 100, 0.04)',
+          }}
+        >
+          <p className="card-title" style={{ fontSize: '0.95rem' }}>
+            {selectedUnit.label}
+          </p>
+          <p className="card-subtitle">
+            {selectedUnit.group} type with {formatSqm(selectedUnit.grossAreaSqm)} sqm gross floor area
+          </p>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <div className="card-icon card-icon-primary">m2</div>
+          <div>
+            <p className="card-title">Area Reference</p>
+            <p className="card-subtitle">Living/dining area compared with selected gross floor area</p>
+          </div>
+        </div>
+
         <div className="info-row">
-          <span className="info-label">Total Floor Area</span>
-          <span className="info-value">{MULBERRY_PLACE_2BR.totalFloorAreaSqm} sqm</span>
+          <span className="info-label">Gross Floor Area</span>
+          <span className="info-value">{formatSqm(selectedUnit.grossAreaSqm)} sqm</span>
         </div>
         <div className="info-row">
           <span className="info-label">Living/Dining Area</span>
           <span className="info-value">{totalSqm} sqm</span>
         </div>
+        <div
+          style={{
+            height: 12,
+            borderRadius: 999,
+            background: 'var(--border)',
+            overflow: 'hidden',
+            marginTop: 12,
+            marginBottom: 8,
+          }}
+        >
+          <div
+            style={{
+              width: `${evaluatedPercent}%`,
+              height: '100%',
+              background: 'var(--primary-gradient)',
+            }}
+          />
+        </div>
+        <p className="card-subtitle">
+          The AR analysis focuses on approximately {evaluatedPercent}% of this unit's gross floor area.
+        </p>
       </div>
 
-      {/* Living Area Dimensions */}
+      <DimensionCard
+        title="Living Area"
+        areaSqm={livingAreaSqm}
+        widthCm={dims.livingWidthCm}
+        depthCm={dims.livingDepthCm}
+        onWidthChange={(delta) => adjust('livingWidthCm', delta)}
+        onDepthChange={(delta) => adjust('livingDepthCm', delta)}
+      />
+
+      <DimensionCard
+        title="Dining Area"
+        areaSqm={diningAreaSqm}
+        widthCm={dims.diningWidthCm}
+        depthCm={dims.diningDepthCm}
+        onWidthChange={(delta) => adjust('diningWidthCm', delta)}
+        onDepthChange={(delta) => adjust('diningDepthCm', delta)}
+      />
+
       <div className="card">
         <div className="card-header">
-          <div className="card-icon card-icon-primary">🛋️</div>
-          <div>
-            <p className="card-title">Living Area</p>
-            <p className="card-subtitle">{livingAreaSqm} sqm</p>
-          </div>
-        </div>
-
-        <div className="dim-row">
-          <span className="dim-label">Width</span>
-          <div className="dim-control">
-            <button
-              className="dim-btn"
-              onClick={() => adjust('livingWidthCm', -STEP)}
-              aria-label="Decrease living width"
-            >
-              −
-            </button>
-            <span className="dim-value">{dims.livingWidthCm} cm</span>
-            <button
-              className="dim-btn"
-              onClick={() => adjust('livingWidthCm', STEP)}
-              aria-label="Increase living width"
-            >
-              +
-            </button>
-          </div>
-        </div>
-
-        <div className="dim-row">
-          <span className="dim-label">Depth</span>
-          <div className="dim-control">
-            <button
-              className="dim-btn"
-              onClick={() => adjust('livingDepthCm', -STEP)}
-              aria-label="Decrease living depth"
-            >
-              −
-            </button>
-            <span className="dim-value">{dims.livingDepthCm} cm</span>
-            <button
-              className="dim-btn"
-              onClick={() => adjust('livingDepthCm', STEP)}
-              aria-label="Increase living depth"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Dining Area Dimensions */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-icon card-icon-primary">🍽️</div>
-          <div>
-            <p className="card-title">Dining Area</p>
-            <p className="card-subtitle">{diningAreaSqm} sqm</p>
-          </div>
-        </div>
-
-        <div className="dim-row">
-          <span className="dim-label">Width</span>
-          <div className="dim-control">
-            <button
-              className="dim-btn"
-              onClick={() => adjust('diningWidthCm', -STEP)}
-              aria-label="Decrease dining width"
-            >
-              −
-            </button>
-            <span className="dim-value">{dims.diningWidthCm} cm</span>
-            <button
-              className="dim-btn"
-              onClick={() => adjust('diningWidthCm', STEP)}
-              aria-label="Increase dining width"
-            >
-              +
-            </button>
-          </div>
-        </div>
-
-        <div className="dim-row">
-          <span className="dim-label">Depth</span>
-          <div className="dim-control">
-            <button
-              className="dim-btn"
-              onClick={() => adjust('diningDepthCm', -STEP)}
-              aria-label="Decrease dining depth"
-            >
-              −
-            </button>
-            <span className="dim-value">{dims.diningDepthCm} cm</span>
-            <button
-              className="dim-btn"
-              onClick={() => adjust('diningDepthCm', STEP)}
-              aria-label="Increase dining depth"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Floor Plan Preview */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-icon card-icon-success">📐</div>
+          <div className="card-icon card-icon-success">2D</div>
           <div>
             <p className="card-title">Floor Plan Preview</p>
             <p className="card-subtitle">Proportional layout of your living/dining areas</p>
@@ -199,192 +213,129 @@ export default function UnitSetupScreen() {
         <FloorPlanSVG dims={dims} />
       </div>
 
-      {/* Confirm Button */}
       <button
         id="confirm-unit-btn"
         className="btn btn-primary"
         onClick={handleConfirm}
         style={{ marginTop: 'var(--space-sm)' }}
       >
-        Confirm Dimensions & Continue
+        Confirm Dimensions and Continue
       </button>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------
-   Floor Plan SVG — proportional 2D view of living + dining areas
-   ------------------------------------------------------------------ */
-function FloorPlanSVG({ dims }: { dims: RoomDimensions }) {
-  const pad = 40;
-  const labelOffset = 24;
+function DimensionCard({
+  title,
+  areaSqm,
+  widthCm,
+  depthCm,
+  onWidthChange,
+  onDepthChange,
+}: {
+  title: string;
+  areaSqm: string;
+  widthCm: number;
+  depthCm: number;
+  onWidthChange: (delta: number) => void;
+  onDepthChange: (delta: number) => void;
+}) {
+  return (
+    <div className="card">
+      <div className="card-header">
+        <div className="card-icon card-icon-primary">{title.slice(0, 1)}</div>
+        <div>
+          <p className="card-title">{title}</p>
+          <p className="card-subtitle">{areaSqm} sqm</p>
+        </div>
+      </div>
 
-  // Scale all dims to fit max 320px wide
+      <DimensionRow label="Width" valueCm={widthCm} onChange={onWidthChange} />
+      <DimensionRow label="Depth" valueCm={depthCm} onChange={onDepthChange} />
+    </div>
+  );
+}
+
+function DimensionRow({
+  label,
+  valueCm,
+  onChange,
+}: {
+  label: string;
+  valueCm: number;
+  onChange: (delta: number) => void;
+}) {
+  return (
+    <div className="dim-row">
+      <span className="dim-label">{label}</span>
+      <div className="dim-control">
+        <button className="dim-btn" onClick={() => onChange(-STEP)} aria-label={`Decrease ${label.toLowerCase()}`}>
+          -
+        </button>
+        <span className="dim-value">{valueCm} cm</span>
+        <button className="dim-btn" onClick={() => onChange(STEP)} aria-label={`Increase ${label.toLowerCase()}`}>
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FloorPlanSVG({ dims }: { dims: RoomDimensions }) {
+  const pad = 28;
   const maxRealWidth = Math.max(dims.livingWidthCm, dims.diningWidthCm);
   const totalRealDepth = dims.livingDepthCm + dims.diningDepthCm;
   const scale = Math.min(300 / maxRealWidth, 260 / totalRealDepth);
 
-  const lw = dims.livingWidthCm * scale;
-  const ld = dims.livingDepthCm * scale;
-  const dw = dims.diningWidthCm * scale;
-  const dd = dims.diningDepthCm * scale;
-
-  const svgW = Math.max(lw, dw) + pad * 2 + labelOffset;
-  const svgH = ld + dd + pad * 2 + labelOffset;
-
-  // Rooms start offset to center them
-  const livingX = pad + labelOffset + (Math.max(lw, dw) - lw) / 2;
-  const diningX = pad + labelOffset + (Math.max(lw, dw) - dw) / 2;
-  const livingY = pad;
-  const diningY = pad + ld;
+  const livingW = dims.livingWidthCm * scale;
+  const livingH = dims.livingDepthCm * scale;
+  const diningW = dims.diningWidthCm * scale;
+  const diningH = dims.diningDepthCm * scale;
+  const mapW = Math.max(livingW, diningW);
+  const mapH = livingH + diningH;
+  const livingX = pad + (mapW - livingW) / 2;
+  const diningX = pad + (mapW - diningW) / 2;
 
   return (
     <div className="floor-plan-container">
       <svg
-        viewBox={`0 0 ${svgW} ${svgH}`}
+        viewBox={`0 0 ${mapW + pad * 2} ${mapH + pad * 2}`}
         xmlns="http://www.w3.org/2000/svg"
         role="img"
         aria-label="Floor plan preview"
       >
-        {/* Living Room */}
         <rect
           x={livingX}
-          y={livingY}
-          width={lw}
-          height={ld}
+          y={pad}
+          width={livingW}
+          height={livingH}
           fill="#EBF0F7"
           stroke="#1F3864"
           strokeWidth="2"
-          rx="3"
+          rx="6"
         />
-        <text
-          x={livingX + lw / 2}
-          y={livingY + ld / 2 - 8}
-          textAnchor="middle"
-          fill="#1F3864"
-          fontSize="11"
-          fontWeight="600"
-          fontFamily="Inter, system-ui, sans-serif"
-        >
-          Living Area
-        </text>
-        <text
-          x={livingX + lw / 2}
-          y={livingY + ld / 2 + 8}
-          textAnchor="middle"
-          fill="#6B7280"
-          fontSize="9"
-          fontFamily="Inter, system-ui, sans-serif"
-        >
-          {dims.livingWidthCm} × {dims.livingDepthCm} cm
-        </text>
-
-        {/* Sofa icon (simple rectangle) */}
-        <rect
-          x={livingX + 12}
-          y={livingY + ld - 28}
-          width={lw * 0.5}
-          height={14}
-          fill="#1F3864"
-          opacity="0.15"
-          rx="3"
-        />
-
-        {/* Dining Room */}
         <rect
           x={diningX}
-          y={diningY}
-          width={dw}
-          height={dd}
+          y={pad + livingH}
+          width={diningW}
+          height={diningH}
           fill="#F0F7EB"
-          stroke="#1F3864"
+          stroke="#639922"
           strokeWidth="2"
-          rx="3"
+          rx="6"
         />
-        <text
-          x={diningX + dw / 2}
-          y={diningY + dd / 2 - 8}
-          textAnchor="middle"
-          fill="#1F3864"
-          fontSize="11"
-          fontWeight="600"
-          fontFamily="Inter, system-ui, sans-serif"
-        >
-          Dining Area
+        <text x={livingX + livingW / 2} y={pad + livingH / 2 - 8} textAnchor="middle" fill="#1F3864" fontSize="12" fontWeight="700">
+          Living
         </text>
-        <text
-          x={diningX + dw / 2}
-          y={diningY + dd / 2 + 8}
-          textAnchor="middle"
-          fill="#6B7280"
-          fontSize="9"
-          fontFamily="Inter, system-ui, sans-serif"
-        >
-          {dims.diningWidthCm} × {dims.diningDepthCm} cm
+        <text x={livingX + livingW / 2} y={pad + livingH / 2 + 10} textAnchor="middle" fill="#475569" fontSize="10">
+          {dims.livingWidthCm} x {dims.livingDepthCm} cm
         </text>
-
-        {/* Table icon (simple oval) */}
-        <ellipse
-          cx={diningX + dw / 2}
-          cy={diningY + dd / 2 + 20}
-          rx={dw * 0.18}
-          ry={dd * 0.12}
-          fill="#1F3864"
-          opacity="0.12"
-        />
-
-        {/* Width dimension line — living */}
-        <line
-          x1={livingX}
-          y1={livingY - 10}
-          x2={livingX + lw}
-          y2={livingY - 10}
-          stroke="#9CA3AF"
-          strokeWidth="1"
-          markerStart="url(#arrowL)"
-          markerEnd="url(#arrowR)"
-        />
-        <text
-          x={livingX + lw / 2}
-          y={livingY - 16}
-          textAnchor="middle"
-          fill="#9CA3AF"
-          fontSize="8"
-          fontFamily="Inter, system-ui, sans-serif"
-        >
-          {dims.livingWidthCm} cm
+        <text x={diningX + diningW / 2} y={pad + livingH + diningH / 2 - 8} textAnchor="middle" fill="#3F6F17" fontSize="12" fontWeight="700">
+          Dining
         </text>
-
-        {/* Depth dimension line — left side */}
-        <line
-          x1={Math.min(livingX, diningX) - 10}
-          y1={livingY}
-          x2={Math.min(livingX, diningX) - 10}
-          y2={diningY + dd}
-          stroke="#9CA3AF"
-          strokeWidth="1"
-        />
-        <text
-          x={Math.min(livingX, diningX) - 14}
-          y={(livingY + diningY + dd) / 2}
-          textAnchor="middle"
-          fill="#9CA3AF"
-          fontSize="8"
-          fontFamily="Inter, system-ui, sans-serif"
-          transform={`rotate(-90, ${Math.min(livingX, diningX) - 14}, ${(livingY + diningY + dd) / 2})`}
-        >
-          {dims.livingDepthCm + dims.diningDepthCm} cm total
+        <text x={diningX + diningW / 2} y={pad + livingH + diningH / 2 + 10} textAnchor="middle" fill="#475569" fontSize="10">
+          {dims.diningWidthCm} x {dims.diningDepthCm} cm
         </text>
-
-        {/* Arrow markers */}
-        <defs>
-          <marker id="arrowL" markerWidth="6" markerHeight="6" refX="0" refY="3" orient="auto">
-            <path d="M6,0 L0,3 L6,6" fill="none" stroke="#9CA3AF" strokeWidth="1" />
-          </marker>
-          <marker id="arrowR" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
-            <path d="M0,0 L6,3 L0,6" fill="none" stroke="#9CA3AF" strokeWidth="1" />
-          </marker>
-        </defs>
       </svg>
     </div>
   );
