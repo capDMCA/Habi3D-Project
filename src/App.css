@@ -276,7 +276,7 @@
 
 .option-item.selected {
   border-color: var(--primary);
-  background: rgba(31, 56, 100, 0.04);
+  background: rgba(59, 126, 241, 0.04);
 }
 
 .option-item input[type="radio"] {
