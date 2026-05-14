@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
-import OverlayScene from '../ar/overlayRenderer';
+import { createXRStore, XR, XROrigin } from '@react-three/xr';
+import ClearanceOverlay from '../ar/ClearanceOverlay.tsx';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import { runClearanceAnalysis, type ClearanceResult } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
@@ -63,18 +63,23 @@ function AnalysisARScene({
 }) {
   return (
     <>
-      <ambientLight intensity={1.4} />
+      <ambientLight intensity={1.2} />
       <directionalLight position={[3, 5, 3]} intensity={0.9} />
-      <XROrigin />
-      {items.map((item) => (
-        <FurnitureAnalysisMesh key={item.id} item={item} />
-      ))}
-      <OverlayScene
-        items={items}
-        classifications={result.allClassifications}
-        roomWidthCm={roomWidthCm}
-        roomLengthCm={roomLengthCm}
-      />
+      <XROrigin>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[roomWidthCm / 200 - 1, 0, roomLengthCm / 200 - 1]}>
+          <planeGeometry args={[roomWidthCm / 100 + 2, roomLengthCm / 100 + 2]} />
+          <meshBasicMaterial color="#f8fafc" />
+        </mesh>
+        {items.map((item) => (
+          <FurnitureAnalysisMesh key={item.id} item={item} />
+        ))}
+        <ClearanceOverlay
+          items={items}
+          classifications={result.allClassifications}
+          roomWidthCm={roomWidthCm}
+          roomLengthCm={roomLengthCm}
+        />
+      </XROrigin>
     </>
   );
 }
@@ -87,8 +92,7 @@ export default function AnalysisScreen() {
   const setViolations = useViolationStore((s) => s.setViolations);
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [arActive, setArActive] = useState(false);
-  const [saveStatus, setSaveStatus] = useState('');
+  const [analysisLoading, setAnalysisLoading] = useState(true);
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
 
   const result = useMemo(
@@ -100,27 +104,26 @@ export default function AnalysisScreen() {
   const yellowCount = result.violations.filter((entry) => entry.classification === 'YELLOW').length;
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setAnalysisLoading(false), 120);
+    return () => window.clearTimeout(timer);
+  }, [items, roomWidthCm, roomLengthCm]);
+
+  useEffect(() => {
     setViolations(result.violations);
     setSpaceScoreBefore(result.spaceScoreBefore);
   }, [result, setSpaceScoreBefore, setViolations]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
-    drawFloorPlan(
-      canvasRef.current,
-      items,
-      result.allClassifications,
-      roomWidthCm,
-      roomLengthCm,
-    );
-  }, [items, result, roomLengthCm, roomWidthCm]);
+    drawFloorPlan(canvasRef.current, items, result.allClassifications, roomWidthCm, roomLengthCm);
+  }, [items, result.allClassifications, roomWidthCm, roomLengthCm]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function saveScore() {
       if (!participantId) {
-        setSaveStatus('Score calculated locally. No participant ID is active.');
+        console.warn('Score calculated locally. No participant ID is active.');
         return;
       }
 
@@ -132,7 +135,8 @@ export default function AnalysisScreen() {
       });
 
       if (cancelled) return;
-      setSaveStatus(error ? `Supabase save failed: ${error.message}` : 'Score saved to Supabase.');
+      if (error) console.warn(`Supabase save failed: ${error.message}`);
+
     }
 
     saveScore();
@@ -141,113 +145,18 @@ export default function AnalysisScreen() {
     };
   }, [participantId, result.spaceScoreBefore]);
 
-  useEffect(() => {
-    return xrAnalysisStore.subscribe((state, prevState) => {
-      if (state.session === prevState.session) return;
-      setArActive(state.session != null);
-    });
-  }, []);
-
   async function startAROverlay() {
     try {
       await xrAnalysisStore.enterAR();
     } catch (err) {
-      setSaveStatus(err instanceof Error ? err.message : String(err));
+      console.warn(err);
     }
   }
 
-  function stopAROverlay() {
-    xrAnalysisStore.getState().session?.end();
-    setArActive(false);
-  }
-
   return (
-    <>
-      <div className="screen">
-        <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('positionMap')} aria-label="Go back">
-            &lt;
-          </button>
-          <div className="screen-header-info">
-            <span className="step-label">Step 5 of 6</span>
-            <h2>Clearance Analysis</h2>
-          </div>
-        </div>
-
-        <div className="progress-bar">
-          <div className="progress-step completed" />
-          <div className="progress-step completed" />
-          <div className="progress-step completed" />
-          <div className="progress-step completed" />
-          <div className="progress-step active" />
-          <div className="progress-step" />
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <div className="card-icon card-icon-primary">%</div>
-            <div>
-              <p className="card-title">Space Utilization Score</p>
-              <p className="card-subtitle">{result.spaceScoreBefore}% free floor area before fixes</p>
-            </div>
-          </div>
-          <div className="info-row">
-            <span className="info-label">Violations found</span>
-            <span className="info-value">{result.violations.length}</span>
-          </div>
-          <div className="info-row">
-            <span className="info-label">Red</span>
-            <span className="info-value">{redCount}</span>
-          </div>
-          <div className="info-row">
-            <span className="info-label">Yellow</span>
-            <span className="info-value">{yellowCount}</span>
-          </div>
-          {saveStatus && <p className="card-subtitle" style={{ marginTop: 12 }}>{saveStatus}</p>}
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <div className="card-icon card-icon-success">2D</div>
-            <div>
-              <p className="card-title">Top-Down Floor Plan</p>
-              <p className="card-subtitle">Worst classification color per item</p>
-            </div>
-          </div>
-          <canvas
-            ref={canvasRef}
-            style={{
-              width: '100%',
-              height: 260,
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-            }}
-          />
-        </div>
-
-        <button className="btn btn-primary" onClick={startAROverlay}>
-          View AR Clearance Overlay
-        </button>
-
-        <button
-          className="btn btn-secondary"
-          onClick={() => navigateTo('recommendation')}
-          style={{ marginTop: 'var(--space-sm)' }}
-        >
-          See step-by-step fixes
-        </button>
-      </div>
-
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: arActive ? 9999 : -1,
-          visibility: arActive ? 'visible' : 'hidden',
-          pointerEvents: arActive ? 'auto' : 'none',
-        }}
-      >
-        <Canvas style={{ position: 'absolute', inset: 0 }} gl={{ antialias: true, alpha: true }}>
+    <div className="screen" style={{ minHeight: '100vh', paddingBottom: 96 }}>
+      <div style={{ width: '100%', marginBottom: 16, borderRadius: 20, overflow: 'hidden', height: '55vh', position: 'relative' }}>
+        <Canvas style={{ width: '100%', height: '100%' }} gl={{ antialias: true, alpha: true }}>
           <XR store={xrAnalysisStore}>
             <AnalysisARScene
               items={items}
@@ -255,53 +164,159 @@ export default function AnalysisScreen() {
               roomWidthCm={roomWidthCm}
               roomLengthCm={roomLengthCm}
             />
-            <XRDomOverlay>
-              <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none' }}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 16,
-                    left: 16,
-                    right: 16,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                    pointerEvents: 'auto',
-                  }}
-                >
-                  <div
-                    style={{
-                      background: 'rgba(17, 24, 39, 0.86)',
-                      color: 'white',
-                      borderRadius: 8,
-                      padding: '10px 12px',
-                      fontSize: 13,
-                      lineHeight: 1.4,
-                      flex: 1,
-                    }}
-                  >
-                    Red zones need correction. Yellow zones are usable but below comfort.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={stopAROverlay}
-                    style={{
-                      background: '#ef4444',
-                      color: 'white',
-                      border: 0,
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Exit
-                  </button>
-                </div>
-              </div>
-            </XRDomOverlay>
           </XR>
         </Canvas>
+        <div
+          style={{
+            position: 'absolute',
+            left: 16,
+            top: 16,
+            right: 16,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 12,
+          }}
+        >
+          <div style={{ background: 'rgba(15, 23, 42, 0.85)', padding: 12, borderRadius: 16, color: '#fff' }}>
+            <p className="step-label" style={{ color: '#94a3b8', marginBottom: 4 }}>Spatial clearance overlay</p>
+            <h2 style={{ margin: 0, fontSize: '1.3rem' }}>AR clearance view</h2>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ alignSelf: 'flex-start' }}
+            onClick={startAROverlay}
+          >
+            Open AR view
+          </button>
+        </div>
       </div>
-    </>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 220 }}>
+            <p className="info-label">Space Utilization Score</p>
+            <p className="info-value" style={{ fontSize: 32, fontWeight: 700 }}>{result.spaceScoreBefore.toFixed(1)}%</p>
+            <p className="card-subtitle">of your floor area is free</p>
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ padding: 14, borderRadius: 16, background: 'rgba(242, 222, 222, 0.8)', minWidth: 120 }}>
+              <p className="info-label">Red violations</p>
+              <p className="info-value" style={{ color: '#E24B4A' }}>{redCount}</p>
+            </div>
+            <div style={{ padding: 14, borderRadius: 16, background: 'rgba(253, 240, 218, 0.9)', minWidth: 120 }}>
+              <p className="info-label">Yellow warnings</p>
+              <p className="info-value" style={{ color: '#F0A500' }}>{yellowCount}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-header">
+          <div className="card-icon card-icon-success">2D</div>
+          <div>
+            <p className="card-title">2D floor plan</p>
+            <p className="card-subtitle">Exact clearance zones and furniture positions</p>
+          </div>
+        </div>
+        <canvas
+          ref={canvasRef}
+          style={{ width: '100%', height: 180, borderRadius: 12, marginTop: 12, display: 'block' }}
+        />
+      </div>
+
+      {analysisLoading ? (
+        <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <div className="loading-spinner" />
+          <p style={{ marginTop: 16 }}>Analysing your layout...</p>
+        </div>
+      ) : result.violations.length === 0 ? (
+        <div className="card" style={{ borderLeft: '4px solid #16A34A', background: '#ECFDF5' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 28, color: '#16A34A' }}>✓</span>
+            <div>
+              <p className="card-title">Your layout meets all 10 clearance standards</p>
+              <p className="card-subtitle">Space Utilization Score: {result.spaceScoreBefore.toFixed(1)}%</p>
+            </div>
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigateTo('report')}>
+            Export report
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 14, marginBottom: 96 }}>
+          {result.violations.map((violation) => (
+            <div
+              key={violation.id}
+              className="card"
+              style={{ borderLeft: `4px solid ${violation.classification === 'RED' ? '#E24B4A' : '#F0A500'}` }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '6px 10px',
+                      borderRadius: 999,
+                      background: violation.classification === 'RED' ? '#FEE2E2' : '#FFFBEB',
+                      color: violation.classification === 'RED' ? '#B91C1C' : '#92400E',
+                      fontWeight: 700,
+                      fontSize: 12,
+                    }}
+                  >
+                    {violation.ruleCode}
+                  </div>
+                  <p className="card-title" style={{ marginTop: 10 }}>{violation.furnitureLabel}</p>
+                  <p className="card-subtitle">{violation.ruleLabel}</p>
+                </div>
+                <div style={{ textAlign: 'right', minWidth: 120 }}>
+                  <p className="info-label">Measured</p>
+                  <p className="info-value">{violation.measuredCm} cm</p>
+                  <p className="info-label" style={{ marginTop: 8 }}>Required</p>
+                  <p className="info-value">{violation.requiredCm} cm</p>
+                </div>
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <p className="card-subtitle">Priority Score: {violation.priorityScore.toLocaleString()}</p>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#475569', fontSize: 13 }}>
+                  <span>{violation.measuredCm}</span>
+                  <span>→</span>
+                  <span>{violation.requiredCm}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div
+        style={{
+          position: 'fixed',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderTop: '1px solid var(--border)',
+          background: 'var(--card-bg)',
+          padding: '14px 16px',
+          display: 'flex',
+          justifyContent: 'center',
+          zIndex: 50,
+        }}
+      >
+        {result.violations.length > 0 ? (
+          <button className="btn btn-primary" style={{ width: '100%', maxWidth: 420 }} onClick={() => navigateTo('recommendation')}>
+            Fix violations step by step
+          </button>
+        ) : (
+          <button className="btn btn-secondary" style={{ width: '100%', maxWidth: 420 }} onClick={() => navigateTo('report')}>
+            Export report
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

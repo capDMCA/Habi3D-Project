@@ -28,8 +28,7 @@ function formatFixInstruction(violation: Violation): string {
   const label = violation.fixDirectionLabel.toLowerCase();
   const prefix = `Move ${violation.fixDirectionCm} cm`;
 
-  if (label.includes('toward')) return `${prefix} ${label}`;
-  if (label.includes('away')) return `${prefix} ${label}`;
+  if (label.includes('toward') || label.includes('away')) return `${prefix} ${label}`;
   if (label.includes('north')) return `${prefix} toward the north wall`;
   if (label.includes('south')) return `${prefix} toward the south wall`;
   if (label.includes('east')) return `${prefix} toward the east wall`;
@@ -61,11 +60,20 @@ export default function RecommendationScreen() {
 
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
 
-  const currentViolation = recommendations[currentStepIndex];
   const result = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
     [items, roomWidthCm, roomLengthCm],
   );
+
+  const unresolvedViolations = useMemo(
+    () => recommendations.filter((violation) => !violation.resolved),
+    [recommendations],
+  );
+
+  const currentViolation = unresolvedViolations[currentStepIndex];
+  const currentStepNumber = Math.min(currentStepIndex + 1, unresolvedViolations.length);
+  const totalSteps = unresolvedViolations.length;
+  const isLastStep = currentStepNumber === totalSteps;
 
   useEffect(() => {
     if (spaceScoreAfter === 0) {
@@ -81,7 +89,11 @@ export default function RecommendationScreen() {
         await xrRecommendationStore.enterAR();
         if (active) setArState('active');
       } catch (err) {
-        if (active) setArState('error');
+        if (active) {
+          // preserve the error for diagnostics and update AR state
+          console.warn(err);
+          setArState('error');
+        }
       }
     }
 
@@ -112,9 +124,7 @@ export default function RecommendationScreen() {
 
         <div className="card">
           <p className="card-title">No more recommendation steps remain.</p>
-          <p className="card-subtitle">
-            You can continue to the post-session evaluation now.
-          </p>
+          <p className="card-subtitle">You can continue to the post-session evaluation now.</p>
         </div>
 
         <button className="btn btn-primary" onClick={() => navigateTo('surveyEnd')}>
@@ -128,14 +138,15 @@ export default function RecommendationScreen() {
     100,
     Math.round((currentViolation.measuredCm / currentViolation.requiredCm) * 100),
   );
-  const isLastStep = currentStepIndex + 1 >= recommendations.length;
 
   async function handleDone() {
     resolveCurrentStep();
     const refreshed = runClearanceAnalysis(items, roomWidthCm, roomLengthCm);
     refreshViolations(refreshed.violations);
     setSpaceScoreAfter(refreshed.spaceScoreBefore);
-    if (isLastStep) {
+
+    const outstanding = refreshed.violations.some((violation) => !violation.resolved);
+    if (!outstanding) {
       navigateTo('surveyEnd');
     }
   }
@@ -147,29 +158,29 @@ export default function RecommendationScreen() {
     }
   }
 
+  const renderedItem = items.find((item) => item.id === currentViolation.furnitureId);
+
   return (
-    <div className="screen">
+    <div className="screen" style={{ paddingBottom: 24 }}>
       <div className="screen-header">
         <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">
           &lt;
         </button>
         <div className="screen-header-info">
-          <span className="step-label">Step {currentStepIndex + 1} of {recommendations.length}</span>
+          <span className="step-label">Step {currentStepNumber} of {totalSteps}</span>
           <h2>Recommendation</h2>
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div>
             <p className="card-title">Move your {currentViolation.furnitureLabel}</p>
-            <p className="card-subtitle" style={{ marginTop: 8 }}>
-              {formatFixInstruction(currentViolation)}
-            </p>
+            <p className="card-subtitle" style={{ marginTop: 8 }}>{formatFixInstruction(currentViolation)}</p>
           </div>
           <div
             style={{
-              padding: '6px 12px',
+              padding: '8px 14px',
               borderRadius: 999,
               background: getBadgeColor(currentViolation.classification),
               color: '#111827',
@@ -181,53 +192,44 @@ export default function RecommendationScreen() {
           </div>
         </div>
 
-        <div style={{ marginTop: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              <p className="info-label">Measured</p>
-              <p className="info-value">{currentViolation.measuredCm} cm</p>
-            </div>
-            <div>
-              <p className="info-label">Required</p>
-              <p className="info-value">{currentViolation.requiredCm} cm</p>
-            </div>
+        <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <p className="info-label">Measured</p>
+            <p className="info-value">{currentViolation.measuredCm} cm</p>
           </div>
-          <div style={{ marginTop: 16, height: 12, borderRadius: 999, background: '#E2E8F0', overflow: 'hidden' }}>
-            <div
-              style={{
-                width: `${progressPercent}%`,
-                height: '100%',
-                background: currentViolation.classification === 'RED' ? '#E24B4A' : '#F0A500',
-              }}
-            />
+          <div>
+            <p className="info-label">Required</p>
+            <p className="info-value">{currentViolation.requiredCm} cm</p>
           </div>
-          <p style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
-            {currentViolation.measuredCm} cm of {currentViolation.requiredCm} cm gap
-          </p>
         </div>
+
+        <div style={{ marginTop: 20, height: 12, borderRadius: 999, background: '#E2E8F0', overflow: 'hidden' }}>
+          <div
+            style={{
+              width: `${progressPercent}%`,
+              height: '100%',
+              background: currentViolation.classification === 'RED' ? '#E24B4A' : '#F0A500',
+            }}
+          />
+        </div>
+        <p style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
+          {currentViolation.measuredCm} cm of {currentViolation.requiredCm} cm gap
+        </p>
 
         <p style={{ marginTop: 20, color: '#475569', fontSize: 13 }}>
           Priority Score: {currentViolation.priorityScore.toLocaleString()}
         </p>
       </div>
 
-      <div
-        style={{
-          borderRadius: 16,
-          overflow: 'hidden',
-          minHeight: 320,
-          border: '1px solid rgba(148, 163, 184, 0.2)',
-          marginBottom: 20,
-        }}
-      >
+      <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', minHeight: 320, marginBottom: 20, border: '1px solid rgba(148, 163, 184, 0.2)' }}>
         <Canvas style={{ width: '100%', height: 320, background: '#0f172a' }} gl={{ antialias: true, alpha: true }}>
           <XR store={xrRecommendationStore}>
             <XROrigin>
               <ambientLight intensity={0.9} />
               <directionalLight position={[1.5, 5, 2]} intensity={0.7} />
               <CorrectionArrow
-                posX={items.find((item) => item.id === currentViolation.furnitureId)?.posX ?? 0}
-                posZ={items.find((item) => item.id === currentViolation.furnitureId)?.posZ ?? 0}
+                posX={renderedItem?.posX ?? 0}
+                posZ={renderedItem?.posZ ?? 0}
                 fixDirectionLabel={currentViolation.fixDirectionLabel}
                 fixDirectionCm={currentViolation.fixDirectionCm}
                 classification={currentViolation.classification}
@@ -264,8 +266,8 @@ export default function RecommendationScreen() {
         </div>
       </div>
 
-      <div className="card" style={{ paddingBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="card" style={{ paddingBottom: 16, marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div>
             <p className="card-title">Space Utilization</p>
             <p className="card-subtitle">Live score after each confirmed fix</p>
@@ -275,12 +277,12 @@ export default function RecommendationScreen() {
             <p className="info-label">After score</p>
           </div>
         </div>
-        <div style={{ marginTop: 14, display: 'flex', gap: 12 }}>
-          <div style={{ flex: 1, padding: 14, background: '#F8FAFC', borderRadius: 14 }}>
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ padding: 14, background: '#F8FAFC', borderRadius: 14 }}>
             <p className="info-label">Before</p>
             <p className="info-value">{spaceScoreBefore.toFixed(1)}%</p>
           </div>
-          <div style={{ flex: 1, padding: 14, background: '#ECFDF5', borderRadius: 14 }}>
+          <div style={{ padding: 14, background: '#ECFDF5', borderRadius: 14 }}>
             <p className="info-label">Improvement</p>
             <p className="info-value" style={{ color: '#16A34A' }}>
               {(spaceScoreAfter - spaceScoreBefore).toFixed(1)} pts
