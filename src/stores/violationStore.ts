@@ -11,6 +11,7 @@ interface ViolationState {
   refreshViolations: (violations: Violation[]) => void;
   resolveCurrentStep: () => void;
   advanceCurrentStep: () => void;
+  setCurrentStepIndex: (index: number) => void;
   setSpaceScoreBefore: (score: number) => void;
   setSpaceScoreAfter: (score: number) => void;
   clearViolations: () => void;
@@ -23,14 +24,16 @@ export const useViolationStore = create<ViolationState>((set) => ({
   spaceScoreBefore: 0,
   spaceScoreAfter: 0,
   setViolations: (violations) =>
-    set({
-      violations,
-      recommendations: [...violations].sort(
-        (a, b) => b.priorityScore - a.priorityScore,
-      ),
-      currentStepIndex: 0,
-      spaceScoreBefore: 0,
-      spaceScoreAfter: 0,
+    set(() => {
+      const recommendations = [...violations].sort((a, b) => b.priorityScore - a.priorityScore);
+      const firstUnresolved = recommendations.findIndex((v) => !v.resolved);
+      return {
+        violations,
+        recommendations,
+        currentStepIndex: firstUnresolved === -1 ? recommendations.length : firstUnresolved,
+        spaceScoreBefore: 0,
+        spaceScoreAfter: 0,
+      };
     }),
   refreshViolations: (violations) =>
     set((state) => {
@@ -42,15 +45,33 @@ export const useViolationStore = create<ViolationState>((set) => ({
         resolved: resolvedIds.has(violation.id) ? true : violation.resolved,
       }));
 
+      const recommendations = [...merged].sort((a, b) => b.priorityScore - a.priorityScore);
+
+      // find next unresolved starting at the previous index
+      let nextIndex = recommendations.length;
+      for (let i = state.currentStepIndex; i < recommendations.length; i += 1) {
+        if (!recommendations[i].resolved) {
+          nextIndex = i;
+          break;
+        }
+      }
+
+      // if previous index was out of range, pick first unresolved
+      if (nextIndex === recommendations.length) {
+        const firstUnresolved = recommendations.findIndex((v) => !v.resolved);
+        nextIndex = firstUnresolved === -1 ? recommendations.length : firstUnresolved;
+      }
+
       return {
         violations: merged,
-        recommendations: [...merged].sort((a, b) => b.priorityScore - a.priorityScore),
-        currentStepIndex: Math.min(
-          state.currentStepIndex,
-          Math.max(merged.length - 1, 0),
-        ),
+        recommendations,
+        currentStepIndex: nextIndex,
       };
     }),
+  setCurrentStepIndex: (index) =>
+    set((state) => ({
+      currentStepIndex: Math.max(0, Math.min(index, state.recommendations.length)),
+    })),
   setSpaceScoreBefore: (score) => set({ spaceScoreBefore: score }),
   resolveCurrentStep: () =>
     set((state) => {
@@ -60,24 +81,39 @@ export const useViolationStore = create<ViolationState>((set) => ({
       const updatedRecommendations = state.recommendations.map((violation) =>
         violation.id === current.id ? { ...violation, resolved: true } : violation,
       );
-      const nextIndex = state.currentStepIndex + 1;
 
+      const updatedViolations = state.violations.map((violation) =>
+        violation.id === current.id ? { ...violation, resolved: true } : violation,
+      );
+
+      // find next unresolved after current index
+      let nextIndex = updatedRecommendations.length;
+      for (let i = state.currentStepIndex + 1; i < updatedRecommendations.length; i += 1) {
+        if (!updatedRecommendations[i].resolved) {
+          nextIndex = i;
+          break;
+        }
+      }
+
+      // if none found, set to length to indicate completion
       return {
-        violations: state.violations.map((violation) =>
-          violation.id === current.id ? { ...violation, resolved: true } : violation,
-        ),
+        violations: updatedViolations,
         recommendations: updatedRecommendations,
-        currentStepIndex:
-          nextIndex >= updatedRecommendations.length ? updatedRecommendations.length : nextIndex,
+        currentStepIndex: nextIndex,
       };
     }),
   advanceCurrentStep: () =>
-    set((state) => ({
-      currentStepIndex: Math.min(
-        state.currentStepIndex + 1,
-        Math.max(state.recommendations.length, 0),
-      ),
-    })),
+    set((state) => {
+      const len = state.recommendations.length;
+      let nextIndex = len;
+      for (let i = state.currentStepIndex + 1; i < len; i += 1) {
+        if (!state.recommendations[i].resolved) {
+          nextIndex = i;
+          break;
+        }
+      }
+      return { currentStepIndex: nextIndex };
+    }),
   setSpaceScoreAfter: (score) => set({ spaceScoreAfter: score }),
   clearViolations: () =>
     set({

@@ -49,6 +49,7 @@ export default function RecommendationScreen() {
 
   const recommendations = useViolationStore((s) => s.recommendations);
   const currentStepIndex = useViolationStore((s) => s.currentStepIndex);
+  const setCurrentStepIndex = useViolationStore((s) => s.setCurrentStepIndex);
   const spaceScoreBefore = useViolationStore((s) => s.spaceScoreBefore);
   const spaceScoreAfter = useViolationStore((s) => s.spaceScoreAfter);
   const resolveCurrentStep = useViolationStore((s) => s.resolveCurrentStep);
@@ -65,15 +66,16 @@ export default function RecommendationScreen() {
     [items, roomWidthCm, roomLengthCm],
   );
 
-  const unresolvedViolations = useMemo(
-    () => recommendations.filter((violation) => !violation.resolved),
-    [recommendations],
-  );
+  const unresolvedViolations = useMemo(() => recommendations.filter((violation) => !violation.resolved), [recommendations]);
 
-  const currentViolation = unresolvedViolations[currentStepIndex];
-  const currentStepNumber = Math.min(currentStepIndex + 1, unresolvedViolations.length);
+  let currentViolation: Violation | undefined = recommendations[currentStepIndex];
+  if (!currentViolation || currentViolation.resolved) {
+    currentViolation = recommendations.find((v) => !v.resolved);
+  }
+
   const totalSteps = unresolvedViolations.length;
-  const isLastStep = currentStepNumber === totalSteps;
+  const currentStepNumber = currentViolation ? unresolvedViolations.findIndex((v) => v.id === currentViolation!.id) + 1 : 0;
+  const isLastStep = currentStepNumber > 0 && currentStepNumber === totalSteps;
 
   useEffect(() => {
     if (spaceScoreAfter === 0) {
@@ -140,22 +142,25 @@ export default function RecommendationScreen() {
   );
 
   async function handleDone() {
+    if (!currentViolation) return;
+    // resolve selected recommendation in store (store will advance to next unresolved)
+    // to ensure the correct item is resolved, set currentStepIndex to the item index first
+    const idx = recommendations.findIndex((r) => r.id === currentViolation!.id);
+    if (idx >= 0) setCurrentStepIndex(idx);
     resolveCurrentStep();
+
     const refreshed = runClearanceAnalysis(items, roomWidthCm, roomLengthCm);
     refreshViolations(refreshed.violations);
     setSpaceScoreAfter(refreshed.spaceScoreBefore);
 
     const outstanding = refreshed.violations.some((violation) => !violation.resolved);
-    if (!outstanding) {
-      navigateTo('surveyEnd');
-    }
+    if (!outstanding) navigateTo('surveyEnd');
   }
 
   function handleSkip() {
+    // advance to next unresolved recommendation
     advanceCurrentStep();
-    if (isLastStep) {
-      navigateTo('surveyEnd');
-    }
+    if (isLastStep) navigateTo('surveyEnd');
   }
 
   const renderedItem = items.find((item) => item.id === currentViolation.furnitureId);
@@ -219,6 +224,70 @@ export default function RecommendationScreen() {
         <p style={{ marginTop: 20, color: '#475569', fontSize: 13 }}>
           Priority Score: {currentViolation.priorityScore.toLocaleString()}
         </p>
+      </div>
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <p className="card-title">Sequential Recommendations</p>
+            <p className="card-subtitle">Ranked by priority score — highest first</p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <p className="info-label">Remaining</p>
+            <p className="info-value">{totalSteps}</p>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+          {recommendations.map((rec, i) => {
+            const isCurrent = currentViolation?.id === rec.id;
+            return (
+              <div
+                key={rec.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: 10,
+                  borderRadius: 10,
+                  background: isCurrent ? 'rgba(56, 189, 248, 0.08)' : 'transparent',
+                  border: isCurrent ? '1px solid rgba(56,189,248,0.18)' : '1px solid rgba(148,163,184,0.06)',
+                }}
+              >
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: rec.resolved ? '#ecfdf5' : '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                    {i + 1}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{rec.furnitureLabel} — {rec.ruleCode}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>{rec.ruleLabel}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ textAlign: 'right', minWidth: 80 }}>
+                    <div style={{ fontWeight: 700 }}>{rec.priorityScore.toLocaleString()}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>priority</div>
+                  </div>
+                  <div>
+                    {!rec.resolved ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setCurrentStepIndex(i);
+                        }}
+                      >
+                        Go to step
+                      </button>
+                    ) : (
+                      <div style={{ color: '#16a34a', fontWeight: 700 }}>Done</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', minHeight: 320, marginBottom: 20, border: '1px solid rgba(148, 163, 184, 0.2)' }}>
