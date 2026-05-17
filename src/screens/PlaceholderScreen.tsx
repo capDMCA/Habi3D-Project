@@ -36,24 +36,24 @@ const SCREEN_META: Record<string, ScreenMeta> = {
     description:
       'The clearance engine will analyze all 10 rules and display RED/YELLOW/GREEN color zones on the AR floor.',
     prev: 'positionMap',
-    next: 'recommendation',
+    next: 'recommendations',
   },
-  recommendation: {
+  recommendations: {
     title: 'Recommendations',
     icon: '📋',
     step: 6,
     description:
       'Step-by-step sequential recommendations to fix violations, ranked by Priority Score.',
     prev: 'analysis',
-    next: 'surveyEnd',
+    next: 'end_survey',
   },
-  surveyEnd: {
+  end_survey: {
     title: 'Post-Session Survey',
     icon: '📝',
     step: 6,
     description:
       'Complete the SUS usability questionnaire and post-session survey. Responses are saved to Supabase.',
-    prev: 'recommendation',
+    prev: 'recommendations',
     next: 'report',
   },
   report: {
@@ -62,7 +62,7 @@ const SCREEN_META: Record<string, ScreenMeta> = {
     step: 6,
     description:
       'Generate and download a PDF report with all clearance findings, scores, and recommendations.',
-    prev: 'surveyEnd',
+    prev: 'end_survey',
     next: null,
   },
 };

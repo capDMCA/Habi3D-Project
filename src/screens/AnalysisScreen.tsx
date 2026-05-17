@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XROrigin } from '@react-three/xr';
-import ClearanceOverlay from '../ar/ClearanceOverlay.tsx';
+import ClearanceOverlay from '../ar/ClearanceOverlay';
 import { createFurnitureShape } from '../ar/shapeLibrary';
-import { runClearanceAnalysis, type ClearanceResult } from '../engine/clearance';
+import { runClearanceAnalysis } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { supabase } from '../supabase';
-import type { FurnitureItem } from '../types';
+import type { FurnitureItem, RoomDimensions, Violation } from '../types';
 import { drawFloorPlan } from '../utils/floorPlan';
 
 const xrAnalysisStore = createXRStore({
@@ -19,16 +20,21 @@ const xrAnalysisStore = createXRStore({
   domOverlay: true,
 });
 
-function getRoomDimensions(roomDimensions: ReturnType<typeof useSessionStore.getState>['roomDimensions']) {
+function getRoomDimensions(roomDimensions: RoomDimensions | null) {
   if (!roomDimensions) return { roomWidthCm: 360, roomLengthCm: 520 };
-
   return {
     roomWidthCm: Math.max(roomDimensions.livingWidthCm, roomDimensions.diningWidthCm),
     roomLengthCm: roomDimensions.livingDepthCm + roomDimensions.diningDepthCm,
   };
 }
 
-function FurnitureAnalysisMesh({ item }: { item: FurnitureItem }) {
+function getColor(classification: Violation['classification']) {
+  if (classification === 'RED') return '#E24B4A';
+  if (classification === 'YELLOW') return '#F0A500';
+  return '#4CAF50';
+}
+
+function FurnitureMesh({ item }: { item: FurnitureItem }) {
   const { geometry, boundingBox } = useMemo(
     () =>
       createFurnitureShape(item.shape, {
@@ -50,36 +56,31 @@ function FurnitureAnalysisMesh({ item }: { item: FurnitureItem }) {
   );
 }
 
-function AnalysisARScene({
+function AnalysisScene({
   items,
-  result,
+  classifications,
   roomWidthCm,
   roomLengthCm,
 }: {
   items: FurnitureItem[];
-  result: ClearanceResult;
+  classifications: ReturnType<typeof runClearanceAnalysis>['allClassifications'];
   roomWidthCm: number;
   roomLengthCm: number;
 }) {
   return (
     <>
-      <ambientLight intensity={1.2} />
+      <ambientLight intensity={1.25} />
       <directionalLight position={[3, 5, 3]} intensity={0.9} />
-      <XROrigin>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[roomWidthCm / 200 - 1, 0, roomLengthCm / 200 - 1]}>
-          <planeGeometry args={[roomWidthCm / 100 + 2, roomLengthCm / 100 + 2]} />
-          <meshBasicMaterial color="#f8fafc" />
-        </mesh>
-        {items.map((item) => (
-          <FurnitureAnalysisMesh key={item.id} item={item} />
-        ))}
-        <ClearanceOverlay
-          items={items}
-          classifications={result.allClassifications}
-          roomWidthCm={roomWidthCm}
-          roomLengthCm={roomLengthCm}
-        />
-      </XROrigin>
+      <XROrigin />
+      {items.map((item) => (
+        <FurnitureMesh key={item.id} item={item} />
+      ))}
+      <ClearanceOverlay
+        items={items}
+        classifications={classifications}
+        roomWidthCm={roomWidthCm}
+        roomLengthCm={roomLengthCm}
+      />
     </>
   );
 }
@@ -92,7 +93,8 @@ export default function AnalysisScreen() {
   const setViolations = useViolationStore((s) => s.setViolations);
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [analysisLoading, setAnalysisLoading] = useState(true);
+  const scoreSaveAttemptedRef = useRef(false);
+  const [loading, setLoading] = useState(true);
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
 
   const result = useMemo(
@@ -100,223 +102,160 @@ export default function AnalysisScreen() {
     [items, roomLengthCm, roomWidthCm],
   );
 
-  const redCount = result.violations.filter((entry) => entry.classification === 'RED').length;
-  const yellowCount = result.violations.filter((entry) => entry.classification === 'YELLOW').length;
+  const redCount = result.violations.filter((item) => item.classification === 'RED').length;
+  const yellowCount = result.violations.filter((item) => item.classification === 'YELLOW').length;
+  const greenCount = result.allClassifications.filter((item) => item.classification === 'GREEN').length;
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setAnalysisLoading(false), 120);
+    const timer = window.setTimeout(() => setLoading(false), 150);
     return () => window.clearTimeout(timer);
-  }, [items, roomWidthCm, roomLengthCm]);
+  }, [items, roomLengthCm, roomWidthCm]);
 
   useEffect(() => {
     setViolations(result.violations);
     setSpaceScoreBefore(result.spaceScoreBefore);
-  }, [result, setSpaceScoreBefore, setViolations]);
+  }, [result.violations, result.spaceScoreBefore, setSpaceScoreBefore, setViolations]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
-    drawFloorPlan(canvasRef.current, items, result.allClassifications, roomWidthCm, roomLengthCm);
-  }, [items, result.allClassifications, roomWidthCm, roomLengthCm]);
+    drawFloorPlan(canvasRef.current, items, result.violations, roomWidthCm, roomLengthCm);
+  }, [items, result.violations, roomLengthCm, roomWidthCm]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function saveScore() {
-      if (!participantId) {
-        console.warn('Score calculated locally. No participant ID is active.');
-        return;
-      }
-
-      const { error } = await supabase.from('space_utilization_scores').insert({
+    if (!participantId || scoreSaveAttemptedRef.current) return;
+    scoreSaveAttemptedRef.current = true;
+    supabase
+      .from('space_utilization_scores')
+      .insert({
         participant_id: participantId,
         score_before: result.spaceScoreBefore,
         score_after: 0,
         improvement_points: 0,
+      })
+      .then(({ error }) => {
+        if (error) console.warn(error.message);
       });
-
-      if (cancelled) return;
-      if (error) console.warn(`Supabase save failed: ${error.message}`);
-
-    }
-
-    saveScore();
-    return () => {
-      cancelled = true;
-    };
   }, [participantId, result.spaceScoreBefore]);
 
-  async function startAROverlay() {
-    try {
-      await xrAnalysisStore.enterAR();
-    } catch (err) {
-      console.warn(err);
-    }
+  if (loading) {
+    return (
+      <div className="screen" style={{ justifyContent: 'center', alignItems: 'center' }}>
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p className="card-title">Analysing your layout...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="screen" style={{ minHeight: '100vh', paddingBottom: 96 }}>
-      <div style={{ width: '100%', marginBottom: 16, borderRadius: 20, overflow: 'hidden', height: '55vh', position: 'relative' }}>
-        <Canvas style={{ width: '100%', height: '100%' }} gl={{ antialias: true, alpha: true }}>
+    <div className="screen" style={{ maxWidth: 640, paddingBottom: 110 }}>
+      <section style={{ height: '55vh', minHeight: 360, borderRadius: 16, overflow: 'hidden', border: '1px solid var(--border)', position: 'relative', marginBottom: 16 }}>
+        <Canvas style={{ width: '100%', height: '100%', background: '#f8fafc' }} gl={{ antialias: true, alpha: true }}>
           <XR store={xrAnalysisStore}>
-            <AnalysisARScene
+            <AnalysisScene
               items={items}
-              result={result}
+              classifications={result.allClassifications}
               roomWidthCm={roomWidthCm}
               roomLengthCm={roomLengthCm}
             />
           </XR>
         </Canvas>
-        <div
-          style={{
-            position: 'absolute',
-            left: 16,
-            top: 16,
-            right: 16,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 12,
-          }}
-        >
-          <div style={{ background: 'rgba(15, 23, 42, 0.85)', padding: 12, borderRadius: 16, color: '#fff' }}>
-            <p className="step-label" style={{ color: '#94a3b8', marginBottom: 4 }}>Spatial clearance overlay</p>
-            <h2 style={{ margin: 0, fontSize: '1.3rem' }}>AR clearance view</h2>
+        <div style={{ position: 'absolute', top: 12, left: 12, right: 12, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ background: 'rgba(15,23,42,0.86)', color: 'white', padding: 12, borderRadius: 14 }}>
+            <span style={stepBadgeStyle}>Spatial Clearance Visualization Overlay</span>
           </div>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ alignSelf: 'flex-start' }}
-            onClick={startAROverlay}
-          >
-            Open AR view
+          <button className="btn btn-secondary" type="button" style={{ width: 'auto' }} onClick={() => xrAnalysisStore.enterAR().catch(console.warn)}>
+            Open AR
           </button>
         </div>
-      </div>
+      </section>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ minWidth: 220 }}>
-            <p className="info-label">Space Utilization Score</p>
-            <p className="info-value" style={{ fontSize: 32, fontWeight: 700 }}>{result.spaceScoreBefore.toFixed(1)}%</p>
-            <p className="card-subtitle">of your floor area is free</p>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ padding: 14, borderRadius: 16, background: 'rgba(242, 222, 222, 0.8)', minWidth: 120 }}>
-              <p className="info-label">Red violations</p>
-              <p className="info-value" style={{ color: '#E24B4A' }}>{redCount}</p>
-            </div>
-            <div style={{ padding: 14, borderRadius: 16, background: 'rgba(253, 240, 218, 0.9)', minWidth: 120 }}>
-              <p className="info-label">Yellow warnings</p>
-              <p className="info-value" style={{ color: '#F0A500' }}>{yellowCount}</p>
-            </div>
-          </div>
+      <section className="card">
+        <p className="info-label">Space Utilization Score</p>
+        <p style={{ margin: '4px 0', fontSize: 42, lineHeight: 1, fontWeight: 800, color: '#1F3864' }}>
+          {result.spaceScoreBefore.toFixed(1)}%
+        </p>
+        <p className="card-subtitle">of your floor area is free</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
+          <Pill label={`${redCount} RED violations`} color="#E24B4A" />
+          <Pill label={`${yellowCount} YELLOW warnings`} color="#F0A500" />
+          <Pill label={`${greenCount} GREEN`} color="#4CAF50" />
         </div>
-      </div>
+      </section>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-header">
-          <div className="card-icon card-icon-success">2D</div>
-          <div>
-            <p className="card-title">2D floor plan</p>
-            <p className="card-subtitle">Exact clearance zones and furniture positions</p>
-          </div>
-        </div>
-        <canvas
-          ref={canvasRef}
-          style={{ width: '100%', height: 180, borderRadius: 12, marginTop: 12, display: 'block' }}
-        />
-      </div>
+      <section className="card">
+        <p className="card-title">2D floor plan</p>
+        <canvas ref={canvasRef} style={{ width: '100%', height: 160, display: 'block', marginTop: 12, borderRadius: 12, border: '1px solid var(--border)' }} />
+      </section>
 
-      {analysisLoading ? (
-        <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <div className="loading-spinner" />
-          <p style={{ marginTop: 16 }}>Analysing your layout...</p>
-        </div>
-      ) : result.violations.length === 0 ? (
-        <div className="card" style={{ borderLeft: '4px solid #16A34A', background: '#ECFDF5' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 28, color: '#16A34A' }}>✓</span>
-            <div>
-              <p className="card-title">Your layout meets all 10 clearance standards</p>
-              <p className="card-subtitle">Space Utilization Score: {result.spaceScoreBefore.toFixed(1)}%</p>
-            </div>
-          </div>
-          <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigateTo('report')}>
-            Export report
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gap: 14, marginBottom: 96 }}>
-          {result.violations.map((violation) => (
-            <div
-              key={violation.id}
-              className="card"
-              style={{ borderLeft: `4px solid ${violation.classification === 'RED' ? '#E24B4A' : '#F0A500'}` }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                <div>
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '6px 10px',
-                      borderRadius: 999,
-                      background: violation.classification === 'RED' ? '#FEE2E2' : '#FFFBEB',
-                      color: violation.classification === 'RED' ? '#B91C1C' : '#92400E',
-                      fontWeight: 700,
-                      fontSize: 12,
-                    }}
-                  >
-                    {violation.ruleCode}
-                  </div>
-                  <p className="card-title" style={{ marginTop: 10 }}>{violation.furnitureLabel}</p>
-                  <p className="card-subtitle">{violation.ruleLabel}</p>
-                </div>
-                <div style={{ textAlign: 'right', minWidth: 120 }}>
-                  <p className="info-label">Measured</p>
-                  <p className="info-value">{violation.measuredCm} cm</p>
-                  <p className="info-label" style={{ marginTop: 8 }}>Required</p>
-                  <p className="info-value">{violation.requiredCm} cm</p>
-                </div>
+      <section style={{ display: 'grid', gap: 12 }}>
+        {result.violations.map((violation) => (
+          <div key={violation.id} className="card" style={{ borderLeft: `5px solid ${getColor(violation.classification)}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <span style={{ ...badgeStyle, backgroundColor: getColor(violation.classification), color: 'white' }}>
+                  {violation.ruleCode}
+                </span>
+                <p className="card-title" style={{ marginTop: 10, fontSize: 16 }}>{violation.furnitureLabel}</p>
+                <p className="card-subtitle">{violation.ruleLabel}</p>
               </div>
-              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <p className="card-subtitle">Priority Score: {violation.priorityScore.toLocaleString()}</p>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#475569', fontSize: 13 }}>
-                  <span>{violation.measuredCm}</span>
-                  <span>→</span>
-                  <span>{violation.requiredCm}</span>
-                </div>
-              </div>
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>
+                Priority Score: {violation.priorityScore.toLocaleString()}
+              </p>
             </div>
-          ))}
-        </div>
-      )}
+            <p style={{ margin: '12px 0 0', fontSize: 13, color: '#475569' }}>
+              Measured: {violation.measuredCm}cm&nbsp;&nbsp; Required: {violation.requiredCm}cm&nbsp;&nbsp; Shortfall: {violation.shortfallCm}cm
+            </p>
+          </div>
+        ))}
+      </section>
 
-      <div
-        style={{
-          position: 'fixed',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          borderTop: '1px solid var(--border)',
-          background: 'var(--card-bg)',
-          padding: '14px 16px',
-          display: 'flex',
-          justifyContent: 'center',
-          zIndex: 50,
-        }}
-      >
-        {result.violations.length > 0 ? (
-          <button className="btn btn-primary" style={{ width: '100%', maxWidth: 420 }} onClick={() => navigateTo('recommendation')}>
-            Fix violations step by step
-          </button>
-        ) : (
-          <button className="btn btn-secondary" style={{ width: '100%', maxWidth: 420 }} onClick={() => navigateTo('report')}>
-            Export report
-          </button>
-        )}
+      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: 14, background: 'var(--card)', borderTop: '1px solid var(--border)', zIndex: 20 }}>
+        <div style={{ maxWidth: 640, margin: '0 auto' }}>
+          {result.violations.length > 0 ? (
+            <button className="btn btn-primary" type="button" onClick={() => navigateTo('recommendations')}>
+              Fix violations step by step
+            </button>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ padding: 12, borderRadius: 16, background: '#ECFDF5', color: '#166534', fontWeight: 700 }}>
+                All 10 clearance standards met
+              </div>
+              <button className="btn btn-secondary" type="button" onClick={() => navigateTo('report')}>
+                Export report
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
+
+function Pill({ label, color }: { label: string; color: string }) {
+  return (
+    <span style={{ padding: '7px 10px', borderRadius: 999, backgroundColor: `${color}22`, color, fontWeight: 700, fontSize: 12 }}>
+      {label}
+    </span>
+  );
+}
+
+const badgeStyle: CSSProperties = {
+  display: 'inline-flex',
+  padding: '4px 9px',
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const stepBadgeStyle: CSSProperties = {
+  display: 'inline-block',
+  fontSize: 11,
+  fontWeight: 600,
+  color: '#1F3864',
+  backgroundColor: '#e6edf8',
+  padding: '3px 12px',
+  borderRadius: 20,
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+};

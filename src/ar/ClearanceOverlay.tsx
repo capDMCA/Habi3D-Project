@@ -1,57 +1,162 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { FurnitureItem } from '../types';
 import type { GapClassification } from '../engine/clearance';
-
-const ZONE_COLORS = {
-  RED: '#E24B4A',
-  YELLOW: '#F0A500',
-  GREEN: '#4CAF50',
-} as const;
-
-const ZONE_OPACITY = {
-  RED: 0.6,
-  YELLOW: 0.5,
-  GREEN: 0.35,
-} as const;
+import type { FurnitureItem, GapClassificationLevel } from '../types';
 
 interface ClearanceOverlayProps {
   items: FurnitureItem[];
   classifications: GapClassification[];
   roomWidthCm: number;
   roomLengthCm: number;
+  highlightedRuleCode?: string;
+}
+
+interface BoundsM {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  centerX: number;
+  centerZ: number;
+  lengthM: number;
+  widthM: number;
 }
 
 interface ZoneDefinition {
   id: string;
-  x: number;
-  z: number;
-  width: number;
-  depth: number;
+  centerX: number;
+  centerZ: number;
+  planeWidth: number;
+  planeDepth: number;
+  planeRotY: number;
   color: string;
   baseOpacity: number;
-  classification: 'RED' | 'YELLOW' | 'GREEN';
-  label?: string;
-  showLabel: boolean;
+  classification: GapClassificationLevel;
+  label: string;
+  highlighted: boolean;
 }
 
-function getBounds(item: FurnitureItem) {
-  const x = item.posX * 100;
-  const z = item.posZ * 100;
+const ZONE_COLOR: Record<GapClassificationLevel, string> = {
+  RED: '#E24B4A',
+  YELLOW: '#F0A500',
+  GREEN: '#4CAF50',
+};
+
+const ZONE_OPACITY: Record<GapClassificationLevel, number> = {
+  RED: 0.6,
+  YELLOW: 0.5,
+  GREEN: 0.35,
+};
+
+function getBounds(item: FurnitureItem): BoundsM {
+  const halfL = item.lengthCm / 200;
+  const halfW = item.widthCm / 200;
+
   return {
-    minX: x - item.lengthCm / 2,
-    maxX: x + item.lengthCm / 2,
-    minZ: z - item.widthCm / 2,
-    maxZ: z + item.widthCm / 2,
-    centerX: x,
-    centerZ: z,
+    minX: item.posX - halfL,
+    maxX: item.posX + halfL,
+    minZ: item.posZ - halfW,
+    maxZ: item.posZ + halfW,
+    centerX: item.posX,
+    centerZ: item.posZ,
+    lengthM: item.lengthCm / 100,
+    widthM: item.widthCm / 100,
   };
 }
 
-function clampMinimum(value: number, min: number) {
-  return value > 0 ? Math.max(value, min) : min;
+function getZoneSize(value: number, minimum = 0.03): number {
+  return Math.max(Math.abs(value), minimum);
+}
+
+function getWallZone(
+  classification: GapClassification,
+  item: FurnitureItem,
+  bounds: BoundsM,
+  roomWidthM: number,
+  roomLengthM: number,
+): Pick<ZoneDefinition, 'centerX' | 'centerZ' | 'planeWidth' | 'planeDepth' | 'planeRotY'> {
+  const side = classification.wallSide ?? 'west';
+
+  if (side === 'west') {
+    return {
+      centerX: bounds.minX / 2,
+      centerZ: item.posZ,
+      planeWidth: getZoneSize(bounds.minX),
+      planeDepth: getZoneSize(bounds.widthM),
+      planeRotY: 0,
+    };
+  }
+
+  if (side === 'east') {
+    const gap = roomWidthM - bounds.maxX;
+    return {
+      centerX: (bounds.maxX + roomWidthM) / 2,
+      centerZ: item.posZ,
+      planeWidth: getZoneSize(gap),
+      planeDepth: getZoneSize(bounds.widthM),
+      planeRotY: 0,
+    };
+  }
+
+  if (side === 'north') {
+    return {
+      centerX: item.posX,
+      centerZ: bounds.minZ / 2,
+      planeWidth: getZoneSize(bounds.lengthM),
+      planeDepth: getZoneSize(bounds.minZ),
+      planeRotY: Math.PI / 2,
+    };
+  }
+
+  const gap = roomLengthM - bounds.maxZ;
+  return {
+    centerX: item.posX,
+    centerZ: (bounds.maxZ + roomLengthM) / 2,
+    planeWidth: getZoneSize(bounds.lengthM),
+    planeDepth: getZoneSize(gap),
+    planeRotY: Math.PI / 2,
+  };
+}
+
+function getPairZone(
+  itemA: FurnitureItem,
+  itemB: FurnitureItem,
+  boundsA: BoundsM,
+  boundsB: BoundsM,
+): Pick<ZoneDefinition, 'centerX' | 'centerZ' | 'planeWidth' | 'planeDepth' | 'planeRotY'> | null {
+  if (boundsA.maxX <= boundsB.minX || boundsB.maxX <= boundsA.minX) {
+    const left = boundsA.maxX <= boundsB.minX ? boundsA : boundsB;
+    const right = boundsA.maxX <= boundsB.minX ? boundsB : boundsA;
+    return {
+      centerX: (left.maxX + right.minX) / 2,
+      centerZ: (itemA.posZ + itemB.posZ) / 2,
+      planeWidth: Math.min(itemA.widthCm, itemB.widthCm) / 100,
+      planeDepth: getZoneSize(right.minX - left.maxX),
+      planeRotY: 0,
+    };
+  }
+
+  if (boundsA.maxZ <= boundsB.minZ || boundsB.maxZ <= boundsA.minZ) {
+    const near = boundsA.maxZ <= boundsB.minZ ? boundsA : boundsB;
+    const far = boundsA.maxZ <= boundsB.minZ ? boundsB : boundsA;
+    return {
+      centerX: (itemA.posX + itemB.posX) / 2,
+      centerZ: (near.maxZ + far.minZ) / 2,
+      planeWidth: Math.min(itemA.lengthCm, itemB.lengthCm) / 100,
+      planeDepth: getZoneSize(far.minZ - near.maxZ),
+      planeRotY: Math.PI / 2,
+    };
+  }
+
+  return {
+    centerX: (itemA.posX + itemB.posX) / 2,
+    centerZ: (itemA.posZ + itemB.posZ) / 2,
+    planeWidth: 0.16,
+    planeDepth: 0.16,
+    planeRotY: 0,
+  };
 }
 
 function buildZone(
@@ -59,104 +164,38 @@ function buildZone(
   itemMap: Map<string, FurnitureItem>,
   roomWidthM: number,
   roomLengthM: number,
+  highlightedRuleCode?: string,
 ): ZoneDefinition | null {
   const itemA = itemMap.get(classification.itemAId);
   if (!itemA) return null;
+
   const boundsA = getBounds(itemA);
-  const color = ZONE_COLORS[classification.classification];
-  const baseOpacity = ZONE_OPACITY[classification.classification];
-  const label = classification.classification !== 'GREEN'
-    ? `${classification.ruleCode} · ${classification.measuredCm}cm`
-    : undefined;
-  const showLabel = classification.classification !== 'GREEN';
+  const base = {
+    id: `${classification.ruleCode}-${classification.itemAId}-${classification.itemBId}-${classification.wallSide ?? 'pair'}`,
+    color: ZONE_COLOR[classification.classification],
+    baseOpacity: ZONE_OPACITY[classification.classification],
+    classification: classification.classification,
+    label: `${classification.ruleCode} — ${classification.measuredCm}cm`,
+    highlighted: highlightedRuleCode === classification.ruleCode,
+  };
 
   if (classification.itemBId === 'wall') {
-    const wallSide = classification.wallSide ?? 'west';
-    const depth = clampMinimum(classification.measuredCm, 2.5);
-    let width = 0;
-    let x = boundsA.centerX;
-    let z = boundsA.centerZ;
-
-    if (wallSide === 'west') {
-      width = clampMinimum(boundsA.maxZ - boundsA.minZ, 8);
-      x = boundsA.minX / 2;
-      z = boundsA.centerZ;
-    } else if (wallSide === 'east') {
-      width = clampMinimum(boundsA.maxZ - boundsA.minZ, 8);
-      x = (boundsA.maxX + roomWidthM * 100) / 2;
-      z = boundsA.centerZ;
-    } else if (wallSide === 'north') {
-      width = clampMinimum(boundsA.maxX - boundsA.minX, 8);
-      z = boundsA.minZ / 2;
-      x = boundsA.centerX;
-    } else {
-      width = clampMinimum(boundsA.maxX - boundsA.minX, 8);
-      z = (boundsA.maxZ + roomLengthM * 100) / 2;
-      x = boundsA.centerX;
-    }
-
     return {
-      id: `wall-${classification.itemAId}-${classification.ruleCode}-${wallSide}`,
-      x: x / 100,
-      z: z / 100,
-      width: width / 100,
-      depth: depth / 100,
-      color,
-      baseOpacity,
-      classification: classification.classification,
-      label,
-      showLabel,
+      ...base,
+      ...getWallZone(classification, itemA, boundsA, roomWidthM, roomLengthM),
     };
   }
 
   const itemB = itemMap.get(classification.itemBId);
   if (!itemB) return null;
-  const boundsB = getBounds(itemB);
 
-  const gapX = Math.max(0, Math.max(boundsA.minX, boundsB.minX) - Math.min(boundsA.maxX, boundsB.maxX));
-  const gapZ = Math.max(0, Math.max(boundsA.minZ, boundsB.minZ) - Math.min(boundsA.maxZ, boundsB.maxZ));
-  const overlapX = Math.max(0, Math.min(boundsA.maxX, boundsB.maxX) - Math.max(boundsA.minX, boundsB.minX));
-  const overlapZ = Math.max(0, Math.min(boundsA.maxZ, boundsB.maxZ) - Math.max(boundsA.minZ, boundsB.minZ));
+  const pairZone = getPairZone(itemA, itemB, boundsA, getBounds(itemB));
+  if (!pairZone) return null;
 
-  if (gapX > 0) {
-    const left = boundsA.centerX < boundsB.centerX ? boundsA : boundsB;
-    const right = boundsA.centerX < boundsB.centerX ? boundsB : boundsA;
-    const x = (left.maxX + right.minX) / 2;
-    const z = (Math.max(boundsA.minZ, boundsB.minZ) + Math.min(boundsA.maxZ, boundsB.maxZ)) / 2;
-    return {
-      id: `${classification.itemAId}-${classification.itemBId}-${classification.ruleCode}`,
-      x: x / 100,
-      z: z / 100,
-      width: clampMinimum(overlapZ, 8) / 100,
-      depth: clampMinimum(gapX, 3) / 100,
-      color,
-      baseOpacity,
-      classification: classification.classification,
-      label,
-      showLabel,
-    };
-  }
-
-  if (gapZ > 0) {
-    const top = boundsA.centerZ < boundsB.centerZ ? boundsA : boundsB;
-    const bottom = boundsA.centerZ < boundsB.centerZ ? boundsB : boundsA;
-    const z = (top.maxZ + bottom.minZ) / 2;
-    const x = (Math.max(boundsA.minX, boundsB.minX) + Math.min(boundsA.maxX, boundsB.maxX)) / 2;
-    return {
-      id: `${classification.itemAId}-${classification.itemBId}-${classification.ruleCode}`,
-      x: x / 100,
-      z: z / 100,
-      width: clampMinimum(overlapX, 8) / 100,
-      depth: clampMinimum(gapZ, 3) / 100,
-      color,
-      baseOpacity,
-      classification: classification.classification,
-      label,
-      showLabel,
-    };
-  }
-
-  return null;
+  return {
+    ...base,
+    ...pairZone,
+  };
 }
 
 function Zone({ zone }: { zone: ZoneDefinition }) {
@@ -169,39 +208,39 @@ function Zone({ zone }: { zone: ZoneDefinition }) {
         depthWrite: false,
         side: THREE.DoubleSide,
       }),
-    [zone.color, zone.baseOpacity],
+    [zone.baseOpacity, zone.color],
   );
-
-  const materialRef = useRef<THREE.MeshBasicMaterial>(material);
+  const materialRef = useRef(material);
 
   useEffect(() => {
     materialRef.current = material;
-    return () => {
-      material.dispose();
-    };
+    return () => material.dispose();
   }, [material]);
 
   useFrame(({ clock }) => {
-    if (materialRef.current) {
-      materialRef.current.opacity = zone.baseOpacity + Math.sin(clock.elapsedTime * 2) * 0.1;
-    }
+    const pulseSpeed = zone.highlighted ? 4 : 2;
+    const pulseSize = zone.highlighted ? 0.16 : 0.1;
+    materialRef.current.opacity = Math.max(
+      0.1,
+      zone.baseOpacity + Math.sin(clock.elapsedTime * pulseSpeed) * pulseSize,
+    );
   });
 
   return (
-    <group position={[zone.x, 0.005, zone.z]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[zone.width, zone.depth]} />
+    <group position={[zone.centerX, 0.008, zone.centerZ]}>
+      <mesh rotation={[-Math.PI / 2, 0, zone.planeRotY]}>
+        <planeGeometry args={[zone.planeWidth, zone.planeDepth]} />
         <primitive object={material} attach="material" />
       </mesh>
-      {zone.showLabel && zone.label && (
+      {zone.classification !== 'GREEN' && (
         <Text
-          fontSize={0.08}
-          color="#ffffff"
-          outlineColor="#000000"
-          outlineWidth={0.06}
+          position={[0, 0.25, 0]}
+          fontSize={0.07}
+          color="white"
+          outlineWidth={0.005}
+          outlineColor="black"
           anchorX="center"
           anchorY="middle"
-          position={[0, 0.2, 0]}
         >
           {zone.label}
         </Text>
@@ -210,23 +249,38 @@ function Zone({ zone }: { zone: ZoneDefinition }) {
   );
 }
 
-export default function ClearanceOverlay({ items, classifications, roomWidthCm, roomLengthCm }: ClearanceOverlayProps) {
-  const roomWidthM = roomWidthCm / 100;
-  const roomLengthM = roomLengthCm / 100;
+export default function ClearanceOverlay({
+  items,
+  classifications,
+  roomWidthCm,
+  roomLengthCm,
+  highlightedRuleCode,
+}: ClearanceOverlayProps) {
   const itemMap = useMemo(
     () => new Map(items.map((item) => [item.id, item] as const)),
     [items],
   );
-
   const zones = useMemo(
     () =>
       classifications
         .map((classification) =>
-          buildZone(classification, itemMap, roomWidthM, roomLengthM),
+          buildZone(
+            classification,
+            itemMap,
+            roomWidthCm / 100,
+            roomLengthCm / 100,
+            highlightedRuleCode,
+          ),
         )
         .filter((zone): zone is ZoneDefinition => zone !== null),
-    [classifications, itemMap, roomLengthM, roomWidthM],
+    [classifications, highlightedRuleCode, itemMap, roomLengthCm, roomWidthCm],
   );
 
-  return <>{zones.map((zone) => <Zone key={zone.id} zone={zone} />)}</>;
+  return (
+    <>
+      {zones.map((zone) => (
+        <Zone key={zone.id} zone={zone} />
+      ))}
+    </>
+  );
 }

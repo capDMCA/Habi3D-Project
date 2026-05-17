@@ -14,6 +14,7 @@ interface ViolationState {
   setCurrentStepIndex: (index: number) => void;
   setSpaceScoreBefore: (score: number) => void;
   setSpaceScoreAfter: (score: number) => void;
+  reset: () => void;
   clearViolations: () => void;
 }
 
@@ -115,6 +116,14 @@ export const useViolationStore = create<ViolationState>((set) => ({
       return { currentStepIndex: nextIndex };
     }),
   setSpaceScoreAfter: (score) => set({ spaceScoreAfter: score }),
+  reset: () =>
+    set({
+      violations: [],
+      recommendations: [],
+      currentStepIndex: 0,
+      spaceScoreBefore: 0,
+      spaceScoreAfter: 0,
+    }),
   clearViolations: () =>
     set({
       violations: [],

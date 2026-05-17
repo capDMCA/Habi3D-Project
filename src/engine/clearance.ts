@@ -67,11 +67,11 @@ function getPairGap(a: ItemBounds, b: ItemBounds): PairGap {
   const gapZ = Math.max(0, Math.max(a.minZ, b.minZ) - Math.min(a.maxZ, b.maxZ));
   const measuredCm = Math.round(Math.sqrt(gapX * gapX + gapZ * gapZ) * 100);
 
-  let directionLabel = 'away from the adjacent furniture';
-  if (gapX >= gapZ && a.item.posX <= b.item.posX) directionLabel = 'toward the west side';
-  if (gapX >= gapZ && a.item.posX > b.item.posX) directionLabel = 'toward the east side';
-  if (gapZ > gapX && a.item.posZ <= b.item.posZ) directionLabel = 'toward the north side';
-  if (gapZ > gapX && a.item.posZ > b.item.posZ) directionLabel = 'toward the south side';
+  let directionLabel = 'toward the north wall';
+  if (gapX >= gapZ && a.item.posX <= b.item.posX) directionLabel = 'toward the west wall';
+  if (gapX >= gapZ && a.item.posX > b.item.posX) directionLabel = 'toward the east wall';
+  if (gapZ > gapX && a.item.posZ <= b.item.posZ) directionLabel = 'toward the north wall';
+  if (gapZ > gapX && a.item.posZ > b.item.posZ) directionLabel = 'toward the south wall';
 
   return { measuredCm, gapX, gapZ, directionLabel };
 }
@@ -81,22 +81,22 @@ function getWallGaps(bounds: ItemBounds, roomWidthM: number, roomLengthM: number
     {
       measuredCm: Math.round(bounds.minX * 100),
       wallSide: 'west',
-      directionLabel: 'away from the west wall',
+      directionLabel: 'toward the east wall',
     },
     {
       measuredCm: Math.round((roomWidthM - bounds.maxX) * 100),
       wallSide: 'east',
-      directionLabel: 'away from the east wall',
+      directionLabel: 'toward the west wall',
     },
     {
       measuredCm: Math.round(bounds.minZ * 100),
       wallSide: 'north',
-      directionLabel: 'away from the north wall',
+      directionLabel: 'toward the south wall',
     },
     {
       measuredCm: Math.round((roomLengthM - bounds.maxZ) * 100),
       wallSide: 'south',
-      directionLabel: 'away from the south wall',
+      directionLabel: 'toward the north wall',
     },
   ];
 }
@@ -331,12 +331,12 @@ export function runClearanceAnalysis(
           ? {
               measuredCm: Math.round((roomLengthM - entry.maxZ) * 100),
               wallSide: 'south',
-              directionLabel: 'toward the room center',
+              directionLabel: 'toward the south wall',
             }
           : {
               measuredCm: Math.round(entry.minZ * 100),
               wallSide: 'north',
-              directionLabel: 'toward the room center',
+              directionLabel: 'toward the north wall',
             };
 
       addWallCheck({ ruleCode: 'L5', bounds: entry, wallGap: frontGap, classifications, violations });

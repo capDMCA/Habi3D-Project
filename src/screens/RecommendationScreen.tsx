@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XROrigin } from '@react-three/xr';
+import ClearanceOverlay from '../ar/ClearanceOverlay';
+import CorrectionArrow from '../ar/CorrectionArrow';
+import { createFurnitureShape } from '../ar/shapeLibrary';
+import { runClearanceAnalysis } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
-import { runClearanceAnalysis } from '../engine/clearance';
-import CorrectionArrow from '../ar/CorrectionArrow';
-import type { RoomDimensions, Violation } from '../types';
+import type { FurnitureItem, RoomDimensions, Violation } from '../types';
 
 const xrRecommendationStore = createXRStore({
   offerSession: false,
   emulate: false,
-  hitTest: false,
-  planeDetection: false,
+  hitTest: true,
+  planeDetection: true,
   domOverlay: true,
 });
 
@@ -24,113 +27,117 @@ function getRoomDimensions(roomDimensions: RoomDimensions | null) {
   };
 }
 
-function formatFixInstruction(violation: Violation): string {
-  const label = violation.fixDirectionLabel.toLowerCase();
-  const prefix = `Move ${violation.fixDirectionCm} cm`;
-
-  if (label.includes('toward') || label.includes('away')) return `${prefix} ${label}`;
-  if (label.includes('north')) return `${prefix} toward the north wall`;
-  if (label.includes('south')) return `${prefix} toward the south wall`;
-  if (label.includes('east')) return `${prefix} toward the east wall`;
-  if (label.includes('west')) return `${prefix} toward the west wall`;
-  return `${prefix} in the recommended direction`;
+function getColor(classification: Violation['classification']) {
+  return classification === 'RED' ? '#E24B4A' : '#F0A500';
 }
 
-function getBadgeColor(classification: Violation['classification']) {
-  if (classification === 'RED') return '#E24B4A';
-  if (classification === 'YELLOW') return '#F0A500';
-  return '#94A3B8';
+function FurnitureMesh({ item }: { item: FurnitureItem }) {
+  const { geometry, boundingBox } = useMemo(
+    () =>
+      createFurnitureShape(item.shape, {
+        lengthCm: item.lengthCm,
+        widthCm: item.widthCm,
+        heightCm: item.heightCm,
+      }),
+    [item.heightCm, item.lengthCm, item.shape, item.widthCm],
+  );
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <group position={[item.posX, boundingBox.heightM / 2, item.posZ]} rotation={[0, item.rotationY, 0]}>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial color="#2B4E8C" roughness={0.45} metalness={0.05} />
+      </mesh>
+    </group>
+  );
 }
 
 export default function RecommendationScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const roomDimensions = useSessionStore((s) => s.roomDimensions);
   const items = useFurnitureStore((s) => s.items);
-
   const recommendations = useViolationStore((s) => s.recommendations);
   const currentStepIndex = useViolationStore((s) => s.currentStepIndex);
   const setCurrentStepIndex = useViolationStore((s) => s.setCurrentStepIndex);
-  const spaceScoreBefore = useViolationStore((s) => s.spaceScoreBefore);
-  const spaceScoreAfter = useViolationStore((s) => s.spaceScoreAfter);
   const resolveCurrentStep = useViolationStore((s) => s.resolveCurrentStep);
-  const advanceCurrentStep = useViolationStore((s) => s.advanceCurrentStep);
   const refreshViolations = useViolationStore((s) => s.refreshViolations);
+  const advanceCurrentStep = useViolationStore((s) => s.advanceCurrentStep);
+  const spaceScoreAfter = useViolationStore((s) => s.spaceScoreAfter);
   const setSpaceScoreAfter = useViolationStore((s) => s.setSpaceScoreAfter);
-
-  const [arState, setArState] = useState<'starting' | 'active' | 'error'>('starting');
-
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
+  const [arError, setArError] = useState('');
 
   const result = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
-    [items, roomWidthCm, roomLengthCm],
+    [items, roomLengthCm, roomWidthCm],
   );
-
-  const unresolvedViolations = useMemo(() => recommendations.filter((violation) => !violation.resolved), [recommendations]);
-
-  let currentViolation: Violation | undefined = recommendations[currentStepIndex];
-  if (!currentViolation || currentViolation.resolved) {
-    currentViolation = recommendations.find((v) => !v.resolved);
-  }
-
-  const totalSteps = unresolvedViolations.length;
-  const currentStepNumber = currentViolation ? unresolvedViolations.findIndex((v) => v.id === currentViolation!.id) + 1 : 0;
-  const isLastStep = currentStepNumber > 0 && currentStepNumber === totalSteps;
-
-  useEffect(() => {
-    if (spaceScoreAfter === 0) {
-      setSpaceScoreAfter(result.spaceScoreBefore);
-    }
-  }, [result.spaceScoreBefore, setSpaceScoreAfter, spaceScoreAfter]);
-
-  useEffect(() => {
-    let active = true;
-
-    async function startAR() {
-      try {
-        await xrRecommendationStore.enterAR();
-        if (active) setArState('active');
-      } catch (err) {
-        if (active) {
-          // preserve the error for diagnostics and update AR state
-          console.warn(err);
-          setArState('error');
-        }
-      }
-    }
-
-    startAR();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (recommendations.length === 0 && result.violations.length > 0) {
       refreshViolations(result.violations);
+      setSpaceScoreAfter(result.spaceScoreBefore);
     }
-  }, [recommendations.length, refreshViolations, result.violations]);
+  }, [recommendations.length, refreshViolations, result.spaceScoreBefore, result.violations, setSpaceScoreAfter]);
 
-  if (!currentViolation) {
+  const activeViolation =
+    recommendations[currentStepIndex] && !recommendations[currentStepIndex].resolved
+      ? recommendations[currentStepIndex]
+      : recommendations.find((violation) => !violation.resolved);
+  const activeIndex = activeViolation
+    ? recommendations.findIndex((violation) => violation.id === activeViolation.id)
+    : -1;
+  const totalSteps = recommendations.length;
+  const completedSteps = recommendations.filter((violation) => violation.resolved).length;
+  const displayedScore = spaceScoreAfter || result.spaceScoreBefore;
+
+  useEffect(() => {
+    if (!activeViolation && totalSteps > 0) {
+      setSpaceScoreAfter(result.spaceScoreBefore);
+      navigateTo('end_survey');
+    }
+  }, [activeViolation, navigateTo, result.spaceScoreBefore, setSpaceScoreAfter, totalSteps]);
+
+  async function launchAR() {
+    setArError('');
+    try {
+      await xrRecommendationStore.enterAR();
+    } catch (error) {
+      setArError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function handleSkip() {
+    advanceCurrentStep();
+    if (activeIndex >= totalSteps - 1) {
+      setSpaceScoreAfter(result.spaceScoreBefore);
+      navigateTo('end_survey');
+    }
+  }
+
+  function handleDone() {
+    if (!activeViolation) return;
+    if (activeIndex >= 0) setCurrentStepIndex(activeIndex);
+    resolveCurrentStep();
+    const updated = runClearanceAnalysis(items, roomWidthCm, roomLengthCm);
+    refreshViolations(updated.violations);
+    setSpaceScoreAfter(updated.spaceScoreBefore);
+
+    const unresolvedAfterCurrent = recommendations.some(
+      (violation, index) => index > activeIndex && !violation.resolved,
+    );
+    if (!unresolvedAfterCurrent) navigateTo('end_survey');
+  }
+
+  if (!activeViolation) {
     return (
       <div className="screen">
-        <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">
-            &lt;
-          </button>
-          <div className="screen-header-info">
-            <span className="step-label">Recommendation complete</span>
-            <h2>All steps finished</h2>
-          </div>
-        </div>
-
         <div className="card">
-          <p className="card-title">No more recommendation steps remain.</p>
-          <p className="card-subtitle">You can continue to the post-session evaluation now.</p>
+          <p className="card-title">No recommendation steps available.</p>
+          <p className="card-subtitle">Return to analysis or continue to evaluation.</p>
         </div>
-
-        <button className="btn btn-primary" onClick={() => navigateTo('surveyEnd')}>
-          Go to evaluation
+        <button className="btn btn-primary" onClick={() => navigateTo('end_survey')}>
+          Continue to evaluation
         </button>
       </div>
     );
@@ -138,246 +145,118 @@ export default function RecommendationScreen() {
 
   const progressPercent = Math.min(
     100,
-    Math.round((currentViolation.measuredCm / currentViolation.requiredCm) * 100),
+    Math.round((activeViolation.measuredCm / activeViolation.requiredCm) * 100),
   );
-
-  async function handleDone() {
-    if (!currentViolation) return;
-    // resolve selected recommendation in store (store will advance to next unresolved)
-    // to ensure the correct item is resolved, set currentStepIndex to the item index first
-    const idx = recommendations.findIndex((r) => r.id === currentViolation!.id);
-    if (idx >= 0) setCurrentStepIndex(idx);
-    resolveCurrentStep();
-
-    const refreshed = runClearanceAnalysis(items, roomWidthCm, roomLengthCm);
-    refreshViolations(refreshed.violations);
-    setSpaceScoreAfter(refreshed.spaceScoreBefore);
-
-    const outstanding = refreshed.violations.some((violation) => !violation.resolved);
-    if (!outstanding) navigateTo('surveyEnd');
-  }
-
-  function handleSkip() {
-    // advance to next unresolved recommendation
-    advanceCurrentStep();
-    if (isLastStep) navigateTo('surveyEnd');
-  }
-
-  const renderedItem = items.find((item) => item.id === currentViolation.furnitureId);
+  const color = getColor(activeViolation.classification);
 
   return (
-    <div className="screen" style={{ paddingBottom: 24 }}>
-      <div className="screen-header">
+    <div className="screen" style={{ maxWidth: 640 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">
           &lt;
         </button>
-        <div className="screen-header-info">
-          <span className="step-label">Step {currentStepNumber} of {totalSteps}</span>
-          <h2>Recommendation</h2>
-        </div>
+        <span style={stepBadgeStyle}>Step {activeIndex + 1} of {totalSteps}</span>
       </div>
 
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-          <div>
-            <p className="card-title">Move your {currentViolation.furnitureLabel}</p>
-            <p className="card-subtitle" style={{ marginTop: 8 }}>{formatFixInstruction(currentViolation)}</p>
-          </div>
-          <div
-            style={{
-              padding: '8px 14px',
-              borderRadius: 999,
-              background: getBadgeColor(currentViolation.classification),
-              color: '#111827',
-              fontWeight: 700,
-              fontSize: 12,
-            }}
-          >
-            {currentViolation.ruleCode}
-          </div>
-        </div>
-
-        <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div>
-            <p className="info-label">Measured</p>
-            <p className="info-value">{currentViolation.measuredCm} cm</p>
-          </div>
-          <div>
-            <p className="info-label">Required</p>
-            <p className="info-value">{currentViolation.requiredCm} cm</p>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 20, height: 12, borderRadius: 999, background: '#E2E8F0', overflow: 'hidden' }}>
-          <div
-            style={{
-              width: `${progressPercent}%`,
-              height: '100%',
-              background: currentViolation.classification === 'RED' ? '#E24B4A' : '#F0A500',
-            }}
-          />
-        </div>
-        <p style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
-          {currentViolation.measuredCm} cm of {currentViolation.requiredCm} cm gap
-        </p>
-
-        <p style={{ marginTop: 20, color: '#475569', fontSize: 13 }}>
-          Priority Score: {currentViolation.priorityScore.toLocaleString()}
-        </p>
-      </div>
-
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <p className="card-title">Sequential Recommendations</p>
-            <p className="card-subtitle">Ranked by priority score — highest first</p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <p className="info-label">Remaining</p>
-            <p className="info-value">{totalSteps}</p>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-          {recommendations.map((rec, i) => {
-            const isCurrent = currentViolation?.id === rec.id;
-            return (
-              <div
-                key={rec.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: 10,
-                  borderRadius: 10,
-                  background: isCurrent ? 'rgba(56, 189, 248, 0.08)' : 'transparent',
-                  border: isCurrent ? '1px solid rgba(56,189,248,0.18)' : '1px solid rgba(148,163,184,0.06)',
-                }}
-              >
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: rec.resolved ? '#ecfdf5' : '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-                    {i + 1}
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700 }}>{rec.furnitureLabel} — {rec.ruleCode}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{rec.ruleLabel}</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <div style={{ textAlign: 'right', minWidth: 80 }}>
-                    <div style={{ fontWeight: 700 }}>{rec.priorityScore.toLocaleString()}</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>priority</div>
-                  </div>
-                  <div>
-                    {!rec.resolved ? (
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => {
-                          setCurrentStepIndex(i);
-                        }}
-                      >
-                        Go to step
-                      </button>
-                    ) : (
-                      <div style={{ color: '#16a34a', fontWeight: 700 }}>Done</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', minHeight: 320, marginBottom: 20, border: '1px solid rgba(148, 163, 184, 0.2)' }}>
-        <Canvas style={{ width: '100%', height: 320, background: '#0f172a' }} gl={{ antialias: true, alpha: true }}>
+      <section style={{ height: '45vh', minHeight: 300, borderRadius: 16, overflow: 'hidden', border: '1px solid var(--border)', position: 'relative', marginBottom: 16 }}>
+        <Canvas style={{ width: '100%', height: '100%', background: '#f8fafc' }} gl={{ antialias: true, alpha: true }}>
           <XR store={xrRecommendationStore}>
-            <XROrigin>
-              <ambientLight intensity={0.9} />
-              <directionalLight position={[1.5, 5, 2]} intensity={0.7} />
-              <CorrectionArrow
-                posX={renderedItem?.posX ?? 0}
-                posZ={renderedItem?.posZ ?? 0}
-                fixDirectionLabel={currentViolation.fixDirectionLabel}
-                fixDirectionCm={currentViolation.fixDirectionCm}
-                classification={currentViolation.classification}
-              />
-            </XROrigin>
+            <ambientLight intensity={1.25} />
+            <directionalLight position={[3, 5, 3]} intensity={0.9} />
+            <XROrigin />
+            {items.map((item) => (
+              <FurnitureMesh key={item.id} item={item} />
+            ))}
+            <ClearanceOverlay
+              items={items}
+              classifications={result.allClassifications}
+              roomWidthCm={roomWidthCm}
+              roomLengthCm={roomLengthCm}
+              highlightedRuleCode={activeViolation.ruleCode}
+            />
+            <CorrectionArrow violation={activeViolation} items={items} />
           </XR>
         </Canvas>
-        <div
-          style={{
-            position: 'absolute',
-            left: 16,
-            bottom: 16,
-            display: 'flex',
-            gap: 10,
-            alignItems: 'center',
-            color: '#ffffff',
-            fontSize: 13,
-          }}
-        >
-          {arState === 'active' && 'AR camera active'}
-          {arState === 'starting' && 'Launching AR camera...'}
-          {arState === 'error' && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                setArState('starting');
-                xrRecommendationStore.enterAR().catch(() => setArState('error'));
-              }}
-            >
-              Retry AR
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="card" style={{ paddingBottom: 16, marginBottom: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div>
-            <p className="card-title">Space Utilization</p>
-            <p className="card-subtitle">Live score after each confirmed fix</p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <p className="info-value">{spaceScoreAfter.toFixed(1)}%</p>
-            <p className="info-label">After score</p>
-          </div>
-        </div>
-        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div style={{ padding: 14, background: '#F8FAFC', borderRadius: 14 }}>
-            <p className="info-label">Before</p>
-            <p className="info-value">{spaceScoreBefore.toFixed(1)}%</p>
-          </div>
-          <div style={{ padding: 14, background: '#ECFDF5', borderRadius: 14 }}>
-            <p className="info-label">Improvement</p>
-            <p className="info-value" style={{ color: '#16A34A' }}>
-              {(spaceScoreAfter - spaceScoreBefore).toFixed(1)} pts
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <button
           className="btn btn-secondary"
           type="button"
-          onClick={handleSkip}
-          style={{ flex: '1 1 48%' }}
+          onClick={launchAR}
+          style={{ position: 'absolute', top: 12, right: 12, width: 'auto' }}
         >
+          Open AR
+        </button>
+      </section>
+
+      {arError && <p className="form-error">{arError}</p>}
+
+      <section className="card" style={{ borderLeft: `5px solid ${color}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+          <span style={{ ...badgeStyle, backgroundColor: color }}>{activeViolation.classification}</span>
+          <span style={{ color: '#64748b', fontSize: 11 }}>
+            Priority Score: {activeViolation.priorityScore.toLocaleString()}
+          </span>
+        </div>
+        <h2 style={{ margin: '14px 0 6px', fontSize: 24, color: 'var(--text-primary)' }}>
+          Move your {activeViolation.furnitureLabel}
+        </h2>
+        <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1F3864' }}>
+          {activeViolation.fixDirectionCm} cm {activeViolation.fixDirectionLabel}
+        </p>
+
+        <div style={{ marginTop: 20 }}>
+          <div style={{ height: 14, borderRadius: 999, background: '#E2E8F0', overflow: 'hidden' }}>
+            <div style={{ width: `${progressPercent}%`, height: '100%', background: color }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, color: '#64748b', fontSize: 12 }}>
+            <span>Current: {activeViolation.measuredCm}cm</span>
+            <span>Needed: {activeViolation.requiredCm}cm</span>
+          </div>
+        </div>
+
+        <p style={{ margin: '18px 0 0', color: '#64748b', fontSize: 13 }}>
+          Rule {activeViolation.ruleCode} — {activeViolation.ruleLabel}
+        </p>
+      </section>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <button className="btn btn-secondary" type="button" onClick={handleSkip}>
           Skip this step
         </button>
-        <button
-          className="btn btn-primary"
-          type="button"
-          onClick={handleDone}
-          style={{ flex: '1 1 48%' }}
-        >
-          Done — I moved it ✓
+        <button className="btn btn-primary" type="button" onClick={handleDone}>
+          Done - I moved it
         </button>
+      </div>
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span className="card-subtitle">Free floor area</span>
+          <strong>{displayedScore.toFixed(1)}%</strong>
+        </div>
+        <p className="card-subtitle" style={{ marginTop: 8 }}>
+          {completedSteps} of {totalSteps} violations resolved
+        </p>
       </div>
     </div>
   );
 }
+
+const stepBadgeStyle: CSSProperties = {
+  display: 'inline-block',
+  fontSize: 11,
+  fontWeight: 600,
+  color: '#1F3864',
+  backgroundColor: '#e6edf8',
+  padding: '3px 12px',
+  borderRadius: 20,
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+};
+
+const badgeStyle: CSSProperties = {
+  display: 'inline-block',
+  color: 'white',
+  padding: '6px 10px',
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 800,
+};

@@ -7,7 +7,9 @@ export type ScreenName =
   | 'roomScan'
   | 'positionMap'
   | 'analysis'
+  | 'recommendations'
   | 'recommendation'
+  | 'end_survey'
   | 'surveyEnd'
   | 'report';
 
