@@ -44,6 +44,29 @@ function computeSusScore(values: number[]) {
   return (odd + even) * 2.5;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    const message = record.message ?? record.error_description ?? record.details ?? record.hint;
+    if (typeof message === 'string') return message;
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return 'An unexpected submission error occurred.';
+    }
+  }
+
+  return 'An unexpected submission error occurred.';
+}
+
+function throwSupabaseError(context: string, error: unknown): never {
+  throw new Error(`${context}: ${getErrorMessage(error)}`);
+}
+
 export default function EndSurveyScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const participantId = useSessionStore((s) => s.participantId);
@@ -113,7 +136,7 @@ export default function EndSurveyScreen() {
         ...susPayload,
         sus_score: susScore,
       });
-      if (susError) throw susError;
+      if (susError) throwSupabaseError('SUS survey save failed', susError);
 
       const { error: postError } = await supabase.from('post_survey_responses').insert({
         participant_id: participant.id,
@@ -128,7 +151,7 @@ export default function EndSurveyScreen() {
         debrief_q3: debrief.q3,
         debrief_q4: debrief.q4,
       });
-      if (postError) throw postError;
+      if (postError) throwSupabaseError('Post-survey save failed', postError);
 
       const { data: updatedRows, error: updateError } = await supabase
         .from('space_utilization_scores')
@@ -138,7 +161,7 @@ export default function EndSurveyScreen() {
         })
         .eq('participant_id', participant.id)
         .select('id');
-      if (updateError) throw updateError;
+      if (updateError) throwSupabaseError('Space score update failed', updateError);
 
       if (!updatedRows || updatedRows.length === 0) {
         const { error: insertScoreError } = await supabase.from('space_utilization_scores').insert({
@@ -147,12 +170,13 @@ export default function EndSurveyScreen() {
           score_after: spaceScoreAfter,
           improvement_points: improvement,
         });
-        if (insertScoreError) throw insertScoreError;
+        if (insertScoreError) throwSupabaseError('Space score insert failed', insertScoreError);
       }
 
       setSubmitted(true);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : String(error));
+      console.error('Evaluation submit error:', error);
+      setSubmitError(getErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
