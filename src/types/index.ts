@@ -68,6 +68,8 @@ export interface Violation {
   priorityScore: number;
   furnitureId: string;
   furnitureLabel: string;
+  itemBId?: string | 'wall';
+  wallSide?: 'west' | 'east' | 'north' | 'south';
   fixDirectionLabel: string;
   fixDirectionCm: number;
   resolved: boolean;

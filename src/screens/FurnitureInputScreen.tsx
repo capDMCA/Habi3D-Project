@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay } from '@react-three/xr';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import ARMeasureSession from '../ar/ARMeasureSession';
 import { createFurnitureShape } from '../ar/shapeLibrary';
-import type { FurnitureCategory, FurnitureShape } from '../types';
+import type { FurnitureCategory, FurnitureItem, FurnitureShape } from '../types';
 
 const xrMeasureStore = createXRStore({
   offerSession: false,
@@ -87,11 +88,61 @@ function ShapePreview({
   );
 }
 
+function getCategoryLabel(category: FurnitureCategory) {
+  return CATEGORIES.find((option) => option.value === category)?.label ?? 'Furniture';
+}
+
+function getShapeLabel(shape: FurnitureShape) {
+  return SHAPES.find((option) => option.value === shape)?.label ?? shape;
+}
+
+function FurnitureAddedPanel({
+  items,
+  onRemove,
+}: {
+  items: FurnitureItem[];
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div className="card card-sm" style={addedPanelStyle}>
+      <div style={addedHeaderStyle}>
+        <div>
+          <p className="card-title">Furniture added</p>
+          <p className="card-subtitle">
+            {items.length} item{items.length === 1 ? '' : 's'} ready for position mapping
+          </p>
+        </div>
+        <span style={countBadgeStyle}>{items.length}</span>
+      </div>
+
+      <div style={addedListStyle}>
+        {items.map((item) => (
+          <div key={item.id} style={addedItemStyle}>
+            <div style={{ minWidth: 0 }}>
+              <p style={addedItemTitleStyle}>{item.label}</p>
+              <p style={addedItemMetaStyle}>
+                {getCategoryLabel(item.category)} - {getShapeLabel(item.shape)}
+              </p>
+              <p style={addedItemDimsStyle}>
+                {item.lengthCm} x {item.widthCm} x {item.heightCm} cm
+              </p>
+            </div>
+            <button type="button" style={removeButtonStyle} onClick={() => onRemove(item.id)}>
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function FurnitureInputScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const roomDimensions = useSessionStore((s) => s.roomDimensions);
   const items = useFurnitureStore((s) => s.items);
   const addItem = useFurnitureStore((s) => s.addItem);
+  const removeItem = useFurnitureStore((s) => s.removeItem);
 
   const [category, setCategory] = useState<FurnitureCategory | ''>('');
   const [shape, setShape] = useState<FurnitureShape | ''>('');
@@ -232,12 +283,7 @@ export default function FurnitureInputScreen() {
         )}
 
         {items.length > 0 && (
-          <div className="card card-sm">
-            <p className="card-title">Furniture Added</p>
-            <p className="card-subtitle">
-              {items.length} item{items.length === 1 ? '' : 's'} ready for position mapping
-            </p>
-          </div>
+          <FurnitureAddedPanel items={items} onRemove={removeItem} />
         )}
 
         <div className="card">
@@ -249,18 +295,18 @@ export default function FurnitureInputScreen() {
             </div>
           </div>
 
-          <div className="option-group">
+          <div style={choiceGridStyle}>
             {CATEGORIES.map((option) => (
               <button
                 key={option.value}
                 type="button"
-                className={`option-item ${category === option.value ? 'selected' : ''}`}
+                style={category === option.value ? selectedChoiceStyle : choiceStyle}
                 onClick={() => {
                   setCategory(option.value);
                   if (!label) setLabel(option.label);
                 }}
               >
-                <span>{option.label}</span>
+                <span style={choiceLabelStyle}>{option.label}</span>
               </button>
             ))}
           </div>
@@ -276,19 +322,16 @@ export default function FurnitureInputScreen() {
               </div>
             </div>
 
-            <div className="option-group">
+            <div style={shapeGridStyle}>
               {SHAPES.map((option) => (
                 <button
                   key={option.value}
                   type="button"
-                  className={`option-item ${shape === option.value ? 'selected' : ''}`}
+                  style={shape === option.value ? selectedShapeStyle : shapeChoiceStyle}
                   onClick={() => setShape(option.value)}
                 >
-                  <span>
-                    <strong>{option.label}</strong>
-                    <br />
-                    <span className="form-sublabel">{option.hint}</span>
-                  </span>
+                  <strong style={choiceLabelStyle}>{option.label}</strong>
+                  <span className="form-sublabel">{option.hint}</span>
                 </button>
               ))}
             </div>
@@ -318,7 +361,7 @@ export default function FurnitureInputScreen() {
               />
             </div>
 
-            <div className="form-group">
+            <div className="form-group" style={previewPanelStyle}>
               <label className="form-label">Shape Preview</label>
               <ShapePreview
                 shape={shape}
@@ -332,7 +375,7 @@ export default function FurnitureInputScreen() {
               <label className="form-label" htmlFor="length-cm">
                 Length <span className="form-sublabel">(cm)</span>
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+              <div style={measureRowStyle}>
                 <input
                   id="length-cm"
                   className="form-input"
@@ -344,10 +387,10 @@ export default function FurnitureInputScreen() {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  style={{ width: 'auto', minWidth: 112 }}
+                  style={measureButtonStyle}
                   onClick={() => startMeasurement('length')}
                 >
-                  AR
+                  Measure
                 </button>
               </div>
             </div>
@@ -356,7 +399,7 @@ export default function FurnitureInputScreen() {
               <label className="form-label" htmlFor="width-cm">
                 Width <span className="form-sublabel">(cm)</span>
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+              <div style={measureRowStyle}>
                 <input
                   id="width-cm"
                   className="form-input"
@@ -368,10 +411,10 @@ export default function FurnitureInputScreen() {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  style={{ width: 'auto', minWidth: 112 }}
+                  style={measureButtonStyle}
                   onClick={() => startMeasurement('width')}
                 >
-                  AR
+                  Measure
                 </button>
               </div>
             </div>
@@ -493,3 +536,146 @@ export default function FurnitureInputScreen() {
     </>
   );
 }
+
+const choiceGridStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gap: 10,
+};
+
+const shapeGridStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '1fr',
+  gap: 10,
+};
+
+const choiceStyle: CSSProperties = {
+  minHeight: 54,
+  border: '1px solid var(--border)',
+  borderRadius: 14,
+  background: '#ffffff',
+  color: 'var(--text-primary)',
+  padding: '12px 14px',
+  textAlign: 'left',
+  boxShadow: 'var(--shadow-sm)',
+};
+
+const selectedChoiceStyle: CSSProperties = {
+  ...choiceStyle,
+  border: '2px solid #1F3864',
+  background: '#eef4ff',
+  color: '#1F3864',
+};
+
+const shapeChoiceStyle: CSSProperties = {
+  ...choiceStyle,
+  display: 'grid',
+  gap: 2,
+  minHeight: 70,
+};
+
+const selectedShapeStyle: CSSProperties = {
+  ...shapeChoiceStyle,
+  border: '2px solid #1F3864',
+  background: '#eef4ff',
+};
+
+const choiceLabelStyle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 800,
+};
+
+const previewPanelStyle: CSSProperties = {
+  border: '1px solid var(--border)',
+  borderRadius: 16,
+  padding: 12,
+  background: '#f8fafc',
+};
+
+const measureRowStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '1fr auto',
+  gap: 10,
+  alignItems: 'stretch',
+};
+
+const measureButtonStyle: CSSProperties = {
+  width: 'auto',
+  minWidth: 112,
+  borderRadius: 14,
+};
+
+const addedPanelStyle: CSSProperties = {
+  border: '1px solid #dbeafe',
+  background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+};
+
+const addedHeaderStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 12,
+  marginBottom: 12,
+};
+
+const countBadgeStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minWidth: 34,
+  height: 34,
+  borderRadius: 999,
+  background: '#1F3864',
+  color: '#ffffff',
+  fontWeight: 850,
+};
+
+const addedListStyle: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+};
+
+const addedItemStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '1fr auto',
+  alignItems: 'center',
+  gap: 10,
+  padding: 12,
+  borderRadius: 14,
+  border: '1px solid var(--border)',
+  background: '#ffffff',
+};
+
+const addedItemTitleStyle: CSSProperties = {
+  margin: 0,
+  color: 'var(--text-primary)',
+  fontSize: 14,
+  fontWeight: 850,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const addedItemMetaStyle: CSSProperties = {
+  margin: '2px 0 0',
+  color: '#64748b',
+  fontSize: 12,
+  fontWeight: 650,
+};
+
+const addedItemDimsStyle: CSSProperties = {
+  margin: '2px 0 0',
+  color: '#1F3864',
+  fontSize: 12,
+  fontWeight: 800,
+};
+
+const removeButtonStyle: CSSProperties = {
+  minHeight: 36,
+  borderRadius: 12,
+  border: '1px solid #fecaca',
+  background: '#fff7f7',
+  color: '#b91c1c',
+  padding: '0 10px',
+  fontWeight: 800,
+};

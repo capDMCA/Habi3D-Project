@@ -4,7 +4,7 @@ import { MULBERRY_PLACE_2BR } from '../data/roomData';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
-import { insertParticipant, supabase } from '../supabase';
+import { hasSupabaseConfig, insertParticipant, supabase, supabaseConfigMessage } from '../supabase';
 import type { RoomDimensions } from '../types';
 import { drawFloorPlan } from '../utils/floorPlan';
 import { generateReport } from '../utils/pdfExport';
@@ -85,6 +85,7 @@ export default function EndSurveyScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [submitStatus, setSubmitStatus] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [floorPlanDataUrl, setFloorPlanDataUrl] = useState('');
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
@@ -92,6 +93,8 @@ export default function EndSurveyScreen() {
   const improvement = spaceScoreAfter - spaceScoreBefore;
   const susComplete = susResponses.every((value) => value >= 1 && value <= 5);
   const postComplete = postResponses.every((value) => value >= 1 && value <= 5);
+  const missingSusCount = susResponses.filter((value) => value < 1 || value > 5).length;
+  const missingPostCount = postResponses.filter((value) => value < 1 || value > 5).length;
   const susScore = susComplete ? computeSusScore(susResponses) : 0;
 
   useEffect(() => {
@@ -117,15 +120,24 @@ export default function EndSurveyScreen() {
 
   async function handleSubmit() {
     if (!susComplete || !postComplete) {
-      setSubmitError('Complete all SUS and post-survey ratings before submitting.');
+      setSubmitError(
+        `Complete all ratings before submitting. Missing: ${missingSusCount} SUS item${missingSusCount === 1 ? '' : 's'} and ${missingPostCount} post-survey item${missingPostCount === 1 ? '' : 's'}.`,
+      );
+      return;
+    }
+
+    if (!hasSupabaseConfig) {
+      setSubmitError(supabaseConfigMessage);
       return;
     }
 
     setSubmitting(true);
     setSubmitError('');
+    setSubmitStatus('Preparing participant record...');
 
     try {
       const participant = await getParticipantForSubmit();
+      setSubmitStatus('Saving SUS responses...');
       const susPayload = susResponses.reduce<Record<string, number>>((payload, value, index) => {
         payload[`q${index + 1}`] = value;
         return payload;
@@ -138,6 +150,7 @@ export default function EndSurveyScreen() {
       });
       if (susError) throwSupabaseError('SUS survey save failed', susError);
 
+      setSubmitStatus('Saving post-survey responses...');
       const { error: postError } = await supabase.from('post_survey_responses').insert({
         participant_id: participant.id,
         spatial_awareness_improvement: postResponses[0],
@@ -153,6 +166,7 @@ export default function EndSurveyScreen() {
       });
       if (postError) throwSupabaseError('Post-survey save failed', postError);
 
+      setSubmitStatus('Updating space utilization score...');
       const { data: updatedRows, error: updateError } = await supabase
         .from('space_utilization_scores')
         .update({
@@ -174,9 +188,11 @@ export default function EndSurveyScreen() {
       }
 
       setSubmitted(true);
+      setSubmitStatus('Session saved.');
     } catch (error) {
       console.error('Evaluation submit error:', error);
       setSubmitError(getErrorMessage(error));
+      setSubmitStatus('');
     } finally {
       setSubmitting(false);
     }
@@ -227,6 +243,13 @@ export default function EndSurveyScreen() {
         </p>
       </section>
 
+      {!hasSupabaseConfig && (
+        <div className="card" style={{ borderLeft: '5px solid #F0A500', color: '#92400E' }}>
+          <p style={{ margin: 0, color: '#92400E', fontWeight: 800 }}>Supabase is not connected</p>
+          <p style={{ margin: '6px 0 0', color: '#92400E', fontSize: 13 }}>{supabaseConfigMessage}</p>
+        </div>
+      )}
+
       <SurveySection
         title="Please rate Habi3D — System Usability Scale"
         subtitle="1 = strongly disagree, 5 = strongly agree"
@@ -269,14 +292,26 @@ export default function EndSurveyScreen() {
         </div>
       )}
 
+      {!submitted && (
+        <div className="card card-sm" style={{ background: '#F8FAFC' }}>
+          <p className="card-title">Submission checklist</p>
+          <p className="card-subtitle">
+            SUS: {susComplete ? 'complete' : `${missingSusCount} unanswered`} | Post-survey:{' '}
+            {postComplete ? 'complete' : `${missingPostCount} unanswered`} | Supabase:{' '}
+            {hasSupabaseConfig ? 'configured' : 'missing env vars'}
+          </p>
+          {submitStatus && <p style={{ margin: '8px 0 0', color: '#1F3864', fontWeight: 800 }}>{submitStatus}</p>}
+        </div>
+      )}
+
       {submitted && (
         <div className="card" style={{ borderLeft: '5px solid #4CAF50', background: '#ECFDF5', color: '#166534', fontWeight: 800 }}>
           Session saved
         </div>
       )}
 
-      <button className="btn btn-primary" type="button" onClick={handleSubmit} disabled={submitting || submitted || !susComplete || !postComplete}>
-        {submitting ? 'Submitting evaluation...' : 'Submit evaluation'}
+      <button className="btn btn-primary" type="button" onClick={handleSubmit} disabled={submitting || submitted}>
+        {submitting ? submitStatus || 'Submitting evaluation...' : 'Submit evaluation'}
       </button>
 
       {submitted && (

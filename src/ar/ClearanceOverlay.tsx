@@ -28,9 +28,8 @@ interface ZoneDefinition {
   id: string;
   centerX: number;
   centerZ: number;
-  planeWidth: number;
-  planeDepth: number;
-  planeRotY: number;
+  sizeX: number;
+  sizeZ: number;
   color: string;
   baseOpacity: number;
   classification: GapClassificationLevel;
@@ -66,7 +65,7 @@ function getBounds(item: FurnitureItem): BoundsM {
   };
 }
 
-function getZoneSize(value: number, minimum = 0.03): number {
+function zoneSize(value: number, minimum = 0.035): number {
   return Math.max(Math.abs(value), minimum);
 }
 
@@ -76,47 +75,41 @@ function getWallZone(
   bounds: BoundsM,
   roomWidthM: number,
   roomLengthM: number,
-): Pick<ZoneDefinition, 'centerX' | 'centerZ' | 'planeWidth' | 'planeDepth' | 'planeRotY'> {
-  const side = classification.wallSide ?? 'west';
-
-  if (side === 'west') {
-    return {
-      centerX: bounds.minX / 2,
-      centerZ: item.posZ,
-      planeWidth: getZoneSize(bounds.minX),
-      planeDepth: getZoneSize(bounds.widthM),
-      planeRotY: 0,
-    };
-  }
-
-  if (side === 'east') {
+): Pick<ZoneDefinition, 'centerX' | 'centerZ' | 'sizeX' | 'sizeZ'> {
+  if (classification.wallSide === 'east') {
     const gap = roomWidthM - bounds.maxX;
     return {
       centerX: (bounds.maxX + roomWidthM) / 2,
       centerZ: item.posZ,
-      planeWidth: getZoneSize(gap),
-      planeDepth: getZoneSize(bounds.widthM),
-      planeRotY: 0,
+      sizeX: zoneSize(gap),
+      sizeZ: zoneSize(bounds.widthM),
     };
   }
 
-  if (side === 'north') {
+  if (classification.wallSide === 'north') {
     return {
       centerX: item.posX,
       centerZ: bounds.minZ / 2,
-      planeWidth: getZoneSize(bounds.lengthM),
-      planeDepth: getZoneSize(bounds.minZ),
-      planeRotY: Math.PI / 2,
+      sizeX: zoneSize(bounds.lengthM),
+      sizeZ: zoneSize(bounds.minZ),
     };
   }
 
-  const gap = roomLengthM - bounds.maxZ;
+  if (classification.wallSide === 'south') {
+    const gap = roomLengthM - bounds.maxZ;
+    return {
+      centerX: item.posX,
+      centerZ: (bounds.maxZ + roomLengthM) / 2,
+      sizeX: zoneSize(bounds.lengthM),
+      sizeZ: zoneSize(gap),
+    };
+  }
+
   return {
-    centerX: item.posX,
-    centerZ: (bounds.maxZ + roomLengthM) / 2,
-    planeWidth: getZoneSize(bounds.lengthM),
-    planeDepth: getZoneSize(gap),
-    planeRotY: Math.PI / 2,
+    centerX: bounds.minX / 2,
+    centerZ: item.posZ,
+    sizeX: zoneSize(bounds.minX),
+    sizeZ: zoneSize(bounds.widthM),
   };
 }
 
@@ -125,37 +118,44 @@ function getPairZone(
   itemB: FurnitureItem,
   boundsA: BoundsM,
   boundsB: BoundsM,
-): Pick<ZoneDefinition, 'centerX' | 'centerZ' | 'planeWidth' | 'planeDepth' | 'planeRotY'> | null {
+): Pick<ZoneDefinition, 'centerX' | 'centerZ' | 'sizeX' | 'sizeZ'> {
   if (boundsA.maxX <= boundsB.minX || boundsB.maxX <= boundsA.minX) {
     const left = boundsA.maxX <= boundsB.minX ? boundsA : boundsB;
     const right = boundsA.maxX <= boundsB.minX ? boundsB : boundsA;
+    const overlapMinZ = Math.max(left.minZ, right.minZ);
+    const overlapMaxZ = Math.min(left.maxZ, right.maxZ);
+    const fallbackZ = Math.min(itemA.widthCm, itemB.widthCm) / 100;
+    const sizeZ = overlapMaxZ > overlapMinZ ? overlapMaxZ - overlapMinZ : fallbackZ * 0.7;
+
     return {
       centerX: (left.maxX + right.minX) / 2,
-      centerZ: (itemA.posZ + itemB.posZ) / 2,
-      planeWidth: Math.min(itemA.widthCm, itemB.widthCm) / 100,
-      planeDepth: getZoneSize(right.minX - left.maxX),
-      planeRotY: 0,
+      centerZ: overlapMaxZ > overlapMinZ ? (overlapMinZ + overlapMaxZ) / 2 : (itemA.posZ + itemB.posZ) / 2,
+      sizeX: zoneSize(right.minX - left.maxX),
+      sizeZ: zoneSize(sizeZ),
     };
   }
 
   if (boundsA.maxZ <= boundsB.minZ || boundsB.maxZ <= boundsA.minZ) {
     const near = boundsA.maxZ <= boundsB.minZ ? boundsA : boundsB;
     const far = boundsA.maxZ <= boundsB.minZ ? boundsB : boundsA;
+    const overlapMinX = Math.max(near.minX, far.minX);
+    const overlapMaxX = Math.min(near.maxX, far.maxX);
+    const fallbackX = Math.min(itemA.lengthCm, itemB.lengthCm) / 100;
+    const sizeX = overlapMaxX > overlapMinX ? overlapMaxX - overlapMinX : fallbackX * 0.7;
+
     return {
-      centerX: (itemA.posX + itemB.posX) / 2,
+      centerX: overlapMaxX > overlapMinX ? (overlapMinX + overlapMaxX) / 2 : (itemA.posX + itemB.posX) / 2,
       centerZ: (near.maxZ + far.minZ) / 2,
-      planeWidth: Math.min(itemA.lengthCm, itemB.lengthCm) / 100,
-      planeDepth: getZoneSize(far.minZ - near.maxZ),
-      planeRotY: Math.PI / 2,
+      sizeX: zoneSize(sizeX),
+      sizeZ: zoneSize(far.minZ - near.maxZ),
     };
   }
 
   return {
     centerX: (itemA.posX + itemB.posX) / 2,
     centerZ: (itemA.posZ + itemB.posZ) / 2,
-    planeWidth: 0.16,
-    planeDepth: 0.16,
-    planeRotY: 0,
+    sizeX: 0.16,
+    sizeZ: 0.16,
   };
 }
 
@@ -175,7 +175,7 @@ function buildZone(
     color: ZONE_COLOR[classification.classification],
     baseOpacity: ZONE_OPACITY[classification.classification],
     classification: classification.classification,
-    label: `${classification.ruleCode} — ${classification.measuredCm}cm`,
+    label: `${classification.ruleCode} - ${classification.measuredCm}cm`,
     highlighted: highlightedRuleCode === classification.ruleCode,
   };
 
@@ -189,12 +189,9 @@ function buildZone(
   const itemB = itemMap.get(classification.itemBId);
   if (!itemB) return null;
 
-  const pairZone = getPairZone(itemA, itemB, boundsA, getBounds(itemB));
-  if (!pairZone) return null;
-
   return {
     ...base,
-    ...pairZone,
+    ...getPairZone(itemA, itemB, boundsA, getBounds(itemB)),
   };
 }
 
@@ -228,8 +225,8 @@ function Zone({ zone }: { zone: ZoneDefinition }) {
 
   return (
     <group position={[zone.centerX, 0.008, zone.centerZ]}>
-      <mesh rotation={[-Math.PI / 2, 0, zone.planeRotY]}>
-        <planeGeometry args={[zone.planeWidth, zone.planeDepth]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[zone.sizeX, zone.sizeZ]} />
         <primitive object={material} attach="material" />
       </mesh>
       {zone.classification !== 'GREEN' && (

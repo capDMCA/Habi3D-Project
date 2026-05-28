@@ -123,6 +123,8 @@ function makeViolation(params: {
   requiredCm: number;
   affectedEdgeLengthCm: number;
   item: FurnitureItem;
+  itemBId?: string | 'wall';
+  wallSide?: WallSide;
   fixDirectionLabel: string;
 }): Violation {
   const severityWeight = params.classification === 'RED' ? 3 : 1;
@@ -145,6 +147,8 @@ function makeViolation(params: {
     ),
     furnitureId: params.item.id,
     furnitureLabel: params.item.label,
+    itemBId: params.itemBId,
+    wallSide: params.wallSide,
     fixDirectionLabel: params.fixDirectionLabel,
     fixDirectionCm: Math.max(0, Math.round(params.requiredCm - params.measuredCm + 5)),
     resolved: false,
@@ -189,6 +193,7 @@ function addPairCheck(params: {
       requiredCm: requiredForClassification(classification, params.ruleCode),
       affectedEdgeLengthCm: Math.max(params.a.item.lengthCm, params.a.item.widthCm),
       item: params.a.item,
+      itemBId: params.b.item.id,
       fixDirectionLabel: gap.directionLabel,
     }),
   );
@@ -224,6 +229,8 @@ function addWallCheck(params: {
       requiredCm: requiredForClassification(classification, params.ruleCode),
       affectedEdgeLengthCm: Math.max(params.bounds.item.lengthCm, params.bounds.item.widthCm),
       item: params.bounds.item,
+      itemBId: 'wall',
+      wallSide: params.wallGap.wallSide,
       fixDirectionLabel: params.wallGap.directionLabel,
     }),
   );
