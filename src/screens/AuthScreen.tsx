@@ -279,6 +279,26 @@ export default function AuthScreen() {
           </button>
         </div>
 
+        {/* Guest / demo bypass — works without Supabase */}
+        <div style={{ marginTop: 'var(--space-sm)', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+            — or —
+          </p>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ fontSize: '0.875rem' }}
+            onClick={() => {
+              setUsername('Guest');
+              setUserId(null);
+              setIsAdmin(false);
+              navigateTo('unitSetup');
+            }}
+          >
+            Continue as Guest
+          </button>
+        </div>
+
       </div>
     </div>
   );
