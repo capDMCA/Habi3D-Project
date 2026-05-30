@@ -191,7 +191,7 @@ function addPairCheck(params: {
       classification,
       measuredCm: gap.measuredCm,
       requiredCm: requiredForClassification(classification, params.ruleCode),
-      affectedEdgeLengthCm: Math.max(params.a.item.lengthCm, params.a.item.widthCm),
+      affectedEdgeLengthCm: gap.gapX >= gap.gapZ ? params.a.item.widthCm : params.a.item.lengthCm,
       item: params.a.item,
       itemBId: params.b.item.id,
       fixDirectionLabel: gap.directionLabel,
@@ -227,7 +227,10 @@ function addWallCheck(params: {
       classification,
       measuredCm: params.wallGap.measuredCm,
       requiredCm: requiredForClassification(classification, params.ruleCode),
-      affectedEdgeLengthCm: Math.max(params.bounds.item.lengthCm, params.bounds.item.widthCm),
+      affectedEdgeLengthCm:
+        params.wallGap.wallSide === 'west' || params.wallGap.wallSide === 'east'
+          ? params.bounds.item.widthCm
+          : params.bounds.item.lengthCm,
       item: params.bounds.item,
       itemBId: 'wall',
       wallSide: params.wallGap.wallSide,
