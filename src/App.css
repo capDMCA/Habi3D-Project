@@ -594,15 +594,105 @@
 /* --- Spacer --- */
 .spacer { flex: 1; }
 
-/* --- Auth Tabs --- */
+/* ─── Auth Screen (full redesign) ──────────────────────────────────── */
+
+.auth-screen-root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, #0a1628 0%, #101f38 30%, #172d52 65%, #1F3864 100%);
+  position: relative;
+  overflow: hidden;
+  animation: screenFadeIn 0.4s ease;
+}
+
+/* Decorative radial orbs */
+.auth-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.auth-orb-1 {
+  width: 380px;
+  height: 380px;
+  background: radial-gradient(circle, rgba(43, 78, 140, 0.55) 0%, transparent 65%);
+  top: -140px;
+  right: -100px;
+}
+
+.auth-orb-2 {
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(31, 56, 100, 0.6) 0%, transparent 70%);
+  top: 80px;
+  left: -100px;
+}
+
+.auth-orb-3 {
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(99, 153, 34, 0.2) 0%, transparent 70%);
+  bottom: 320px;
+  right: 20px;
+}
+
+/* Hero branding area */
+.auth-hero {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 48px 28px 40px;
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.auth-app-name {
+  font-size: clamp(3rem, 12vw, 3.75rem);
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  margin: 0 0 14px;
+}
+
+.auth-app-tagline {
+  font-size: 0.9375rem;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.6;
+  max-width: 260px;
+  margin: 0 auto;
+  font-weight: 400;
+}
+
+/* Bottom sheet form area */
+.auth-form-section {
+  background: var(--bg);
+  border-radius: 28px 28px 0 0;
+  padding: 28px 20px calc(36px + env(safe-area-inset-bottom, 0px));
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.25);
+  animation: authSheetSlide 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes authSheetSlide {
+  from { transform: translateY(32px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* Tabs inside the form section */
 .auth-tabs {
   display: flex;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   overflow: hidden;
-  max-width: 360px;
   width: 100%;
-  margin: 0 auto var(--space-md);
+  margin-bottom: var(--space-md);
   box-shadow: var(--shadow-sm);
   background: var(--card);
 }

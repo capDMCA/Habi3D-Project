@@ -132,158 +132,155 @@ export default function AuthScreen() {
   }
 
   return (
-    <div className="screen entry-screen">
-      {/* Logo */}
-      <div className="entry-logo">
-        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="6" y="18" width="28" height="16" rx="2" stroke="white" strokeWidth="2.5" fill="none" />
-          <path d="M12 18V10a8 8 0 0 1 16 0v8" stroke="white" strokeWidth="2.5" fill="none" />
-          <rect x="14" y="22" width="5" height="8" rx="1" fill="white" opacity="0.6" />
-          <rect x="21" y="22" width="5" height="8" rx="1" fill="white" opacity="0.6" />
-        </svg>
+    <div className="auth-screen-root">
+      {/* Decorative depth orbs */}
+      <div className="auth-orb auth-orb-1" />
+      <div className="auth-orb auth-orb-2" />
+      <div className="auth-orb auth-orb-3" />
+
+      {/* Hero branding */}
+      <div className="auth-hero">
+        <h1 className="auth-app-name">Habi3D</h1>
+        <p style={{ fontSize: '1rem', fontWeight: 500, color: 'rgba(255,255,255,0.7)', margin: '0 0 10px', letterSpacing: '0.015em' }}>
+          for Mulberry Place
+        </p>
+        <p className="auth-app-tagline">
+          Analyze your furniture clearance in AR.
+        </p>
       </div>
 
-      <h1 className="entry-title">Habi3D</h1>
-      <p className="entry-subtitle" style={{ marginBottom: 'var(--space-lg)' }}>
-        Furniture Spatial Clearance Analysis
-        <br />
-        for Philippine Condominium Units
-      </p>
+      {/* Bottom-sheet form */}
+      <div className="auth-form-section" onKeyDown={handleKeyDown}>
 
-      {/* Login / Create Account tabs */}
-      <div className="auth-tabs">
-        <button
-          type="button"
-          className={`auth-tab${mode === 'login' ? ' active' : ''}`}
-          onClick={() => switchMode('login')}
-        >
-          Log In
-        </button>
-        <button
-          type="button"
-          className={`auth-tab${mode === 'register' ? ' active' : ''}`}
-          onClick={() => switchMode('register')}
-        >
-          Create Account
-        </button>
-      </div>
-
-      <div className="card entry-card" onKeyDown={handleKeyDown}>
-        {/* Username */}
-        <div className="form-group">
-          <label className="form-label" htmlFor="auth-username">Username</label>
-          <input
-            id="auth-username"
-            className="form-input"
-            type="text"
-            autoComplete="username"
-            placeholder="Enter your username"
-            value={usernameInput}
-            onChange={(e) => setUsernameInput(e.target.value)}
-          />
-        </div>
-
-        {/* Password */}
-        <div className="form-group" style={{ marginBottom: mode === 'login' ? 0 : undefined }}>
-          <label className="form-label" htmlFor="auth-password">Password</label>
-          <input
-            id="auth-password"
-            className="form-input"
-            type="password"
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            placeholder={mode === 'login' ? 'Enter your password' : 'Min. 6 characters'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-
-        {/* Register-only fields */}
-        {mode === 'register' && (
-          <>
-            <div className="form-group">
-              <label className="form-label" htmlFor="auth-confirm">Confirm Password</label>
-              <input
-                id="auth-confirm"
-                className="form-input"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Re-enter your password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="auth-building">Building</label>
-              <select
-                id="auth-building"
-                className="form-input form-select"
-                value={building}
-                onChange={(e) => setBuilding(e.target.value)}
-              >
-                <option value="">Select your building</option>
-                {BUILDINGS.map((b) => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" htmlFor="auth-unit">
-                Unit Number
-                <span className="form-sublabel"> (e.g. 12A, 5B)</span>
-              </label>
-              <input
-                id="auth-unit"
-                className="form-input"
-                type="text"
-                placeholder="Enter your unit number"
-                value={unitNumber}
-                onChange={(e) => setUnitNumber(e.target.value)}
-              />
-            </div>
-          </>
-        )}
-
-        {error && (
-          <div
-            style={{
-              marginTop: 'var(--space-md)',
-              padding: '10px 14px',
-              background: 'var(--danger-bg)',
-              border: '1px solid var(--danger-border)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--danger)',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-            }}
+        {/* Login / Create Account tabs */}
+        <div className="auth-tabs">
+          <button
+            type="button"
+            className={`auth-tab${mode === 'login' ? ' active' : ''}`}
+            onClick={() => switchMode('login')}
           >
-            {error}
+            Log In
+          </button>
+          <button
+            type="button"
+            className={`auth-tab${mode === 'register' ? ' active' : ''}`}
+            onClick={() => switchMode('register')}
+          >
+            Create Account
+          </button>
+        </div>
+
+        {/* Form card */}
+        <div className="card" style={{ marginBottom: 'var(--space-sm)' }}>
+          {/* Username */}
+          <div className="form-group">
+            <label className="form-label" htmlFor="auth-username">Username</label>
+            <input
+              id="auth-username"
+              className="form-input"
+              type="text"
+              autoComplete="username"
+              placeholder="Enter your username"
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+            />
           </div>
-        )}
 
-        <button
-          id={mode === 'login' ? 'login-btn' : 'register-btn'}
-          className="btn btn-primary"
-          type="button"
-          style={{ marginTop: 'var(--space-md)' }}
-          disabled={loading}
-          onClick={mode === 'login' ? handleLogin : handleRegister}
-        >
-          {loading
-            ? (mode === 'login' ? 'Logging in...' : 'Creating account...')
-            : (mode === 'login' ? 'Log In' : 'Create Account')}
-        </button>
+          {/* Password */}
+          <div className="form-group" style={{ marginBottom: mode === 'login' ? 0 : undefined }}>
+            <label className="form-label" htmlFor="auth-password">Password</label>
+            <input
+              id="auth-password"
+              className="form-input"
+              type="password"
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              placeholder={mode === 'login' ? 'Enter your password' : 'Min. 6 characters'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          {/* Register-only fields */}
+          {mode === 'register' && (
+            <>
+              <div className="form-group">
+                <label className="form-label" htmlFor="auth-confirm">Confirm Password</label>
+                <input
+                  id="auth-confirm"
+                  className="form-input"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Re-enter your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="auth-building">Building</label>
+                <select
+                  id="auth-building"
+                  className="form-input form-select"
+                  value={building}
+                  onChange={(e) => setBuilding(e.target.value)}
+                >
+                  <option value="">Select your building</option>
+                  {BUILDINGS.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" htmlFor="auth-unit">
+                  Unit Number
+                  <span className="form-sublabel"> (e.g. 12A, 5B)</span>
+                </label>
+                <input
+                  id="auth-unit"
+                  className="form-input"
+                  type="text"
+                  placeholder="Enter your unit number"
+                  value={unitNumber}
+                  onChange={(e) => setUnitNumber(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {error && (
+            <div
+              style={{
+                marginTop: 'var(--space-md)',
+                padding: '10px 14px',
+                background: 'var(--danger-bg)',
+                border: '1px solid var(--danger-border)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--danger)',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <button
+            id={mode === 'login' ? 'login-btn' : 'register-btn'}
+            className="btn btn-primary"
+            type="button"
+            style={{ marginTop: 'var(--space-md)' }}
+            disabled={loading}
+            onClick={mode === 'login' ? handleLogin : handleRegister}
+          >
+            {loading
+              ? (mode === 'login' ? 'Logging in...' : 'Creating account...')
+              : (mode === 'login' ? 'Log In' : 'Create Account')}
+          </button>
+        </div>
+
       </div>
-
-      <button
-        type="button"
-        className="btn btn-secondary"
-        style={{ maxWidth: 360, marginTop: 'var(--space-sm)', opacity: 0.6, fontSize: '0.875rem' }}
-        onClick={() => navigateTo('arDemo')}
-      >
-        Test AR Capabilities
-      </button>
     </div>
   );
 }
+
