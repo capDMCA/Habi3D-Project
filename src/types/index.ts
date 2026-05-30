@@ -22,6 +22,8 @@ export type FurnitureCategory =
   | 'dining_table'
   | 'dining_chair'
   | 'cabinet'
+  | 'side_table'
+  | 'work_desk'
   | 'other';
 
 export interface FurnitureItem {

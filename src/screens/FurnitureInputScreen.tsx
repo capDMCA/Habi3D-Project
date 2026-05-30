@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay } from '@react-three/xr';
@@ -16,14 +16,22 @@ const xrMeasureStore = createXRStore({
   domOverlay: true,
 });
 
-const CATEGORIES: Array<{ value: FurnitureCategory; label: string }> = [
-  { value: 'sofa', label: 'Sofa' },
-  { value: 'coffee_table', label: 'Coffee Table' },
-  { value: 'tv_stand', label: 'TV Stand' },
-  { value: 'dining_table', label: 'Dining Table' },
-  { value: 'dining_chair', label: 'Dining Chair' },
-  { value: 'cabinet', label: 'Cabinet' },
-  { value: 'other', label: 'Other' },
+const CATEGORIES: Array<{
+  key: FurnitureCategory;
+  label: string;
+  icon: string;
+  rules: string[];
+  shapes: FurnitureShape[];
+}> = [
+  { key: 'dining_table', label: 'Dining Table', icon: '🍽', rules: ['D1', 'D2', 'D3', 'D4', 'D5'], shapes: ['rectangle', 'round', 'oval'] },
+  { key: 'dining_chair', label: 'Dining Chair', icon: '🪑', rules: ['D2', 'D3', 'D4'], shapes: ['rectangle'] },
+  { key: 'sofa', label: 'Sofa', icon: '🛋', rules: ['L1', 'L2', 'L3', 'L5'], shapes: ['rectangle', 'l-shape'] },
+  { key: 'tv_stand', label: 'TV Stand', icon: '📺', rules: ['L1', 'L4'], shapes: ['rectangle'] },
+  { key: 'cabinet', label: 'Cabinet / Storage', icon: '🗄', rules: ['L1', 'L3'], shapes: ['rectangle'] },
+  { key: 'side_table', label: 'Side Table', icon: '🪵', rules: ['L1', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
+  { key: 'coffee_table', label: 'Coffee Table', icon: '☕', rules: ['L2', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
+  { key: 'work_desk', label: 'Work Desk / Study Table', icon: '💻', rules: ['L1', 'L3'], shapes: ['rectangle'] },
+  { key: 'other', label: 'Other Furniture', icon: '📦', rules: ['L1'], shapes: ['rectangle', 'l-shape', 'round', 'oval'] },
 ];
 
 const SHAPES: Array<{ value: FurnitureShape; label: string; hint: string }> = [
@@ -89,7 +97,7 @@ function ShapePreview({
 }
 
 function getCategoryLabel(category: FurnitureCategory) {
-  return CATEGORIES.find((option) => option.value === category)?.label ?? 'Furniture';
+  return CATEGORIES.find((option) => option.key === category)?.label ?? 'Furniture';
 }
 
 function getShapeLabel(shape: FurnitureShape) {
@@ -153,6 +161,7 @@ export default function FurnitureInputScreen() {
   const [measureTarget, setMeasureTarget] = useState<MeasureTarget | null>(null);
   const [arActive, setArActive] = useState(false);
   const [arError, setArError] = useState('');
+  const labelDivRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     return xrMeasureStore.subscribe((state, prevState) => {
@@ -172,7 +181,11 @@ export default function FurnitureInputScreen() {
   );
 
   const selectedCategoryLabel =
-    CATEGORIES.find((option) => option.value === category)?.label ?? 'Furniture';
+    CATEGORIES.find((option) => option.key === category)?.label ?? 'Furniture';
+  const selectedCategoryDef = CATEGORIES.find((option) => option.key === category);
+  const availableShapes = selectedCategoryDef
+    ? SHAPES.filter((s) => selectedCategoryDef.shapes.includes(s.value))
+    : SHAPES;
   const measurementLabel =
     measureTarget === 'length'
       ? 'Measure furniture length'
@@ -298,15 +311,18 @@ export default function FurnitureInputScreen() {
           <div style={choiceGridStyle}>
             {CATEGORIES.map((option) => (
               <button
-                key={option.value}
+                key={option.key}
                 type="button"
-                style={category === option.value ? selectedChoiceStyle : choiceStyle}
+                style={category === option.key ? selectedChoiceStyle : choiceStyle}
                 onClick={() => {
-                  setCategory(option.value);
+                  setCategory(option.key);
                   if (!label) setLabel(option.label);
+                  if (shape && !option.shapes.includes(shape as FurnitureShape)) {
+                    setShape('');
+                  }
                 }}
               >
-                <span style={choiceLabelStyle}>{option.label}</span>
+                <span style={choiceLabelStyle}>{option.icon} {option.label}</span>
               </button>
             ))}
           </div>
@@ -323,7 +339,7 @@ export default function FurnitureInputScreen() {
             </div>
 
             <div style={shapeGridStyle}>
-              {SHAPES.map((option) => (
+              {availableShapes.map((option) => (
                 <button
                   key={option.value}
                   type="button"
@@ -473,6 +489,7 @@ export default function FurnitureInputScreen() {
               <ARMeasureSession
                 key={measureTarget}
                 onMeasured={handleMeasured}
+                labelDivRef={labelDivRef}
               />
             )}
 
@@ -528,6 +545,25 @@ export default function FurnitureInputScreen() {
                     Exit
                   </button>
                 </div>
+
+                <div
+                  ref={labelDivRef}
+                  style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    display: 'none',
+                    background: 'rgba(17, 24, 39, 0.88)',
+                    color: '#ffffff',
+                    padding: '6px 16px',
+                    borderRadius: 10,
+                    fontSize: 16,
+                    fontWeight: 700,
+                    pointerEvents: 'none',
+                    whiteSpace: 'nowrap',
+                    userSelect: 'none',
+                  }}
+                />
               </div>
             </XRDomOverlay>
           </XR>
