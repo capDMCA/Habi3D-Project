@@ -145,7 +145,9 @@ export default function AuthScreen() {
           for Mulberry Place
         </p>
         <p className="auth-app-tagline">
-          Analyze your furniture clearance in AR.
+          Visualize your clearance.
+          <br />
+          Rearrange with confidence.
         </p>
       </div>
 
