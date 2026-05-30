@@ -17,7 +17,7 @@ export default function EntryScreen() {
 
       <h1 className="entry-title">Habi3D</h1>
       <p className="entry-subtitle">
-        Furniture Spatial Clearance Analysis for Philippine Condominium Units
+        
       </p>
 
       {/* Start Session Card */}
@@ -31,30 +31,12 @@ export default function EntryScreen() {
         </button>
       </div>
 
-      {/* Demo Mode - quick test without Supabase */}
-      <button
-        id="demo-session-btn"
-        className="btn btn-secondary"
-        style={{ maxWidth: 360, marginTop: 'var(--space-sm)', opacity: 0.7 }}
-        onClick={() => navigateTo('unitSetup')}
-      >
-        Start Demo Session
-      </button>
-
-      {/* AR Test - verify WebXR works on device */}
-      <button
-        id="ar-test-btn"
-        className="btn btn-secondary"
-        style={{ maxWidth: 360, marginTop: 'var(--space-xs)', opacity: 0.7 }}
-        onClick={() => navigateTo('arDemo')}
-      >
-        Test AR Capabilities
-      </button>
-
-      <p className="entry-footer">
-        Mulberry Place - Acacia Estates - Taguig City
+      
+      <p className="entry-footer"> 
+        A Thesis project by AAC from Mapua University - BSIT <a target="_blank" rel="noopener noreferrer">
+         </a>
         <br />
-        Researcher-administered evaluation session
+        © 2026 Habi3D. All rights reserved.
       </p>
     </div>
   );
