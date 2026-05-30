@@ -1,4 +1,6 @@
 import { useSessionStore } from './stores/sessionStore';
+import AuthScreen from './screens/AuthScreen';
+import AdminScreen from './screens/AdminScreen';
 import EntryScreen from './screens/EntryScreen';
 import ARDemoScreen from './screens/ARDemoScreen';
 import UnitSetupScreen from './screens/UnitSetupScreen';
@@ -15,6 +17,10 @@ export default function App() {
   const currentScreen = useSessionStore((s) => s.currentScreen);
 
   switch (currentScreen) {
+    case 'auth':
+      return <AuthScreen />;
+    case 'admin':
+      return <AdminScreen />;
     case 'entry':
       return <EntryScreen />;
     case 'arDemo':
