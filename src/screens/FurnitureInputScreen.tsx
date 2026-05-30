@@ -19,19 +19,18 @@ const xrMeasureStore = createXRStore({
 const CATEGORIES: Array<{
   key: FurnitureCategory;
   label: string;
-  icon: string;
   rules: string[];
   shapes: FurnitureShape[];
 }> = [
-  { key: 'dining_table', label: 'Dining Table', icon: '🍽', rules: ['D1', 'D2', 'D3', 'D4', 'D5'], shapes: ['rectangle', 'round', 'oval'] },
-  { key: 'dining_chair', label: 'Dining Chair', icon: '🪑', rules: ['D2', 'D3', 'D4'], shapes: ['rectangle'] },
-  { key: 'sofa', label: 'Sofa', icon: '🛋', rules: ['L1', 'L2', 'L3', 'L5'], shapes: ['rectangle', 'l-shape'] },
-  { key: 'tv_stand', label: 'TV Stand', icon: '📺', rules: ['L1', 'L4'], shapes: ['rectangle'] },
-  { key: 'cabinet', label: 'Cabinet / Storage', icon: '🗄', rules: ['L1', 'L3'], shapes: ['rectangle'] },
-  { key: 'side_table', label: 'Side Table', icon: '🪵', rules: ['L1', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
-  { key: 'coffee_table', label: 'Coffee Table', icon: '☕', rules: ['L2', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
-  { key: 'work_desk', label: 'Work Desk / Study Table', icon: '💻', rules: ['L1', 'L3'], shapes: ['rectangle'] },
-  { key: 'other', label: 'Other Furniture', icon: '📦', rules: ['L1'], shapes: ['rectangle', 'l-shape', 'round', 'oval'] },
+  { key: 'dining_table', label: 'Dining Table', rules: ['D1', 'D2', 'D3', 'D4', 'D5'], shapes: ['rectangle', 'round', 'oval'] },
+  { key: 'dining_chair', label: 'Dining Chair', rules: ['D2', 'D3', 'D4'], shapes: ['rectangle'] },
+  { key: 'sofa', label: 'Sofa', rules: ['L1', 'L2', 'L3', 'L5'], shapes: ['rectangle', 'l-shape'] },
+  { key: 'tv_stand', label: 'TV Stand', rules: ['L1', 'L4'], shapes: ['rectangle'] },
+  { key: 'cabinet', label: 'Cabinet / Storage', rules: ['L1', 'L3'], shapes: ['rectangle'] },
+  { key: 'side_table', label: 'Side Table', rules: ['L1', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
+  { key: 'coffee_table', label: 'Coffee Table', rules: ['L2', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
+  { key: 'work_desk', label: 'Work Desk / Study Table', rules: ['L1', 'L3'], shapes: ['rectangle'] },
+  { key: 'other', label: 'Other Furniture', rules: ['L1'], shapes: ['rectangle', 'l-shape', 'round', 'oval'] },
 ];
 
 const SHAPES: Array<{ value: FurnitureShape; label: string; hint: string }> = [
@@ -260,7 +259,7 @@ export default function FurnitureInputScreen() {
         {/* Header */}
         <div className="screen-header">
           <button className="back-btn" onClick={() => navigateTo('unitSetup')} aria-label="Go back">
-            &lt;
+            ←
           </button>
           <div className="screen-header-info">
             <span className="step-label">Step 2 of 6</span>
@@ -322,7 +321,7 @@ export default function FurnitureInputScreen() {
                   }
                 }}
               >
-                <span style={choiceLabelStyle}>{option.icon} {option.label}</span>
+                <span style={choiceLabelStyle}>{option.label}</span>
               </button>
             ))}
           </div>

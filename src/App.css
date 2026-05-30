@@ -593,3 +593,58 @@
 
 /* --- Spacer --- */
 .spacer { flex: 1; }
+
+/* --- Auth Tabs --- */
+.auth-tabs {
+  display: flex;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  max-width: 360px;
+  width: 100%;
+  margin: 0 auto var(--space-md);
+  box-shadow: var(--shadow-sm);
+  background: var(--card);
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 13px 0;
+  border: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  background: var(--card);
+  color: var(--text-secondary);
+}
+
+.auth-tab:first-child {
+  border-right: 1px solid var(--border);
+}
+
+.auth-tab.active {
+  background: var(--primary-gradient);
+  color: #ffffff;
+}
+
+/* --- Skeleton loader --- */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* --- Status dot (replaces emoji status indicators) --- */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.status-dot-success { background: var(--success); }
+.status-dot-danger  { background: var(--danger); }
+.status-dot-muted   { background: var(--text-muted); }

@@ -221,7 +221,7 @@ export default function EndSurveyScreen() {
     <div className="screen" style={{ maxWidth: 640 }}>
       <div className="screen-header">
         <button className="back-btn" onClick={() => navigateTo('recommendations')} aria-label="Go back">
-          &lt;
+          ←
         </button>
         <div className="screen-header-info">
           <span style={stepBadgeStyle}>Evaluation</span>

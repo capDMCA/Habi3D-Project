@@ -80,7 +80,7 @@ export default function UnitSetupScreen() {
     <div className="screen">
       <div className="screen-header">
         <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
-          &lt;
+          ←
         </button>
         <div className="screen-header-info">
           <span className="step-label">Step 1 of 6</span>

@@ -3,7 +3,6 @@ import type { ScreenName } from '../types';
 
 interface ScreenMeta {
   title: string;
-  icon: string;
   step: number;
   description: string;
   prev: ScreenName;
@@ -13,7 +12,6 @@ interface ScreenMeta {
 const SCREEN_META: Record<string, ScreenMeta> = {
   roomScan: {
     title: 'Room Scan',
-    icon: '📷',
     step: 3,
     description:
       'WebXR plane detection will scan your room to create a floor plane for furniture placement.',
@@ -22,7 +20,6 @@ const SCREEN_META: Record<string, ScreenMeta> = {
   },
   positionMap: {
     title: 'Position Furniture',
-    icon: '📍',
     step: 4,
     description:
       'Tap to place each furniture item on the AR floor plane at its current real-world position.',
@@ -31,16 +28,14 @@ const SCREEN_META: Record<string, ScreenMeta> = {
   },
   analysis: {
     title: 'Clearance Analysis',
-    icon: '🔍',
     step: 5,
     description:
-      'The clearance engine will analyze all 10 rules and display RED/YELLOW/GREEN color zones on the AR floor.',
+      'The clearance engine will analyze all 10 rules and display RED / YELLOW / GREEN color zones on the AR floor.',
     prev: 'positionMap',
     next: 'recommendations',
   },
   recommendations: {
     title: 'Recommendations',
-    icon: '📋',
     step: 6,
     description:
       'Step-by-step sequential recommendations to fix violations, ranked by Priority Score.',
@@ -49,7 +44,6 @@ const SCREEN_META: Record<string, ScreenMeta> = {
   },
   end_survey: {
     title: 'Post-Session Survey',
-    icon: '📝',
     step: 6,
     description:
       'Complete the SUS usability questionnaire and post-session survey. Responses are saved to Supabase.',
@@ -58,7 +52,6 @@ const SCREEN_META: Record<string, ScreenMeta> = {
   },
   report: {
     title: 'Session Report',
-    icon: '📄',
     step: 6,
     description:
       'Generate and download a PDF report with all clearance findings, scores, and recommendations.',
@@ -75,9 +68,17 @@ export default function PlaceholderScreen({ screenName }: { screenName: string }
     return (
       <div className="screen">
         <div className="placeholder-content">
-          <div className="placeholder-icon">❓</div>
+          <div
+            className="placeholder-icon"
+            style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-alt)' }}
+          >
+            ?
+          </div>
           <h3>Unknown Screen</h3>
-          <button className="btn btn-secondary mt-lg" onClick={() => navigateTo('entry')}>
+          <p className="card-subtitle" style={{ marginTop: 'var(--space-sm)', marginBottom: 'var(--space-lg)' }}>
+            Screen <code>{screenName}</code> is not recognised.
+          </p>
+          <button className="btn btn-secondary" style={{ maxWidth: 240 }} onClick={() => navigateTo('auth')}>
             Back to Start
           </button>
         </div>
@@ -114,7 +115,12 @@ export default function PlaceholderScreen({ screenName }: { screenName: string }
 
       {/* Content */}
       <div className="placeholder-content">
-        <div className="placeholder-icon">{meta.icon}</div>
+        <div
+          className="placeholder-icon"
+          style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--primary)', background: 'rgba(31,56,100,0.08)' }}
+        >
+          {meta.step}
+        </div>
         <h3 style={{ marginBottom: 'var(--space-sm)' }}>Coming Soon</h3>
         <p className="text-sm" style={{ color: 'var(--text-muted)', maxWidth: 280 }}>
           {meta.description}
@@ -125,11 +131,11 @@ export default function PlaceholderScreen({ screenName }: { screenName: string }
       <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
         {meta.next && (
           <button className="btn btn-primary" onClick={() => navigateTo(meta.next!)}>
-            Continue →
+            Continue
           </button>
         )}
         <button className="btn btn-secondary" onClick={() => navigateTo(meta.prev)}>
-          ← Back
+          Back
         </button>
       </div>
     </div>

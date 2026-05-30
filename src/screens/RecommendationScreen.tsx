@@ -153,7 +153,7 @@ export default function RecommendationScreen() {
     <div className="screen" style={{ maxWidth: 640 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">
-          &lt;
+          ←
         </button>
         <span style={stepBadgeStyle}>Step {activeIndex + 1} of {totalSteps}</span>
       </div>

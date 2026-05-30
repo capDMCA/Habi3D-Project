@@ -1,13 +1,10 @@
 import { useState } from 'react';
-import type { CSSProperties } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { hasSupabaseConfig, loginUser, registerUser } from '../supabase';
 
-// ─── Hardcoded admin credentials ─────────────────────────────────────────────
 const ADMIN_USERNAME = 'admin';
 const ADMIN_PASSWORD = 'admin123';
 
-// ─── Acacia Estates buildings ─────────────────────────────────────────────────
 const BUILDINGS = [
   'Bengaline Tower',
   'Cochine Tower',
@@ -57,7 +54,6 @@ export default function AuthScreen() {
     setError('');
 
     try {
-      // Admin check — hardcoded credentials
       if (trimmed === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
         setUsername(ADMIN_USERNAME);
         setIsAdmin(true);
@@ -130,8 +126,8 @@ export default function AuthScreen() {
 
   function handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === 'Enter') {
-      if (mode === 'login') handleLogin();
-      else handleRegister();
+      if (mode === 'login') void handleLogin();
+      else void handleRegister();
     }
   }
 
@@ -148,22 +144,24 @@ export default function AuthScreen() {
       </div>
 
       <h1 className="entry-title">Habi3D</h1>
-      <p className="entry-subtitle">
-        Furniture Spatial Clearance Analysis for Philippine Condominium Units
+      <p className="entry-subtitle" style={{ marginBottom: 'var(--space-lg)' }}>
+        Furniture Spatial Clearance Analysis
+        <br />
+        for Philippine Condominium Units
       </p>
 
-      {/* Login / Register tabs */}
-      <div style={tabContainerStyle}>
+      {/* Login / Create Account tabs */}
+      <div className="auth-tabs">
         <button
           type="button"
-          style={mode === 'login' ? activeTabStyle : inactiveTabStyle}
+          className={`auth-tab${mode === 'login' ? ' active' : ''}`}
           onClick={() => switchMode('login')}
         >
           Log In
         </button>
         <button
           type="button"
-          style={mode === 'register' ? activeTabStyle : inactiveTabStyle}
+          className={`auth-tab${mode === 'register' ? ' active' : ''}`}
           onClick={() => switchMode('register')}
         >
           Create Account
@@ -186,14 +184,14 @@ export default function AuthScreen() {
         </div>
 
         {/* Password */}
-        <div className="form-group">
+        <div className="form-group" style={{ marginBottom: mode === 'login' ? 0 : undefined }}>
           <label className="form-label" htmlFor="auth-password">Password</label>
           <input
             id="auth-password"
             className="form-input"
             type="password"
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            placeholder={mode === 'login' ? 'Enter your password' : 'Create a password (min. 6 characters)'}
+            placeholder={mode === 'login' ? 'Enter your password' : 'Min. 6 characters'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
@@ -230,7 +228,7 @@ export default function AuthScreen() {
               </select>
             </div>
 
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" htmlFor="auth-unit">
                 Unit Number
                 <span className="form-sublabel"> (e.g. 12A, 5B)</span>
@@ -248,14 +246,27 @@ export default function AuthScreen() {
         )}
 
         {error && (
-          <p style={errorStyle}>{error}</p>
+          <div
+            style={{
+              marginTop: 'var(--space-md)',
+              padding: '10px 14px',
+              background: 'var(--danger-bg)',
+              border: '1px solid var(--danger-border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--danger)',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+            }}
+          >
+            {error}
+          </div>
         )}
 
         <button
           id={mode === 'login' ? 'login-btn' : 'register-btn'}
           className="btn btn-primary"
           type="button"
-          style={{ marginTop: 'var(--space-sm)' }}
+          style={{ marginTop: 'var(--space-md)' }}
           disabled={loading}
           onClick={mode === 'login' ? handleLogin : handleRegister}
         >
@@ -268,59 +279,11 @@ export default function AuthScreen() {
       <button
         type="button"
         className="btn btn-secondary"
-        style={{ maxWidth: 360, marginTop: 'var(--space-xs)', opacity: 0.7 }}
+        style={{ maxWidth: 360, marginTop: 'var(--space-sm)', opacity: 0.6, fontSize: '0.875rem' }}
         onClick={() => navigateTo('arDemo')}
       >
         Test AR Capabilities
       </button>
-
-      <p className="entry-footer">
-        Acacia Estates · Taguig City
-        <br />
-        Researcher-administered evaluation session
-      </p>
     </div>
   );
 }
-
-const tabContainerStyle: CSSProperties = {
-  display: 'flex',
-  borderRadius: 14,
-  border: '1px solid var(--border)',
-  overflow: 'hidden',
-  maxWidth: 360,
-  width: '100%',
-  margin: '0 auto var(--space-sm)',
-  boxShadow: 'var(--shadow-sm)',
-};
-
-const baseTabStyle: CSSProperties = {
-  flex: 1,
-  padding: '12px 0',
-  border: 0,
-  fontWeight: 700,
-  fontSize: 14,
-  cursor: 'pointer',
-};
-
-const activeTabStyle: CSSProperties = {
-  ...baseTabStyle,
-  background: '#1F3864',
-  color: '#ffffff',
-};
-
-const inactiveTabStyle: CSSProperties = {
-  ...baseTabStyle,
-  background: '#ffffff',
-  color: '#1F3864',
-};
-
-const errorStyle: CSSProperties = {
-  color: '#991B1B',
-  background: '#FEF2F2',
-  padding: '10px 12px',
-  borderRadius: 10,
-  fontWeight: 700,
-  fontSize: 13,
-  margin: '8px 0 0',
-};

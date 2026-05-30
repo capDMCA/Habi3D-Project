@@ -38,7 +38,7 @@ export default function DimensionVerificationScreen() {
     <div className="screen">
       <div className="screen-header">
         <button className="back-btn" onClick={() => navigateTo('furnitureInput')} aria-label="Go back">
-          &lt;
+          ←
         </button>
         <div className="screen-header-info">
           <span className="step-label">Step 3 of 6</span>

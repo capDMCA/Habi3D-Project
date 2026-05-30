@@ -197,8 +197,8 @@ function AROverlayUI({
               }}
             >
               {objectCount === 0
-                ? '👆 Point camera at the floor.\nTap "Place" when you see the green ring.'
-                : `✅ ${objectCount} object${objectCount > 1 ? 's' : ''} placed`}
+                ? 'Point camera at the floor.\nTap Place when you see the green ring.'
+                : `${objectCount} object${objectCount > 1 ? 's' : ''} placed`}
             </div>
             <button
               onClick={onExit}
@@ -213,7 +213,7 @@ function AROverlayUI({
                 cursor: 'pointer',
               }}
             >
-              ✕ Exit
+              Exit
             </button>
           </div>
 
@@ -245,7 +245,7 @@ function AROverlayUI({
                   cursor: 'pointer',
                 }}
               >
-                🗑️ Clear
+                Clear
               </button>
             )}
             <button
@@ -262,7 +262,7 @@ function AROverlayUI({
                 boxShadow: '0 4px 15px rgba(31,56,100,0.5)',
               }}
             >
-              📦 Place Object
+              Place Object
             </button>
           </div>
         </div>
@@ -347,7 +347,7 @@ export default function ARDemoScreen() {
   const preARScreen = (
       <div className="screen">
         <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
+          <button className="back-btn" onClick={() => navigateTo('auth')} aria-label="Go back">
             ←
           </button>
           <div className="screen-header-info">
@@ -359,7 +359,7 @@ export default function ARDemoScreen() {
         {/* Device Diagnostics Card */}
         <div className="card">
           <div className="card-header">
-            <div className="card-icon card-icon-primary">🔍</div>
+            <div className="card-icon card-icon-primary">AR</div>
             <div>
               <p className="card-title">Device Diagnostics</p>
               <p className="card-subtitle">Checking your device capabilities</p>
@@ -370,26 +370,26 @@ export default function ARDemoScreen() {
             <span className="info-label">Connection</span>
             <span className="info-value">
               {diag.isHttps
-                ? <span className="badge badge-success">✓ HTTPS</span>
-                : <span className="badge badge-danger">✗ Not HTTPS</span>}
+                ? <span className="badge badge-success">HTTPS</span>
+                : <span className="badge badge-danger">Not HTTPS</span>}
             </span>
           </div>
           <div className="info-row">
             <span className="info-label">WebXR API</span>
             <span className="info-value">
               {diag.hasNavigatorXR
-                ? <span className="badge badge-success">✓ Available</span>
-                : <span className="badge badge-danger">✗ Not available</span>}
+                ? <span className="badge badge-success">Available</span>
+                : <span className="badge badge-danger">Not available</span>}
             </span>
           </div>
           <div className="info-row">
             <span className="info-label">AR Support</span>
             <span className="info-value">
               {diag.arSupported === null
-                ? <span className="badge">⏳ Checking…</span>
+                ? <span className="badge">Checking…</span>
                 : diag.arSupported
-                  ? <span className="badge badge-success">✓ Supported</span>
-                  : <span className="badge badge-danger">✗ Not supported</span>}
+                  ? <span className="badge badge-success">Supported</span>
+                  : <span className="badge badge-danger">Not supported</span>}
             </span>
           </div>
           <div className="info-row">
@@ -401,19 +401,19 @@ export default function ARDemoScreen() {
 
           {!diag.isHttps && (
             <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', marginTop: 12 }}>
-              ⚠️ WebXR requires HTTPS. You are on HTTP. Deploy to Vercel and use the HTTPS URL.
+              WebXR requires HTTPS. You are on HTTP. Deploy to Vercel and use the HTTPS URL.
             </p>
           )}
           {diag.hasNavigatorXR && diag.arSupported === false && (
             <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', marginTop: 12 }}>
-              ⚠️ Your browser/device does not support immersive-ar. Make sure you have:
+              Your browser/device does not support immersive-ar. Make sure you have:
               <br />• Android Chrome 79+ with <strong>Google Play Services for AR (ARCore)</strong> installed
               <br />• Or iOS Safari 15.4+ on iPhone/iPad with LiDAR
             </p>
           )}
           {!diag.hasNavigatorXR && (
             <p style={{ fontSize: '0.8125rem', color: 'var(--danger)', marginTop: 12 }}>
-              ⚠️ This browser does not have the WebXR API. Try <strong>Google Chrome</strong> on Android.
+              This browser does not have the WebXR API. Try <strong>Google Chrome</strong> on Android.
             </p>
           )}
         </div>
@@ -422,7 +422,7 @@ export default function ARDemoScreen() {
         {errorMsg && (
           <div className="card" style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)' }}>
             <div className="card-header">
-              <div className="card-icon" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>⚠️</div>
+              <div className="card-icon" style={{ background: 'var(--danger-bg)', color: 'var(--danger)', fontSize: '1rem', fontWeight: 700 }}>!</div>
               <div>
                 <p className="card-title" style={{ color: 'var(--danger)' }}>AR Session Failed</p>
               </div>
@@ -436,7 +436,7 @@ export default function ARDemoScreen() {
         {/* Instructions */}
         <div className="card">
           <div className="card-header">
-            <div className="card-icon card-icon-success">💡</div>
+            <div className="card-icon card-icon-success">i</div>
             <div>
               <p className="card-title">How It Works</p>
             </div>
@@ -474,7 +474,7 @@ export default function ARDemoScreen() {
           onClick={handleStartAR}
           disabled={!canLaunch}
         >
-          {!diag.isHttps ? '🔒 HTTPS Required' : diag.arSupported === false ? '❌ AR Not Supported' : '🚀 Launch AR Test'}
+          {!diag.isHttps ? 'HTTPS Required' : diag.arSupported === false ? 'AR Not Supported' : 'Launch AR Test'}
         </button>
       </div>
   );
