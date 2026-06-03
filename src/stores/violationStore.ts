@@ -10,6 +10,7 @@ interface ViolationState {
   setViolations: (violations: Violation[]) => void;
   refreshViolations: (violations: Violation[]) => void;
   resolveCurrentStep: () => void;
+  resolveViolations: (ids: string[]) => void;
   advanceCurrentStep: () => void;
   setCurrentStepIndex: (index: number) => void;
   setSpaceScoreBefore: (score: number) => void;
@@ -101,6 +102,22 @@ export const useViolationStore = create<ViolationState>((set) => ({
         violations: updatedViolations,
         recommendations: updatedRecommendations,
         currentStepIndex: nextIndex,
+      };
+    }),
+  resolveViolations: (ids) =>
+    set((state) => {
+      const idSet = new Set(ids);
+      const updatedRecommendations = state.recommendations.map((v) =>
+        idSet.has(v.id) ? { ...v, resolved: true } : v,
+      );
+      const updatedViolations = state.violations.map((v) =>
+        idSet.has(v.id) ? { ...v, resolved: true } : v,
+      );
+      const firstUnresolved = updatedRecommendations.findIndex((v) => !v.resolved);
+      return {
+        recommendations: updatedRecommendations,
+        violations: updatedViolations,
+        currentStepIndex: firstUnresolved === -1 ? updatedRecommendations.length : firstUnresolved,
       };
     }),
   advanceCurrentStep: () =>
