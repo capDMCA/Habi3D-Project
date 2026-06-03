@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay } from '@react-three/xr';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
-import ARMeasureSession from '../ar/ARMeasureSession';
+import ARMeasureSession, { type MeasurePhase } from '../ar/ARMeasureSession';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import type { FurnitureCategory, FurnitureItem, FurnitureShape } from '../types';
 
@@ -160,7 +160,8 @@ export default function FurnitureInputScreen() {
   const [measureTarget, setMeasureTarget] = useState<MeasureTarget | null>(null);
   const [arActive, setArActive] = useState(false);
   const [arError, setArError] = useState('');
-  const labelDivRef = useRef<HTMLDivElement | null>(null);
+  const [measurePhase, setMeasurePhase] = useState<MeasurePhase>('scanning');
+  const [liveCm, setLiveCm] = useState(0);
 
   useEffect(() => {
     return xrMeasureStore.subscribe((state, prevState) => {
@@ -185,17 +186,20 @@ export default function FurnitureInputScreen() {
   const availableShapes = selectedCategoryDef
     ? SHAPES.filter((s) => selectedCategoryDef.shapes.includes(s.value))
     : SHAPES;
-  const measurementLabel =
-    measureTarget === 'length'
-      ? 'Measure furniture length'
-      : measureTarget === 'width'
-        ? 'Measure furniture width'
-        : 'Measure furniture';
+  const measurementTitle =
+    measureTarget === 'length' ? 'Measuring length' :
+    measureTarget === 'width'  ? 'Measuring width'  : 'Measuring';
+
+  function handlePhaseChange(phase: MeasurePhase, cm?: number) {
+    setMeasurePhase(phase);
+    if (cm !== undefined) setLiveCm(cm);
+  }
 
   async function startMeasurement(target: MeasureTarget) {
     setArError('');
+    setMeasurePhase('scanning');
+    setLiveCm(0);
     setMeasureTarget(target);
-
     try {
       await xrMeasureStore.enterAR();
     } catch (err) {
@@ -209,6 +213,8 @@ export default function FurnitureInputScreen() {
     xrMeasureStore.getState().session?.end();
     setArActive(false);
     setMeasureTarget(null);
+    setMeasurePhase('scanning');
+    setLiveCm(0);
   }
 
   function handleMeasured(distanceCm: number) {
@@ -488,81 +494,61 @@ export default function FurnitureInputScreen() {
               <ARMeasureSession
                 key={measureTarget}
                 onMeasured={handleMeasured}
-                labelDivRef={labelDivRef}
+                onPhaseChange={handlePhaseChange}
               />
             )}
 
             <XRDomOverlay>
-              <div
-                style={{
-                  position: 'fixed',
-                  inset: 0,
-                  pointerEvents: 'none',
-                  fontFamily: "'Inter', system-ui, sans-serif",
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 16,
-                    left: 16,
-                    right: 16,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                    pointerEvents: 'auto',
-                  }}
-                >
-                  <div
-                    style={{
-                      background: 'rgba(17, 24, 39, 0.86)',
-                      color: 'white',
-                      borderRadius: 8,
-                      padding: '10px 12px',
-                      fontSize: 13,
-                      lineHeight: 1.4,
-                      flex: 1,
-                    }}
-                  >
-                    <strong>{measurementLabel}</strong>
-                    <br />
-                    Tap one edge, then tap the opposite edge.
-                  </div>
+              <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', fontFamily: "'Inter', system-ui, sans-serif" }}>
 
+                {/* Top bar — title + exit */}
+                <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', gap: 12, alignItems: 'flex-start', pointerEvents: 'auto' }}>
+                  <div style={{ flex: 1, background: 'rgba(10,22,44,0.92)', backdropFilter: 'blur(8px)', borderRadius: 12, padding: '12px 14px' }}>
+                    <p style={{ margin: 0, color: '#ffffff', fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+                      {measurementTitle}
+                    </p>
+                    <p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 1.4 }}>
+                      {measurePhase === 'scanning' && 'Move your camera slowly over the floor to detect the surface.'}
+                      {measurePhase === 'ready'    && 'Floor detected. Tap to place the first point.'}
+                      {measurePhase === 'placed'   && 'First point set. Tap to place the second point.'}
+                      {measurePhase === 'done'     && 'Measurement complete!'}
+                      {measurePhase === 'error'    && 'Hit-test unavailable. Ensure ARCore is installed and lighting is good.'}
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={stopMeasurement}
-                    style={{
-                      background: '#ef4444',
-                      color: 'white',
-                      border: 0,
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      fontWeight: 700,
-                    }}
+                    style={{ background: 'rgba(239,68,68,0.92)', color: 'white', border: 0, borderRadius: 12, padding: '12px 16px', fontWeight: 700, fontSize: 14, backdropFilter: 'blur(8px)' }}
                   >
                     Exit
                   </button>
                 </div>
 
-                <div
-                  ref={labelDivRef}
-                  style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    display: 'none',
-                    background: 'rgba(17, 24, 39, 0.88)',
-                    color: '#ffffff',
-                    padding: '6px 16px',
-                    borderRadius: 10,
-                    fontSize: 16,
-                    fontWeight: 700,
-                    pointerEvents: 'none',
-                    whiteSpace: 'nowrap',
-                    userSelect: 'none',
-                  }}
-                />
+                {/* Phase status pill */}
+                <div style={{ position: 'absolute', top: 90, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: 'rgba(10,22,44,0.88)', backdropFilter: 'blur(8px)',
+                    borderRadius: 99, padding: '7px 16px',
+                  }}>
+                    <div style={{
+                      width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+                      background: measurePhase === 'scanning' ? '#f59e0b'
+                                : measurePhase === 'ready'    ? '#22c55e'
+                                : measurePhase === 'placed'   ? '#3b82f6'
+                                : measurePhase === 'done'     ? '#22c55e'
+                                : '#ef4444',
+                    }} />
+                    <span style={{ color: '#ffffff', fontSize: 13, fontWeight: 600 }}>
+                      {measurePhase === 'scanning' && 'Scanning…'}
+                      {measurePhase === 'ready'    && 'Floor detected'}
+                      {measurePhase === 'placed'   && (liveCm > 0 ? `${liveCm} cm` : 'Point 1 placed')}
+                      {measurePhase === 'done'     && 'Done'}
+                      {measurePhase === 'error'    && 'Not available'}
+                    </span>
+                  </div>
+                </div>
+
               </div>
             </XRDomOverlay>
           </XR>
