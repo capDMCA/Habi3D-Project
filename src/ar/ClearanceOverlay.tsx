@@ -49,6 +49,52 @@ const ZONE_OPACITY: Record<GapClassificationLevel, number> = {
   GREEN: 0.35,
 };
 
+const TILE_M = 0.18;
+
+function createZoneTexture(hexColor: string, classification: GapClassificationLevel): THREE.CanvasTexture {
+  const res = 128;
+  const offscreen = document.createElement('canvas');
+  offscreen.width = res;
+  offscreen.height = res;
+  const ctx = offscreen.getContext('2d');
+
+  if (ctx) {
+    ctx.clearRect(0, 0, res, res);
+
+    ctx.globalAlpha = classification === 'RED' ? 0.20 : classification === 'YELLOW' ? 0.15 : 0.08;
+    ctx.fillStyle = hexColor;
+    ctx.fillRect(0, 0, res, res);
+
+    ctx.globalAlpha = classification === 'RED' ? 0.88 : classification === 'YELLOW' ? 0.72 : 0.52;
+    ctx.strokeStyle = hexColor;
+    ctx.lineWidth = classification === 'RED' ? 2.5 : 1.8;
+    ctx.lineCap = 'square';
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0.5);
+    ctx.lineTo(res, 0.5);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0.5, 0);
+    ctx.lineTo(0.5, res);
+    ctx.stroke();
+
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = hexColor;
+    ctx.beginPath();
+    ctx.arc(0, 0, classification === 'RED' ? 5 : 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(offscreen);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
+
 function getBounds(item: FurnitureItem): BoundsM {
   const halfL = item.lengthCm / 200;
   const halfW = item.widthCm / 200;
@@ -196,46 +242,89 @@ function buildZone(
 }
 
 function Zone({ zone }: { zone: ZoneDefinition }) {
-  const material = useMemo(
+  const fillTexture = useMemo(() => {
+    const tex = createZoneTexture(zone.color, zone.classification);
+    tex.repeat.set(
+      Math.max(1, Math.round(zone.sizeX / TILE_M)),
+      Math.max(1, Math.round(zone.sizeZ / TILE_M)),
+    );
+    return tex;
+  }, [zone.color, zone.classification, zone.sizeX, zone.sizeZ]);
+
+  const fillMaterial = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: zone.color,
+        map: fillTexture,
         transparent: true,
         opacity: zone.baseOpacity,
         depthWrite: false,
         side: THREE.DoubleSide,
       }),
-    [zone.baseOpacity, zone.color],
+    [fillTexture, zone.baseOpacity],
   );
-  const materialRef = useRef(material);
+
+  const edgeLine = useMemo(() => {
+    const hw = zone.sizeX / 2;
+    const hd = zone.sizeZ / 2;
+    const pts = new Float32Array([
+      -hw, 0, -hd,
+       hw, 0, -hd,
+       hw, 0,  hd,
+      -hw, 0,  hd,
+      -hw, 0, -hd,
+    ]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+    const mat = new THREE.LineBasicMaterial({ color: zone.color, transparent: true, opacity: 0.95 });
+    const l = new THREE.Line(geo, mat);
+    l.position.y = 0.004;
+    return l;
+  }, [zone.color, zone.sizeX, zone.sizeZ]);
+
+  const fillRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  const edgeMatRef = useRef<THREE.LineBasicMaterial | null>(null);
 
   useEffect(() => {
-    materialRef.current = material;
-    return () => material.dispose();
-  }, [material]);
+    fillRef.current = fillMaterial;
+    edgeMatRef.current = edgeLine.material as THREE.LineBasicMaterial;
+  }, [fillMaterial, edgeLine]);
+
+  useEffect(
+    () => () => {
+      fillTexture.dispose();
+      fillMaterial.dispose();
+      edgeLine.geometry.dispose();
+      (edgeLine.material as THREE.LineBasicMaterial).dispose();
+    },
+    [fillTexture, fillMaterial, edgeLine],
+  );
 
   useFrame(({ clock }) => {
-    const pulseSpeed = zone.highlighted ? 4 : 2;
-    const pulseSize = zone.highlighted ? 0.16 : 0.1;
-    materialRef.current.opacity = Math.max(
-      0.1,
-      zone.baseOpacity + Math.sin(clock.elapsedTime * pulseSpeed) * pulseSize,
-    );
+    const t = clock.elapsedTime;
+    const speed = zone.highlighted ? 4 : zone.classification === 'RED' ? 2.5 : 1.8;
+    const amplitude = zone.highlighted ? 0.18 : 0.08;
+    if (fillRef.current) {
+      fillRef.current.opacity = Math.max(0.08, zone.baseOpacity + Math.sin(t * speed) * amplitude);
+    }
+    if (edgeMatRef.current) {
+      edgeMatRef.current.opacity = Math.max(0.55, 0.88 + Math.sin(t * speed + 1.0) * 0.12);
+    }
   });
 
   return (
-    <group position={[zone.centerX, 0.008, zone.centerZ]}>
+    <group position={[zone.centerX, 0.006, zone.centerZ]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[zone.sizeX, zone.sizeZ]} />
-        <primitive object={material} attach="material" />
+        <primitive object={fillMaterial} attach="material" />
       </mesh>
+      <primitive object={edgeLine} />
       {zone.classification !== 'GREEN' && (
         <Text
-          position={[0, 0.25, 0]}
-          fontSize={0.07}
+          position={[0, 0.22, 0]}
+          fontSize={0.065}
           color="white"
-          outlineWidth={0.005}
-          outlineColor="black"
+          outlineWidth={0.006}
+          outlineColor={zone.color}
           anchorX="center"
           anchorY="middle"
         >

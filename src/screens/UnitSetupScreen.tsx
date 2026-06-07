@@ -44,6 +44,7 @@ function formatSqm(value: number): string {
 export default function UnitSetupScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const setRoomDimensions = useSessionStore((s) => s.setRoomDimensions);
+  const username = useSessionStore((s) => s.username);
 
   const [selectedUnitId, setSelectedUnitId] = useState(UNIT_OPTIONS[0].id);
   const [dims, setDims] = useState<RoomDimensions>({
@@ -79,7 +80,7 @@ export default function UnitSetupScreen() {
   return (
     <div className="screen">
       <div className="screen-header">
-        <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
+        <button className="back-btn" onClick={() => navigateTo('auth')} aria-label="Go back">
           ←
         </button>
         <div className="screen-header-info">
@@ -96,6 +97,42 @@ export default function UnitSetupScreen() {
         <div className="progress-step" />
         <div className="progress-step" />
       </div>
+
+      {username && username !== 'admin' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          background: 'linear-gradient(135deg, #1F3864 0%, #2B4E8C 100%)',
+          borderRadius: 14,
+          padding: '14px 16px',
+          marginBottom: 'var(--space-md)',
+        }}>
+          <div style={{
+            width: 40,
+            height: 40,
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            fontSize: 16,
+            fontWeight: 800,
+            color: '#ffffff',
+          }}>
+            {username.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#ffffff', lineHeight: 1.2 }}>
+              Welcome, {username}!
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: '0.8125rem', color: 'rgba(255,255,255,0.65)', fontWeight: 400 }}>
+              Let's get your unit set up for analysis.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-header">
@@ -282,60 +319,104 @@ function DimensionRow({
 }
 
 function FloorPlanSVG({ dims }: { dims: RoomDimensions }) {
-  const pad = 28;
-  const maxRealWidth = Math.max(dims.livingWidthCm, dims.diningWidthCm);
-  const totalRealDepth = dims.livingDepthCm + dims.diningDepthCm;
-  const scale = Math.min(300 / maxRealWidth, 260 / totalRealDepth);
+  const lW = dims.livingWidthCm;
+  const lD = dims.livingDepthCm;
+  const dW = dims.diningWidthCm;
+  const dD = dims.diningDepthCm;
 
-  const livingW = dims.livingWidthCm * scale;
-  const livingH = dims.livingDepthCm * scale;
-  const diningW = dims.diningWidthCm * scale;
-  const diningH = dims.diningDepthCm * scale;
-  const mapW = Math.max(livingW, diningW);
-  const mapH = livingH + diningH;
-  const livingX = pad + (mapW - livingW) / 2;
-  const diningX = pad + (mapW - diningW) / 2;
+  const zoneW = Math.max(lW, dW);
+  const ENTRY_D = 80;
+  const PAD = 24;
+
+  const unitW = zoneW;
+  const unitD = lD + dD + ENTRY_D;
+
+  const vbW = unitW + PAD * 2;
+  const vbH = unitD + PAD * 2;
+
+  const OX = PAD;
+  const OY = PAD;
+
+  const yLivBot = OY + lD;
+  const yDinBot = yLivBot + dD;
+  const yEntBot = yDinBot + ENTRY_D;
+
+  const W = 6;   // wall stroke
+  const FL = 42; // living/dining label
+  const FM = 30; // entry label
+  const FS = 26; // dimension text
+
+  const midX = OX + unitW / 2;
 
   return (
     <div className="floor-plan-container">
       <svg
-        viewBox={`0 0 ${mapW + pad * 2} ${mapH + pad * 2}`}
+        viewBox={`0 0 ${vbW} ${vbH}`}
         xmlns="http://www.w3.org/2000/svg"
         role="img"
         aria-label="Floor plan preview"
+        style={{ width: '100%', height: 'auto', display: 'block' }}
       >
-        <rect
-          x={livingX}
-          y={pad}
-          width={livingW}
-          height={livingH}
-          fill="#EBF0F7"
-          stroke="#1F3864"
-          strokeWidth="2"
-          rx="6"
-        />
-        <rect
-          x={diningX}
-          y={pad + livingH}
-          width={diningW}
-          height={diningH}
-          fill="#F0F7EB"
-          stroke="#639922"
-          strokeWidth="2"
-          rx="6"
-        />
-        <text x={livingX + livingW / 2} y={pad + livingH / 2 - 8} textAnchor="middle" fill="#1F3864" fontSize="12" fontWeight="700">
-          Living
+        {/* ── LIVING ROOM ── */}
+        <rect x={OX} y={OY} width={unitW} height={lD}
+          fill="#e8eef8" stroke="#1F3864" strokeWidth={W} rx={4} />
+        <text x={midX} y={OY + lD * 0.38}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize={FL} fontWeight="700" fill="#1F3864"
+          fontFamily="system-ui,-apple-system,sans-serif">
+          Living Room
         </text>
-        <text x={livingX + livingW / 2} y={pad + livingH / 2 + 10} textAnchor="middle" fill="#475569" fontSize="10">
-          {dims.livingWidthCm} x {dims.livingDepthCm} cm
+        <text x={midX} y={OY + lD * 0.58}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize={FS} fill="#4B6BAD"
+          fontFamily="system-ui,-apple-system,sans-serif">
+          {lW} × {lD} cm
         </text>
-        <text x={diningX + diningW / 2} y={pad + livingH + diningH / 2 - 8} textAnchor="middle" fill="#3F6F17" fontSize="12" fontWeight="700">
-          Dining
+
+        {/* ── DINING AREA ── */}
+        <rect x={OX + (zoneW - dW) / 2} y={yLivBot} width={dW} height={dD}
+          fill="#e6f4ec" stroke="#1F3864" strokeWidth={W} rx={4} />
+        {/* open-plan dashed divider */}
+        <line x1={OX} y1={yLivBot} x2={OX + unitW} y2={yLivBot}
+          stroke="#1F3864" strokeWidth={W * 0.5}
+          strokeDasharray={`${W * 3} ${W * 2}`} />
+        <text x={OX + (zoneW - dW) / 2 + dW / 2} y={yLivBot + dD * 0.38}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize={FL} fontWeight="700" fill="#166534"
+          fontFamily="system-ui,-apple-system,sans-serif">
+          Dining Area
         </text>
-        <text x={diningX + diningW / 2} y={pad + livingH + diningH / 2 + 10} textAnchor="middle" fill="#475569" fontSize="10">
-          {dims.diningWidthCm} x {dims.diningDepthCm} cm
+        <text x={OX + (zoneW - dW) / 2 + dW / 2} y={yLivBot + dD * 0.58}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize={FS} fill="#15803d"
+          fontFamily="system-ui,-apple-system,sans-serif">
+          {dW} × {dD} cm
         </text>
+
+        {/* ── ENTRY / FOYER ── */}
+        <rect x={OX} y={yDinBot} width={unitW} height={ENTRY_D}
+          fill="#f1f5f9" stroke="#1F3864" strokeWidth={W} rx={4} />
+        <text x={midX} y={yDinBot + ENTRY_D / 2}
+          textAnchor="middle" dominantBaseline="middle"
+          fontSize={FM} fontWeight="600" fill="#475569"
+          fontFamily="system-ui,-apple-system,sans-serif">
+          Entry / Foyer
+        </text>
+
+        {/* ── ENTRY DOOR (bottom wall gap + swing arc) ── */}
+        <rect x={midX - 35} y={yEntBot - W * 0.6}
+          width={70} height={W * 1.2} fill="#f1f5f9" />
+        <line x1={midX - 35} y1={yEntBot}
+          x2={midX - 35} y2={yEntBot - 70}
+          stroke="#94a3b8" strokeWidth={2.5} />
+        <path
+          d={`M ${midX - 35} ${yEntBot} A 70 70 0 0 0 ${midX + 35} ${yEntBot}`}
+          fill="none" stroke="#94a3b8" strokeWidth={2}
+          strokeDasharray="6 4" />
+
+        {/* ── OUTER WALL (on top) ── */}
+        <rect x={OX} y={OY} width={unitW} height={unitD}
+          fill="none" stroke="#1F3864" strokeWidth={W} rx={4} />
       </svg>
     </div>
   );

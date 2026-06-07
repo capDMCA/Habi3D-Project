@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XROrigin } from '@react-three/xr';
@@ -10,7 +10,6 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { hasSupabaseConfig, supabase } from '../supabase';
 import type { FurnitureItem, RoomDimensions, Violation } from '../types';
-import { drawFloorPlan } from '../utils/floorPlan';
 
 const xrAnalysisStore = createXRStore({
   offerSession: false,
@@ -128,7 +127,6 @@ export default function AnalysisScreen() {
   const setViolations = useViolationStore((s) => s.setViolations);
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const scoreSaveAttemptedRef = useRef(false);
   const [arError, setArError] = useState('');
   const [arPreviewOpen, setArPreviewOpen] = useState(false);
@@ -161,22 +159,6 @@ export default function AnalysisScreen() {
       .insert({ participant_id: participantId, score_before: result.spaceScoreBefore, score_after: 0, improvement_points: 0 })
       .then(({ error }) => { if (error) console.warn(error.message); });
   }, [participantId, result.spaceScoreBefore]);
-
-  // Canvas drawing — useLayoutEffect ensures the DOM has settled before we read dimensions
-  useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    function redraw() {
-      if (!canvas) return;
-      drawFloorPlan(canvas, items, result.violations, roomWidthCm, roomLengthCm);
-    }
-
-    redraw();
-    const observer = new ResizeObserver(redraw);
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, [items, result.violations, roomLengthCm, roomWidthCm]);
 
   async function openArOverlay() {
     setArError('');
@@ -251,48 +233,6 @@ export default function AnalysisScreen() {
                 <ClassBadge count={yellowCount} level="YELLOW" label={yellowCount === 1 ? 'warning' : 'warnings'} />
                 <ClassBadge count={greenCount}  level="GREEN"  label="clear" />
               </div>
-            </div>
-          </section>
-
-          {/* 2D Floor Plan */}
-          <section className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div>
-                <p className="card-title">Floor Plan</p>
-                <p className="card-subtitle">Furniture positions with clearance zones</p>
-              </div>
-              <span style={countBadgeStyle}>{items.length} item{items.length !== 1 ? 's' : ''}</span>
-            </div>
-
-            {/* Canvas — explicit width/height so buffer is pre-allocated before layout paint */}
-            <canvas
-              ref={canvasRef}
-              width={720}
-              height={420}
-              style={{
-                width: '100%',
-                height: 'auto',
-                aspectRatio: '720 / 420',
-                display: 'block',
-                borderRadius: 10,
-                border: '1px solid var(--border)',
-                background: '#ffffff',
-              }}
-            />
-
-            {/* Legend */}
-            <div style={{ display: 'flex', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
-              {[
-                { color: '#E24B4A', label: 'RED — violation' },
-                { color: '#F0A500', label: 'YELLOW — warning' },
-                { color: '#4CAF50', label: 'GREEN — clear' },
-                { color: '#E5E7EB', label: 'No issues' },
-              ].map(({ color, label }) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 3, background: color, border: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>{label}</span>
-                </div>
-              ))}
             </div>
           </section>
 
@@ -393,19 +333,6 @@ export default function AnalysisScreen() {
 }
 
 // ─── Style constants ──────────────────────────────────────────────────────────
-
-const countBadgeStyle: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  borderRadius: 999,
-  padding: '5px 11px',
-  color: '#1F3864',
-  background: '#e6edf8',
-  fontSize: 12,
-  fontWeight: 700,
-  whiteSpace: 'nowrap',
-  flexShrink: 0,
-};
 
 const stickyFooterStyle: CSSProperties = {
   position: 'fixed',
