@@ -87,7 +87,9 @@ export default function EndSurveyScreen() {
   const [submitError, setSubmitError] = useState('');
   const [submitStatus, setSubmitStatus] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasAfterRef = useRef<HTMLCanvasElement>(null);
   const [floorPlanDataUrl, setFloorPlanDataUrl] = useState('');
+  const [floorPlanAfterDataUrl, setFloorPlanAfterDataUrl] = useState('');
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
   const completedSteps = recommendations.filter((violation) => violation.resolved).length;
   const improvement = spaceScoreAfter - spaceScoreBefore;
@@ -101,6 +103,11 @@ export default function EndSurveyScreen() {
     if (!canvasRef.current) return;
     drawFloorPlan(canvasRef.current, items, recommendations, roomWidthCm, roomLengthCm);
     setFloorPlanDataUrl(canvasRef.current.toDataURL('image/png'));
+
+    if (!canvasAfterRef.current) return;
+    const unresolvedViolations = recommendations.filter((v) => !v.resolved);
+    drawFloorPlan(canvasAfterRef.current, items, unresolvedViolations, roomWidthCm, roomLengthCm);
+    setFloorPlanAfterDataUrl(canvasAfterRef.current.toDataURL('image/png'));
   }, [items, recommendations, roomLengthCm, roomWidthCm]);
 
   async function getParticipantForSubmit() {
@@ -214,6 +221,7 @@ export default function EndSurveyScreen() {
       stepsCompleted: completedSteps,
       totalViolations: recommendations.length,
       floorPlanDataUrl,
+      floorPlanAfterDataUrl,
     });
   }
 
@@ -242,6 +250,15 @@ export default function EndSurveyScreen() {
           {completedSteps} of {recommendations.length} violations resolved
         </p>
       </section>
+
+      <button
+        className="btn btn-secondary"
+        type="button"
+        onClick={handleDownload}
+        style={{ marginTop: 4, width: '100%' }}
+      >
+        Download PDF Report
+      </button>
 
       {!hasSupabaseConfig && (
         <div className="card" style={{ borderLeft: '5px solid #F0A500', color: '#92400E' }}>
@@ -314,13 +331,8 @@ export default function EndSurveyScreen() {
         {submitting ? submitStatus || 'Submitting evaluation...' : 'Submit evaluation'}
       </button>
 
-      {submitted && (
-        <button className="btn btn-secondary" type="button" onClick={handleDownload} style={{ marginTop: 12 }}>
-          Download PDF Report
-        </button>
-      )}
-
       <canvas ref={canvasRef} style={{ display: 'none' }} width={720} height={520} />
+      <canvas ref={canvasAfterRef} style={{ display: 'none' }} width={720} height={520} />
     </div>
   );
 }
