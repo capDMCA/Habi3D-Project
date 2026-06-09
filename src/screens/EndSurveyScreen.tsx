@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { MULBERRY_PLACE_2BR } from '../data/roomData';
-import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { hasSupabaseConfig, insertParticipant, supabase, supabaseConfigMessage } from '../supabase';
-import type { RoomDimensions } from '../types';
-import { drawFloorPlan } from '../utils/floorPlan';
-import { generateReport } from '../utils/pdfExport';
+import type { Violation } from '../types';
 
 const SUS_QUESTIONS = [
   'I think that I would like to use this system frequently.',
@@ -29,14 +26,6 @@ const POST_QUESTIONS = [
   'The clearance violation information was clear and easy to understand.',
   'Overall, I am satisfied with Habi3D.',
 ];
-
-function getRoomDimensions(roomDimensions: RoomDimensions | null) {
-  if (!roomDimensions) return { roomWidthCm: 360, roomLengthCm: 520 };
-  return {
-    roomWidthCm: Math.max(roomDimensions.livingWidthCm, roomDimensions.diningWidthCm),
-    roomLengthCm: roomDimensions.livingDepthCm + roomDimensions.diningDepthCm,
-  };
-}
 
 function computeSusScore(values: number[]) {
   const odd = [0, 2, 4, 6, 8].reduce((sum, index) => sum + (values[index] - 1), 0);
@@ -68,47 +57,40 @@ function throwSupabaseError(context: string, error: unknown): never {
 }
 
 export default function EndSurveyScreen() {
-  const navigateTo = useSessionStore((s) => s.navigateTo);
-  const participantId = useSessionStore((s) => s.participantId);
+  const navigateTo     = useSessionStore((s) => s.navigateTo);
+  const participantId  = useSessionStore((s) => s.participantId);
   const participantCode = useSessionStore((s) => s.participantCode);
-  const setParticipantId = useSessionStore((s) => s.setParticipantId);
+  const setParticipantId   = useSessionStore((s) => s.setParticipantId);
   const setParticipantCode = useSessionStore((s) => s.setParticipantCode);
-  const roomDimensions = useSessionStore((s) => s.roomDimensions);
-  const items = useFurnitureStore((s) => s.items);
   const recommendations = useViolationStore((s) => s.recommendations);
   const spaceScoreBefore = useViolationStore((s) => s.spaceScoreBefore);
-  const spaceScoreAfter = useViolationStore((s) => s.spaceScoreAfter);
-  const [susResponses, setSusResponses] = useState<number[]>(Array(10).fill(0));
+  const spaceScoreAfter  = useViolationStore((s) => s.spaceScoreAfter);
+
+  const [susResponses,  setSusResponses]  = useState<number[]>(Array(10).fill(0));
   const [postResponses, setPostResponses] = useState<number[]>(Array(5).fill(0));
   const [debrief, setDebrief] = useState({ q1: '', q2: '', q3: '', q4: '' });
   const [intendsToRearrange, setIntendsToRearrange] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [submitError, setSubmitError] = useState('');
+  const [submitted,  setSubmitted]  = useState(false);
+  const [submitError,  setSubmitError]  = useState('');
   const [submitStatus, setSubmitStatus] = useState('');
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const canvasAfterRef = useRef<HTMLCanvasElement>(null);
-  const [floorPlanDataUrl, setFloorPlanDataUrl] = useState('');
-  const [floorPlanAfterDataUrl, setFloorPlanAfterDataUrl] = useState('');
-  const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
-  const completedSteps = recommendations.filter((violation) => violation.resolved).length;
-  const improvement = spaceScoreAfter - spaceScoreBefore;
-  const susComplete = susResponses.every((value) => value >= 1 && value <= 5);
-  const postComplete = postResponses.every((value) => value >= 1 && value <= 5);
-  const missingSusCount = susResponses.filter((value) => value < 1 || value > 5).length;
-  const missingPostCount = postResponses.filter((value) => value < 1 || value > 5).length;
-  const susScore = susComplete ? computeSusScore(susResponses) : 0;
 
-  useEffect(() => {
-    if (!canvasRef.current) return;
-    drawFloorPlan(canvasRef.current, items, recommendations, roomWidthCm, roomLengthCm);
-    setFloorPlanDataUrl(canvasRef.current.toDataURL('image/png'));
+  const completedSteps   = recommendations.filter((v) => v.resolved).length;
+  const totalViolations  = recommendations.length;
+  const improvement      = spaceScoreAfter - spaceScoreBefore;
+  const susComplete      = susResponses.every((v) => v >= 1 && v <= 5);
+  const postComplete     = postResponses.every((v) => v >= 1 && v <= 5);
+  const missingSusCount  = susResponses.filter((v) => v < 1 || v > 5).length;
+  const missingPostCount = postResponses.filter((v) => v < 1 || v > 5).length;
+  const susScore         = susComplete ? computeSusScore(susResponses) : 0;
+  const redRemaining     = recommendations.filter((v) => !v.resolved && v.classification === 'RED').length;
+  const yellowRemaining  = recommendations.filter((v) => !v.resolved && v.classification === 'YELLOW').length;
 
-    if (!canvasAfterRef.current) return;
-    const unresolvedViolations = recommendations.filter((v) => !v.resolved);
-    drawFloorPlan(canvasAfterRef.current, items, unresolvedViolations, roomWidthCm, roomLengthCm);
-    setFloorPlanAfterDataUrl(canvasAfterRef.current.toDataURL('image/png'));
-  }, [items, recommendations, roomLengthCm, roomWidthCm]);
+  const sortedViolations = [...recommendations].sort((a, b) => {
+    if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
+    const order: Record<string, number> = { RED: 0, YELLOW: 1, GREEN: 2 };
+    return (order[a.classification] ?? 0) - (order[b.classification] ?? 0);
+  });
 
   async function getParticipantForSubmit() {
     if (participantId) return { id: participantId, code: participantCode || 'SESSION' };
@@ -161,11 +143,11 @@ export default function EndSurveyScreen() {
       const { error: postError } = await supabase.from('post_survey_responses').insert({
         participant_id: participant.id,
         spatial_awareness_improvement: postResponses[0],
-        confidence_improvement: postResponses[1],
-        recommendation_satisfaction: postResponses[2],
-        report_clarity: postResponses[3],
-        overall_satisfaction: postResponses[4],
-        intends_to_rearrange: intendsToRearrange,
+        confidence_improvement:        postResponses[1],
+        recommendation_satisfaction:   postResponses[2],
+        report_clarity:                postResponses[3],
+        overall_satisfaction:          postResponses[4],
+        intends_to_rearrange:          intendsToRearrange,
         debrief_q1: debrief.q1,
         debrief_q2: debrief.q2,
         debrief_q3: debrief.q3,
@@ -176,19 +158,16 @@ export default function EndSurveyScreen() {
       setSubmitStatus('Updating space utilization score...');
       const { data: updatedRows, error: updateError } = await supabase
         .from('space_utilization_scores')
-        .update({
-          score_after: spaceScoreAfter,
-          improvement_points: improvement,
-        })
+        .update({ score_after: spaceScoreAfter, improvement_points: improvement })
         .eq('participant_id', participant.id)
         .select('id');
       if (updateError) throwSupabaseError('Space score update failed', updateError);
 
       if (!updatedRows || updatedRows.length === 0) {
         const { error: insertScoreError } = await supabase.from('space_utilization_scores').insert({
-          participant_id: participant.id,
-          score_before: spaceScoreBefore,
-          score_after: spaceScoreAfter,
+          participant_id:    participant.id,
+          score_before:      spaceScoreBefore,
+          score_after:       spaceScoreAfter,
           improvement_points: improvement,
         });
         if (insertScoreError) throwSupabaseError('Space score insert failed', insertScoreError);
@@ -205,26 +184,6 @@ export default function EndSurveyScreen() {
     }
   }
 
-  function handleDownload() {
-    generateReport({
-      participantCode: participantCode || 'SESSION',
-      building: MULBERRY_PLACE_2BR.building,
-      unitType: MULBERRY_PLACE_2BR.unitType,
-      sessionDate: new Date().toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-      spaceScoreBefore,
-      spaceScoreAfter,
-      violations: recommendations,
-      stepsCompleted: completedSteps,
-      totalViolations: recommendations.length,
-      floorPlanDataUrl,
-      floorPlanAfterDataUrl,
-    });
-  }
-
   return (
     <div className="screen" style={{ maxWidth: 640 }}>
       <div className="screen-header">
@@ -233,33 +192,100 @@ export default function EndSurveyScreen() {
         </button>
         <div className="screen-header-info">
           <span style={stepBadgeStyle}>Evaluation</span>
-          <h2>Session Survey</h2>
+          <h2>Session Results</h2>
         </div>
       </div>
 
+      {/* ── SECTION 1: Space Utilization Score ─────────────────────────────── */}
       <section className="card">
-        <p className="card-title">Results</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
-          <ScoreBox label="Before" value={spaceScoreBefore} color="#E24B4A" />
-          <ScoreBox label="After" value={spaceScoreAfter} color="#4CAF50" />
+        <span style={stepBadgeStyle}>Space Utilization</span>
+        <h3 style={{ margin: '8px 0 14px' }}>Before vs After</h3>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={scoreBoxStyle('#FEF2F2', '#E24B4A')}>
+            <p className="info-label" style={{ marginBottom: 4 }}>BEFORE</p>
+            <p style={{ margin: 0, fontSize: 30, fontWeight: 800, color: '#E24B4A', lineHeight: 1 }}>
+              {spaceScoreBefore.toFixed(1)}%
+            </p>
+            <BarTrack value={spaceScoreBefore} color="#E24B4A" />
+            <p style={{ margin: '6px 0 0', fontSize: 11, color: '#9CA3AF' }}>free floor area</p>
+          </div>
+
+          <div style={scoreBoxStyle('#F0FDF4', '#4CAF50')}>
+            <p className="info-label" style={{ marginBottom: 4 }}>AFTER</p>
+            <p style={{ margin: 0, fontSize: 30, fontWeight: 800, color: '#4CAF50', lineHeight: 1 }}>
+              {spaceScoreAfter.toFixed(1)}%
+            </p>
+            <BarTrack value={spaceScoreAfter} color="#4CAF50" />
+            <p style={{ margin: '6px 0 0', fontSize: 11, color: '#9CA3AF' }}>free floor area</p>
+          </div>
         </div>
-        <p style={{ margin: '14px 0 0', color: '#166534', fontWeight: 800 }}>
-          {improvement >= 0 ? '+' : ''}{improvement.toFixed(1)}% free floor area gained
-        </p>
-        <p className="card-subtitle" style={{ marginTop: 8 }}>
-          {completedSteps} of {recommendations.length} violations resolved
-        </p>
+
+        <div style={{
+          marginTop: 16,
+          padding: '10px 14px',
+          borderRadius: 12,
+          background: improvement >= 0 ? '#F0FDF4' : '#FEF2F2',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <span style={{ fontSize: 22, fontWeight: 800, color: improvement >= 0 ? '#4CAF50' : '#E24B4A' }}>
+            {improvement >= 0 ? '+' : ''}{improvement.toFixed(1)} pts
+          </span>
+          <span style={{ fontSize: 13, color: '#374151' }}>free floor area gained this session</span>
+        </div>
       </section>
 
-      <button
-        className="btn btn-secondary"
-        type="button"
-        onClick={handleDownload}
-        style={{ marginTop: 4, width: '100%' }}
-      >
-        Download PDF Report
-      </button>
+      {/* ── SECTION 2: Violations Resolved ─────────────────────────────────── */}
+      <section className="card">
+        <span style={stepBadgeStyle}>Clearance Violations</span>
+        <h3 style={{ margin: '8px 0 4px' }}>
+          {completedSteps} of {totalViolations} issues resolved
+        </h3>
+        <p className="card-subtitle" style={{ marginTop: 0, marginBottom: 14 }}>
+          {totalViolations === 0
+            ? 'No clearance violations were detected.'
+            : completedSteps === totalViolations
+              ? 'All clearance violations have been addressed.'
+              : `${redRemaining > 0 ? `${redRemaining} critical` : ''}${redRemaining > 0 && yellowRemaining > 0 ? ' · ' : ''}${yellowRemaining > 0 ? `${yellowRemaining} moderate` : ''} remaining`}
+        </p>
 
+        {totalViolations > 0 && (
+          <>
+            <div style={{ height: 8, borderRadius: 99, background: 'var(--border)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                borderRadius: 99,
+                background: completedSteps === totalViolations ? '#4CAF50' : '#1F3864',
+                width: `${totalViolations > 0 ? (completedSteps / totalViolations) * 100 : 0}%`,
+                transition: 'width 0.4s ease',
+              }} />
+            </div>
+            <p style={{ margin: '6px 0 0', fontSize: 11, color: '#9CA3AF', textAlign: 'right' }}>
+              {totalViolations > 0 ? Math.round((completedSteps / totalViolations) * 100) : 0}% complete
+            </p>
+          </>
+        )}
+      </section>
+
+      {/* ── SECTION 3: Final Clearance Status ──────────────────────────────── */}
+      {totalViolations > 0 && (
+        <section className="card">
+          <span style={stepBadgeStyle}>Final Clearance Status</span>
+          <h3 style={{ margin: '8px 0 4px' }}>Clearance results per rule</h3>
+          <p className="card-subtitle" style={{ marginTop: 0, marginBottom: 12 }}>
+            Critical issues shown first
+          </p>
+          <div>
+            {sortedViolations.map((v) => (
+              <ViolationRow key={v.id} violation={v} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Supabase warning ───────────────────────────────────────────────── */}
       {!hasSupabaseConfig && (
         <div className="card" style={{ borderLeft: '5px solid #F0A500', color: '#92400E' }}>
           <p style={{ margin: 0, color: '#92400E', fontWeight: 800 }}>Supabase is not connected</p>
@@ -267,6 +293,7 @@ export default function EndSurveyScreen() {
         </div>
       )}
 
+      {/* ── SUS Survey ────────────────────────────────────────────────────── */}
       <SurveySection
         title="Please rate Habi3D — System Usability Scale"
         subtitle="1 = strongly disagree, 5 = strongly agree"
@@ -277,6 +304,7 @@ export default function EndSurveyScreen() {
         }
       />
 
+      {/* ── Post-survey ───────────────────────────────────────────────────── */}
       <SurveySection
         title="Post-survey"
         subtitle="1 = strongly disagree, 5 = strongly agree"
@@ -287,22 +315,48 @@ export default function EndSurveyScreen() {
         }
       />
 
+      {/* ── Researcher debrief ────────────────────────────────────────────── */}
       <section className="card" style={{ background: '#F8FAFC' }}>
         <p className="card-title">Researcher: transcribe verbal responses below</p>
-        <TextArea label="D1: Was there any step that confused you?" value={debrief.q1} onChange={(value) => setDebrief((prev) => ({ ...prev, q1: value }))} />
-        <TextArea label="D2: Which was more useful — the AR guide or the report?" value={debrief.q2} onChange={(value) => setDebrief((prev) => ({ ...prev, q2: value }))} />
-        <TextArea label="D3: Do you plan to physically rearrange your furniture?" value={debrief.q3} onChange={(value) => setDebrief((prev) => ({ ...prev, q3: value }))} />
+        <TextArea
+          label="D1: Was there any step that confused you?"
+          value={debrief.q1}
+          onChange={(value) => setDebrief((prev) => ({ ...prev, q1: value }))}
+        />
+        <TextArea
+          label="D2: Which was more useful — the AR guide or the on-screen summary?"
+          value={debrief.q2}
+          onChange={(value) => setDebrief((prev) => ({ ...prev, q2: value }))}
+        />
+        <TextArea
+          label="D3: Do you plan to physically rearrange your furniture?"
+          value={debrief.q3}
+          onChange={(value) => setDebrief((prev) => ({ ...prev, q3: value }))}
+        />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-          <button className={intendsToRearrange ? 'btn btn-primary' : 'btn btn-secondary'} type="button" onClick={() => setIntendsToRearrange(true)}>
+          <button
+            className={intendsToRearrange ? 'btn btn-primary' : 'btn btn-secondary'}
+            type="button"
+            onClick={() => setIntendsToRearrange(true)}
+          >
             Intends to rearrange: Yes
           </button>
-          <button className={!intendsToRearrange ? 'btn btn-primary' : 'btn btn-secondary'} type="button" onClick={() => setIntendsToRearrange(false)}>
+          <button
+            className={!intendsToRearrange ? 'btn btn-primary' : 'btn btn-secondary'}
+            type="button"
+            onClick={() => setIntendsToRearrange(false)}
+          >
             No
           </button>
         </div>
-        <TextArea label="D4: What would you want the app to do differently?" value={debrief.q4} onChange={(value) => setDebrief((prev) => ({ ...prev, q4: value }))} />
+        <TextArea
+          label="D4: What would you want the app to do differently?"
+          value={debrief.q4}
+          onChange={(value) => setDebrief((prev) => ({ ...prev, q4: value }))}
+        />
       </section>
 
+      {/* ── Submit feedback ───────────────────────────────────────────────── */}
       {submitError && (
         <div className="card" style={{ borderLeft: '5px solid #E24B4A', color: '#991B1B' }}>
           {submitError}
@@ -317,31 +371,78 @@ export default function EndSurveyScreen() {
             {postComplete ? 'complete' : `${missingPostCount} unanswered`} | Supabase:{' '}
             {hasSupabaseConfig ? 'configured' : 'missing env vars'}
           </p>
-          {submitStatus && <p style={{ margin: '8px 0 0', color: '#1F3864', fontWeight: 800 }}>{submitStatus}</p>}
+          {submitStatus && (
+            <p style={{ margin: '8px 0 0', color: '#1F3864', fontWeight: 800 }}>{submitStatus}</p>
+          )}
         </div>
       )}
 
       {submitted && (
-        <div className="card" style={{ borderLeft: '5px solid #4CAF50', background: '#ECFDF5', color: '#166534', fontWeight: 800 }}>
+        <div className="card" style={{
+          borderLeft: '5px solid #4CAF50',
+          background: '#ECFDF5',
+          color: '#166534',
+          fontWeight: 800,
+        }}>
           Session saved
         </div>
       )}
 
-      <button className="btn btn-primary" type="button" onClick={handleSubmit} disabled={submitting || submitted}>
+      <button
+        className="btn btn-primary"
+        type="button"
+        onClick={handleSubmit}
+        disabled={submitting || submitted}
+      >
         {submitting ? submitStatus || 'Submitting evaluation...' : 'Submit evaluation'}
       </button>
-
-      <canvas ref={canvasRef} style={{ display: 'none' }} width={720} height={520} />
-      <canvas ref={canvasAfterRef} style={{ display: 'none' }} width={720} height={520} />
     </div>
   );
 }
 
-function ScoreBox({ label, value, color }: { label: string; value: number; color: string }) {
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function BarTrack({ value, color }: { value: number; color: string }) {
+  const pct = Math.min(100, Math.max(0, value));
   return (
-    <div style={{ padding: 14, borderRadius: 16, border: '1px solid var(--border)' }}>
-      <p className="info-label">{label}</p>
-      <p style={{ margin: 0, fontSize: 28, color, fontWeight: 800 }}>{value.toFixed(1)}%</p>
+    <div style={{ height: 5, borderRadius: 99, background: '#E5E7EB', marginTop: 10, overflow: 'hidden' }}>
+      <div style={{ height: '100%', borderRadius: 99, background: color, width: `${pct}%` }} />
+    </div>
+  );
+}
+
+function ViolationRow({ violation: v }: { violation: Violation }) {
+  const isResolved = v.resolved;
+  const badgeLabel = isResolved ? 'CLEAR' : v.classification;
+  const badgeColor = isResolved ? '#4CAF50' : v.classification === 'RED' ? '#E24B4A' : '#F0A500';
+  const badgeBg    = isResolved ? '#DCFCE7' : v.classification === 'RED' ? '#FEF2F2' : '#FFFBEB';
+  const dotColor   = isResolved ? '#4CAF50' : v.classification === 'RED' ? '#E24B4A' : '#F0A500';
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '10px 0',
+      borderBottom: '1px solid var(--border)',
+    }}>
+      <div style={{
+        width: 9, height: 9, borderRadius: '50%',
+        background: dotColor, flexShrink: 0,
+      }} />
+      <span style={{ fontSize: 12, fontWeight: 700, color: '#1F3864', minWidth: 30, flexShrink: 0 }}>
+        {v.ruleCode}
+      </span>
+      <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {v.furnitureLabel}
+      </span>
+      <span style={{
+        fontSize: 11, fontWeight: 700,
+        color: badgeColor, background: badgeBg,
+        padding: '3px 10px', borderRadius: 20, flexShrink: 0,
+      }}>
+        {badgeLabel}
+      </span>
     </div>
   );
 }
@@ -378,7 +479,7 @@ function SurveySection({
                   borderRadius: 12,
                   border: '1px solid var(--border)',
                   background: values[index] === value ? '#1F3864' : '#ffffff',
-                  color: values[index] === value ? '#ffffff' : '#1F3864',
+                  color:      values[index] === value ? '#ffffff' : '#1F3864',
                   fontWeight: 800,
                 }}
               >
@@ -392,13 +493,30 @@ function SurveySection({
   );
 }
 
-function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function TextArea({ label, value, onChange }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <div style={{ marginTop: 16 }}>
       <label className="form-label">{label}</label>
-      <textarea className="form-input form-textarea" value={value} onChange={(event) => onChange(event.target.value)} />
+      <textarea
+        className="form-input form-textarea"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </div>
   );
+}
+
+function scoreBoxStyle(bg: string, border: string): CSSProperties {
+  return {
+    padding: 14,
+    borderRadius: 16,
+    background: bg,
+    border: `1px solid ${border}22`,
+  };
 }
 
 const stepBadgeStyle: CSSProperties = {

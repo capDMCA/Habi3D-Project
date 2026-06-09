@@ -267,24 +267,31 @@ export default function AnalysisScreen() {
               <p className="form-error" style={{ marginTop: 8 }}>{arError}</p>
             )}
 
-            {arPreviewOpen && (
-              <div style={{ marginTop: 12, height: 220, borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', background: '#f0f4f8' }}>
-                <Canvas
-                  camera={{ position: [0, 4.5, 5.5], fov: 48 }}
-                  style={{ width: '100%', height: '100%' }}
-                  gl={{ antialias: true, alpha: true }}
-                >
-                  <XR store={xrAnalysisStore}>
-                    <AnalysisScene
-                      items={items}
-                      classifications={result.allClassifications}
-                      roomWidthCm={roomWidthCm}
-                      roomLengthCm={roomLengthCm}
-                    />
-                  </XR>
-                </Canvas>
-              </div>
-            )}
+            {/* Canvas is always mounted so xrAnalysisStore.enterAR() has a
+                Three.js context to attach to; the container controls visibility */}
+            <div style={{
+              marginTop: arPreviewOpen ? 12 : 0,
+              height: arPreviewOpen ? 340 : 0,
+              overflow: 'hidden',
+              borderRadius: 10,
+              border: arPreviewOpen ? '1px solid var(--border)' : 'none',
+              background: '#f0f4f8',
+            }}>
+              <Canvas
+                camera={{ position: [0, 4.5, 5.5], fov: 48 }}
+                style={{ width: '100%', height: 340 }}
+                gl={{ antialias: true, alpha: true }}
+              >
+                <XR store={xrAnalysisStore}>
+                  <AnalysisScene
+                    items={items}
+                    classifications={result.allClassifications}
+                    roomWidthCm={roomWidthCm}
+                    roomLengthCm={roomLengthCm}
+                  />
+                </XR>
+              </Canvas>
+            </div>
           </section>
 
           {/* Violations / all-clear */}

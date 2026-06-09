@@ -178,6 +178,7 @@ export default function RecommendationScreen() {
 
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
   const [arError, setArError] = useState('');
+  const [correctionPreviewOpen, setCorrectionPreviewOpen] = useState(false);
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
 
   const result = useMemo(
@@ -337,20 +338,42 @@ export default function RecommendationScreen() {
             <p className="card-title">AR Correction Guide</p>
             <p className="card-subtitle">See the direction arrow live in your room</p>
           </div>
-          <button
-            className="btn btn-primary"
-            type="button"
-            onClick={launchAR}
-            style={{ width: 'auto', minWidth: 96, fontSize: '0.875rem', padding: '10px 14px', minHeight: 42, flexShrink: 0 }}
-          >
-            Open AR
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              style={{ width: 'auto', fontSize: '0.875rem', padding: '10px 14px', minHeight: 40 }}
+              onClick={() => setCorrectionPreviewOpen((v) => !v)}
+            >
+              {correctionPreviewOpen ? 'Hide 3D' : '3D Preview'}
+            </button>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={launchAR}
+              style={{ width: 'auto', minWidth: 80, fontSize: '0.875rem', padding: '10px 14px', minHeight: 40 }}
+            >
+              Open AR
+            </button>
+          </div>
         </div>
         {arError && <p className="form-error" style={{ marginTop: 8 }}>{arError}</p>}
 
-        {/* Hidden canvas — WebXR session attaches here; do not remove */}
-        <div style={{ height: 0, overflow: 'hidden', pointerEvents: 'none' }} aria-hidden>
-          <Canvas style={{ width: '100%', height: 1 }} gl={{ antialias: false, alpha: true }}>
+        {/* Canvas always mounted so xrRecommendationStore.enterAR() has a
+            Three.js context; the container height controls visual visibility */}
+        <div style={{
+          marginTop: correctionPreviewOpen ? 12 : 0,
+          height: correctionPreviewOpen ? 280 : 0,
+          overflow: 'hidden',
+          borderRadius: 10,
+          border: correctionPreviewOpen ? '1px solid var(--border)' : 'none',
+          background: '#f0f4f8',
+        }}>
+          <Canvas
+            camera={{ position: [0, 3.5, 4.5], fov: 52 }}
+            style={{ width: '100%', height: 280 }}
+            gl={{ antialias: true, alpha: true }}
+          >
             <XR store={xrRecommendationStore}>
               <ambientLight intensity={1.25} />
               <directionalLight position={[3, 5, 3]} intensity={0.9} />
