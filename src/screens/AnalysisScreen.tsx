@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { createXRStore, XR, XROrigin } from '@react-three/xr';
+import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
 import ClearanceOverlay from '../ar/ClearanceOverlay';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import { runClearanceAnalysis } from '../engine/clearance';
@@ -169,6 +169,10 @@ export default function AnalysisScreen() {
     }
   }
 
+  function exitAR() {
+    xrAnalysisStore.getState().session?.end();
+  }
+
   return (
     <div className="screen" style={{ maxWidth: 680, paddingBottom: 96 }}>
 
@@ -289,6 +293,23 @@ export default function AnalysisScreen() {
                     roomWidthCm={roomWidthCm}
                     roomLengthCm={roomLengthCm}
                   />
+                  <XRDomOverlay>
+                    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none' }}>
+                      <button
+                        type="button"
+                        onClick={exitAR}
+                        style={{
+                          position: 'absolute', top: 16, right: 16,
+                          background: 'rgba(239,68,68,0.92)', color: 'white',
+                          border: 0, borderRadius: 12, padding: '12px 16px',
+                          fontWeight: 700, fontSize: 14,
+                          backdropFilter: 'blur(8px)', pointerEvents: 'auto',
+                        }}
+                      >
+                        Exit AR
+                      </button>
+                    </div>
+                  </XRDomOverlay>
                 </XR>
               </Canvas>
             </div>

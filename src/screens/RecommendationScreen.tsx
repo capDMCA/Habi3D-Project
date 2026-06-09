@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { createXRStore, XR, XROrigin } from '@react-three/xr';
+import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
 import ClearanceOverlay from '../ar/ClearanceOverlay';
 import CorrectionArrow from '../ar/CorrectionArrow';
 import { createFurnitureShape } from '../ar/shapeLibrary';
@@ -231,6 +231,10 @@ export default function RecommendationScreen() {
     }
   }
 
+  function exitAR() {
+    xrRecommendationStore.getState().session?.end();
+  }
+
   function handleDone() {
     if (!currentGroup) return;
     // Mark all violations for this furniture piece as resolved
@@ -414,6 +418,23 @@ export default function RecommendationScreen() {
                 violation={currentGroup.directionGroups[0]?.violations[0] ?? currentGroup.allViolations[0]}
                 items={items}
               />
+              <XRDomOverlay>
+                <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none' }}>
+                  <button
+                    type="button"
+                    onClick={exitAR}
+                    style={{
+                      position: 'absolute', top: 16, right: 16,
+                      background: 'rgba(239,68,68,0.92)', color: 'white',
+                      border: 0, borderRadius: 12, padding: '12px 16px',
+                      fontWeight: 700, fontSize: 14,
+                      backdropFilter: 'blur(8px)', pointerEvents: 'auto',
+                    }}
+                  >
+                    Exit AR
+                  </button>
+                </div>
+              </XRDomOverlay>
             </XR>
           </Canvas>
         </div>

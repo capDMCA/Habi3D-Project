@@ -11,7 +11,6 @@ const xrPlacementStore = createXRStore({
   offerSession: false,
   emulate: false,
   hitTest: true,
-  planeDetection: true,
   domOverlay: true,
 });
 
