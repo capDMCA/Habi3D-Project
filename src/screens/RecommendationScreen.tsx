@@ -215,13 +215,12 @@ export default function RecommendationScreen() {
   const doneCount       = totalCount - pendingGroups.length;
   const displayedScore  = spaceScoreAfter || result.spaceScoreBefore;
 
-  // Navigate to survey when all groups are done/skipped
+  // Update score when all groups are done/skipped
   useEffect(() => {
     if (recommendations.length > 0 && pendingGroups.length === 0) {
       setSpaceScoreAfter(result.spaceScoreBefore);
-      navigateTo('end_survey');
     }
-  }, [navigateTo, pendingGroups.length, recommendations.length, result.spaceScoreBefore, setSpaceScoreAfter]);
+  }, [pendingGroups.length, recommendations.length, result.spaceScoreBefore, setSpaceScoreAfter]);
 
   async function launchAR() {
     setArError('');
@@ -261,15 +260,40 @@ export default function RecommendationScreen() {
         <div className="card" style={{ borderLeft: '5px solid #4CAF50', background: '#ECFDF5', textAlign: 'center', padding: 'var(--space-xl)' }}>
           <p className="card-title" style={{ color: '#166534' }}>No violations to fix</p>
           <p className="card-subtitle" style={{ marginTop: 6 }}>Your layout meets all clearance standards.</p>
-          <button className="btn btn-primary" style={{ marginTop: 'var(--space-lg)' }} onClick={() => navigateTo('end_survey')}>
-            Continue to Survey
+          <button className="btn btn-primary" style={{ marginTop: 'var(--space-lg)' }} onClick={() => navigateTo('analysis')}>
+            Back to Analysis
           </button>
         </div>
       </div>
     );
   }
 
-  if (!currentGroup) return null;
+  if (!currentGroup) {
+    return (
+      <div className="screen" style={{ maxWidth: 640 }}>
+        <div className="screen-header">
+          <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
+          <div className="screen-header-info">
+            <span className="step-label">Recommendations</span>
+            <h2>Fix Violations</h2>
+          </div>
+        </div>
+        <div className="card" style={{ borderLeft: '5px solid #4CAF50', background: '#ECFDF5', textAlign: 'center', padding: 'var(--space-xl)' }}>
+          <p className="card-title" style={{ color: '#166534' }}>All items addressed</p>
+          <p className="card-subtitle" style={{ marginTop: 6 }}>
+            You have worked through all clearance recommendations for this session.
+          </p>
+          <button
+            className="btn btn-secondary"
+            style={{ marginTop: 'var(--space-lg)', maxWidth: 280 }}
+            onClick={() => navigateTo('analysis')}
+          >
+            Back to Analysis
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="screen" style={{ maxWidth: 640, paddingBottom: 92 }}>

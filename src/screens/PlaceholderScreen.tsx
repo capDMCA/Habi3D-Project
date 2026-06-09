@@ -40,22 +40,14 @@ const SCREEN_META: Record<string, ScreenMeta> = {
     description:
       'Step-by-step sequential recommendations to fix violations, ranked by Priority Score.',
     prev: 'analysis',
-    next: 'end_survey',
-  },
-  end_survey: {
-    title: 'Post-Session Survey',
-    step: 6,
-    description:
-      'Complete the SUS usability questionnaire and post-session survey. Responses are saved to Supabase.',
-    prev: 'recommendations',
-    next: 'report',
+    next: null,
   },
   report: {
     title: 'Session Report',
     step: 6,
     description:
-      'Generate and download a PDF report with all clearance findings, scores, and recommendations.',
-    prev: 'end_survey',
+      'View clearance findings, scores, and recommendations for this session.',
+    prev: 'recommendations',
     next: null,
   },
 };

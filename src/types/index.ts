@@ -11,8 +11,6 @@ export type ScreenName =
   | 'analysis'
   | 'recommendations'
   | 'recommendation'
-  | 'end_survey'
-  | 'surveyEnd'
   | 'report';
 
 export type FurnitureShape = 'rectangle' | 'l-shape' | 'round' | 'oval';

@@ -328,11 +328,7 @@ export default function AnalysisScreen() {
             <button className="btn btn-primary" type="button" onClick={() => navigateTo('recommendations')}>
               Fix violations — step by step
             </button>
-          ) : (
-            <button className="btn btn-primary" type="button" onClick={() => navigateTo('end_survey')}>
-              Continue to Survey
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

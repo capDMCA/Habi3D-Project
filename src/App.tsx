@@ -9,7 +9,6 @@ import DimensionVerificationScreen from './screens/DimensionVerificationScreen';
 import PositionMapScreen from './screens/PositionMapScreen';
 import AnalysisScreen from './screens/AnalysisScreen';
 import RecommendationScreen from './screens/RecommendationScreen';
-import EndSurveyScreen from './screens/EndSurveyScreen';
 import PlaceholderScreen from './screens/PlaceholderScreen';
 import './App.css';
 
@@ -38,9 +37,6 @@ export default function App() {
     case 'recommendations':
     case 'recommendation':
       return <RecommendationScreen />;
-    case 'end_survey':
-    case 'surveyEnd':
-      return <EndSurveyScreen />;
     default:
       return <PlaceholderScreen screenName={currentScreen} />;
   }
