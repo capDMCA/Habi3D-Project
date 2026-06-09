@@ -260,8 +260,8 @@ export default function RecommendationScreen() {
         <div className="card" style={{ borderLeft: '5px solid #4CAF50', background: '#ECFDF5', textAlign: 'center', padding: 'var(--space-xl)' }}>
           <p className="card-title" style={{ color: '#166534' }}>No violations to fix</p>
           <p className="card-subtitle" style={{ marginTop: 6 }}>Your layout meets all clearance standards.</p>
-          <button className="btn btn-primary" style={{ marginTop: 'var(--space-lg)' }} onClick={() => navigateTo('analysis')}>
-            Back to Analysis
+          <button className="btn btn-primary" style={{ marginTop: 'var(--space-lg)' }} onClick={() => navigateTo('report')}>
+            View Report
           </button>
         </div>
       </div>
@@ -284,11 +284,11 @@ export default function RecommendationScreen() {
             You have worked through all clearance recommendations for this session.
           </p>
           <button
-            className="btn btn-secondary"
+            className="btn btn-primary"
             style={{ marginTop: 'var(--space-lg)', maxWidth: 280 }}
-            onClick={() => navigateTo('analysis')}
+            onClick={() => navigateTo('report')}
           >
-            Back to Analysis
+            View Report
           </button>
         </div>
       </div>
