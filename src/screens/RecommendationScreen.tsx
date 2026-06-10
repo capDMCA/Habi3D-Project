@@ -259,19 +259,20 @@ export default function RecommendationScreen() {
     resolveViolations(currentGroup.allViolations.map((v) => v.id));
 
     // Accumulate clearance improvement into the "after" score.
-    // shortfallCm × affectedEdgeLengthCm = cm² of floor area that gains adequate clearance.
+    // Deduplicate by direction: multiple rules can flag the same furniture edge, so
+    // take the max shortfall×edge per direction instead of summing all violations.
     const roomAreaCm2 = roomWidthCm * roomLengthCm;
-    const recoveredCm2 = currentGroup.allViolations.reduce(
-      (sum, v) => sum + v.shortfallCm * v.affectedEdgeLengthCm,
-      0,
-    );
-    const gained = roomAreaCm2 > 0 ? (recoveredCm2 / roomAreaCm2) * 100 : 0;
+    const dirMap = new Map<string, number>();
+    for (const v of currentGroup.allViolations) {
+      const area = v.shortfallCm * v.affectedEdgeLengthCm;
+      dirMap.set(v.fixDirectionLabel, Math.max(dirMap.get(v.fixDirectionLabel) ?? 0, area));
+    }
+    const recoveredCm2 = Array.from(dirMap.values()).reduce((a, b) => a + b, 0);
+    const rawGain = roomAreaCm2 > 0 ? (recoveredCm2 / roomAreaCm2) * 100 : 0;
+    const gained = Math.min(10, rawGain); // cap at 10% per step
     const baseScore = spaceScoreAfter > 0 ? spaceScoreAfter : result.spaceScoreBefore;
-    setSpaceScoreAfter(Math.min(100, Math.round((baseScore + gained) * 10) / 10));
+    setSpaceScoreAfter(Math.min(99, Math.round((baseScore + gained) * 10) / 10));
 
-    // Re-run analysis with simulated positions for accurate violation list update
-    const updated = runClearanceAnalysis(updatedItems, roomWidthCm, roomLengthCm);
-    refreshViolations(updated.violations);
   }
 
   function handleSkip() {
