@@ -170,6 +170,7 @@ export default function RecommendationScreen() {
   const navigateTo          = useSessionStore((s) => s.navigateTo);
   const roomDimensions      = useSessionStore((s) => s.roomDimensions);
   const items               = useFurnitureStore((s) => s.items);
+  const updatePosition      = useFurnitureStore((s) => s.updatePosition);
   const recommendations     = useViolationStore((s) => s.recommendations);
   const refreshViolations   = useViolationStore((s) => s.refreshViolations);
   const resolveViolations   = useViolationStore((s) => s.resolveViolations);
@@ -215,12 +216,6 @@ export default function RecommendationScreen() {
   const doneCount       = totalCount - pendingGroups.length;
   const displayedScore  = spaceScoreAfter || result.spaceScoreBefore;
 
-  // Update score when all groups are done/skipped
-  useEffect(() => {
-    if (recommendations.length > 0 && pendingGroups.length === 0) {
-      setSpaceScoreAfter(result.spaceScoreBefore);
-    }
-  }, [pendingGroups.length, recommendations.length, result.spaceScoreBefore, setSpaceScoreAfter]);
 
   async function launchAR() {
     setArError('');
@@ -237,12 +232,46 @@ export default function RecommendationScreen() {
 
   function handleDone() {
     if (!currentGroup) return;
-    // Mark all violations for this furniture piece as resolved
+
+    // Build simulated items with the recommended move applied to this furniture piece
+    const updatedItems = items.map((it) => {
+      if (it.id !== currentGroup.furnitureId) return it;
+      let posX = it.posX;
+      let posZ = it.posZ;
+      for (const dg of currentGroup.directionGroups) {
+        const dm = dg.distanceCm / 100; // cm → meters
+        const word = dg.word.toLowerCase();
+        if (word === 'east')       posX += dm;
+        else if (word === 'west')  posX -= dm;
+        else if (word === 'south') posZ += dm;
+        else if (word === 'north') posZ -= dm;
+      }
+      return { ...it, posX, posZ };
+    });
+
+    // Persist the move to the furniture store so AR/3D views stay accurate
+    const moved = updatedItems.find((it) => it.id === currentGroup.furnitureId);
+    if (moved) {
+      updatePosition(moved.id, moved.posX, moved.posZ, moved.rotationY);
+    }
+
+    // Mark violations for this furniture piece as resolved
     resolveViolations(currentGroup.allViolations.map((v) => v.id));
-    // Re-run analysis and refresh
-    const updated = runClearanceAnalysis(items, roomWidthCm, roomLengthCm);
+
+    // Accumulate clearance improvement into the "after" score.
+    // shortfallCm × affectedEdgeLengthCm = cm² of floor area that gains adequate clearance.
+    const roomAreaCm2 = roomWidthCm * roomLengthCm;
+    const recoveredCm2 = currentGroup.allViolations.reduce(
+      (sum, v) => sum + v.shortfallCm * v.affectedEdgeLengthCm,
+      0,
+    );
+    const gained = roomAreaCm2 > 0 ? (recoveredCm2 / roomAreaCm2) * 100 : 0;
+    const baseScore = spaceScoreAfter > 0 ? spaceScoreAfter : result.spaceScoreBefore;
+    setSpaceScoreAfter(Math.min(100, Math.round((baseScore + gained) * 10) / 10));
+
+    // Re-run analysis with simulated positions for accurate violation list update
+    const updated = runClearanceAnalysis(updatedItems, roomWidthCm, roomLengthCm);
     refreshViolations(updated.violations);
-    setSpaceScoreAfter(updated.spaceScoreBefore);
   }
 
   function handleSkip() {
