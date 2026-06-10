@@ -170,7 +170,6 @@ export default function RecommendationScreen() {
   const navigateTo          = useSessionStore((s) => s.navigateTo);
   const roomDimensions      = useSessionStore((s) => s.roomDimensions);
   const items               = useFurnitureStore((s) => s.items);
-  const updatePosition      = useFurnitureStore((s) => s.updatePosition);
   const recommendations     = useViolationStore((s) => s.recommendations);
   const refreshViolations   = useViolationStore((s) => s.refreshViolations);
   const resolveViolations   = useViolationStore((s) => s.resolveViolations);
@@ -233,46 +232,16 @@ export default function RecommendationScreen() {
   function handleDone() {
     if (!currentGroup) return;
 
-    // Build simulated items with the recommended move applied to this furniture piece
-    const updatedItems = items.map((it) => {
-      if (it.id !== currentGroup.furnitureId) return it;
-      let posX = it.posX;
-      let posZ = it.posZ;
-      for (const dg of currentGroup.directionGroups) {
-        const dm = dg.distanceCm / 100; // cm → meters
-        const word = dg.word.toLowerCase();
-        if (word === 'east')       posX += dm;
-        else if (word === 'west')  posX -= dm;
-        else if (word === 'south') posZ += dm;
-        else if (word === 'north') posZ -= dm;
-      }
-      return { ...it, posX, posZ };
-    });
-
-    // Persist the move to the furniture store so AR/3D views stay accurate
-    const moved = updatedItems.find((it) => it.id === currentGroup.furnitureId);
-    if (moved) {
-      updatePosition(moved.id, moved.posX, moved.posZ, moved.rotationY);
-    }
-
-    // Mark violations for this furniture piece as resolved
+    // Mark all violations for this furniture piece as resolved.
+    // This causes pendingGroups to recompute excluding this furniture → screen advances.
     resolveViolations(currentGroup.allViolations.map((v) => v.id));
 
-    // Accumulate clearance improvement into the "after" score.
-    // Deduplicate by direction: multiple rules can flag the same furniture edge, so
-    // take the max shortfall×edge per direction instead of summing all violations.
-    const roomAreaCm2 = roomWidthCm * roomLengthCm;
-    const dirMap = new Map<string, number>();
-    for (const v of currentGroup.allViolations) {
-      const area = v.shortfallCm * v.affectedEdgeLengthCm;
-      dirMap.set(v.fixDirectionLabel, Math.max(dirMap.get(v.fixDirectionLabel) ?? 0, area));
-    }
-    const recoveredCm2 = Array.from(dirMap.values()).reduce((a, b) => a + b, 0);
-    const rawGain = roomAreaCm2 > 0 ? (recoveredCm2 / roomAreaCm2) * 100 : 0;
-    const gained = Math.min(10, rawGain); // cap at 10% per step
+    // Score: add a fixed increment per resolved violation weighted by severity.
+    const redCount  = currentGroup.allViolations.filter((v) => v.classification === 'RED').length;
+    const yellCount = currentGroup.allViolations.filter((v) => v.classification === 'YELLOW').length;
+    const gained    = Math.min(10, redCount * 2.5 + yellCount * 1.0);
     const baseScore = spaceScoreAfter > 0 ? spaceScoreAfter : result.spaceScoreBefore;
     setSpaceScoreAfter(Math.min(99, Math.round((baseScore + gained) * 10) / 10));
-
   }
 
   function handleSkip() {
