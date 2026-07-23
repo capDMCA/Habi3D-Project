@@ -178,7 +178,6 @@ export default function RecommendationScreen() {
 
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
   const [arError, setArError] = useState('');
-  const [correctionPreviewOpen, setCorrectionPreviewOpen] = useState(false);
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
 
   const result = useMemo(
@@ -365,35 +364,25 @@ export default function RecommendationScreen() {
             <p className="card-title">AR Correction Guide</p>
             <p className="card-subtitle">See the direction arrow live in your room</p>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button
-              className="btn btn-secondary"
-              type="button"
-              style={{ width: 'auto', fontSize: '0.875rem', padding: '10px 14px', minHeight: 40 }}
-              onClick={() => setCorrectionPreviewOpen((v) => !v)}
-            >
-              {correctionPreviewOpen ? 'Hide 3D' : '3D Preview'}
-            </button>
-            <button
-              className="btn btn-primary"
-              type="button"
-              onClick={launchAR}
-              style={{ width: 'auto', minWidth: 80, fontSize: '0.875rem', padding: '10px 14px', minHeight: 40 }}
-            >
-              Open AR
-            </button>
-          </div>
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={launchAR}
+            style={{ width: 'auto', minWidth: 80, fontSize: '0.875rem', padding: '10px 14px', minHeight: 40, flexShrink: 0 }}
+          >
+            Open AR
+          </button>
         </div>
         {arError && <p className="form-error" style={{ marginTop: 8 }}>{arError}</p>}
 
         {/* Canvas always mounted so xrRecommendationStore.enterAR() has a
-            Three.js context; the container height controls visual visibility */}
+            Three.js context; the container is only visible during an active
+            immersive-ar session (WebXR renders full-screen regardless) */}
         <div style={{
-          marginTop: correctionPreviewOpen ? 12 : 0,
-          height: correctionPreviewOpen ? 280 : 0,
+          height: 0,
           overflow: 'hidden',
           borderRadius: 10,
-          border: correctionPreviewOpen ? '1px solid var(--border)' : 'none',
+          border: 'none',
           background: '#f0f4f8',
         }}>
           <Canvas

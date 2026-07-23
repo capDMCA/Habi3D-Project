@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
+import { createXRStore, XR, XRDomOverlay, XROrigin, useXRHitTest } from '@react-three/xr';
+import * as THREE from 'three';
 import ClearanceOverlay from '../ar/ClearanceOverlay';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import { runClearanceAnalysis } from '../engine/clearance';
@@ -18,6 +19,8 @@ const xrAnalysisStore = createXRStore({
   planeDetection: true,
   domOverlay: true,
 });
+
+const hitMatrix = new THREE.Matrix4();
 
 function getRoomDimensions(roomDimensions: RoomDimensions | null) {
   if (!roomDimensions) return { roomWidthCm: 360, roomLengthCm: 520 };
@@ -49,19 +52,79 @@ function AnalysisScene({
   classifications,
   roomWidthCm,
   roomLengthCm,
+  calibrationOffset,
+  onCalibrate,
 }: {
   items: FurnitureItem[];
   classifications: ReturnType<typeof runClearanceAnalysis>['allClassifications'];
   roomWidthCm: number;
   roomLengthCm: number;
+  calibrationOffset: { x: number; z: number } | null;
+  onCalibrate: (offset: { x: number; z: number }) => void;
 }) {
+  // Every AR session gets a fresh WebXR reference-space origin, so the
+  // positions stored during Position Map (a different session) land in the
+  // wrong spot here unless corrected. Until the user taps a real furniture
+  // base to calibrate, we track live hit-test results but don't move
+  // anything; once calibrated, every item is rendered at posX/posZ + offset.
+  const latestHitRef = useRef<{ x: number; z: number } | null>(null);
+
+  useXRHitTest(
+    useCallback(
+      (results, getWorldMatrix) => {
+        if (calibrationOffset || results.length === 0) return;
+        const hasMatrix = getWorldMatrix(hitMatrix, results[0]);
+        if (!hasMatrix) return;
+        const point = new THREE.Vector3().setFromMatrixPosition(hitMatrix);
+        latestHitRef.current = { x: point.x, z: point.z };
+      },
+      [calibrationOffset],
+    ),
+    'viewer',
+  );
+
+  useEffect(() => {
+    if (calibrationOffset || items.length === 0) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('button, input, select, textarea')) return;
+      const hit = latestHitRef.current;
+      if (!hit) return;
+
+      // Find whichever placed item is closest to the tapped point and use
+      // it as the calibration reference — the user just taps near the real
+      // piece of furniture they can see, no need to pick a specific one.
+      let closest = items[0];
+      let closestDist = Infinity;
+      for (const it of items) {
+        const dist = Math.hypot(it.posX - hit.x, it.posZ - hit.z);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = it;
+        }
+      }
+      onCalibrate({ x: hit.x - closest.posX, z: hit.z - closest.posZ });
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [calibrationOffset, items, onCalibrate]);
+
+  const offsetItems = useMemo(() => {
+    const dx = calibrationOffset?.x ?? 0;
+    const dz = calibrationOffset?.z ?? 0;
+    if (dx === 0 && dz === 0) return items;
+    return items.map((it) => ({ ...it, posX: it.posX + dx, posZ: it.posZ + dz }));
+  }, [items, calibrationOffset]);
+
   return (
     <>
       <ambientLight intensity={1.25} />
       <directionalLight position={[3, 5, 3]} intensity={0.9} />
       <XROrigin />
-      {items.map((item) => <FurnitureMesh key={item.id} item={item} />)}
-      <ClearanceOverlay items={items} classifications={classifications} roomWidthCm={roomWidthCm} roomLengthCm={roomLengthCm} />
+      {offsetItems.map((item) => <FurnitureMesh key={item.id} item={item} />)}
+      <ClearanceOverlay items={offsetItems} classifications={classifications} roomWidthCm={roomWidthCm} roomLengthCm={roomLengthCm} />
     </>
   );
 }
@@ -129,9 +192,20 @@ export default function AnalysisScreen() {
 
   const scoreSaveAttemptedRef = useRef(false);
   const [arError, setArError] = useState('');
-  const [arPreviewOpen, setArPreviewOpen] = useState(false);
+  const [arActive, setArActive] = useState(false);
+  const [calibrationOffset, setCalibrationOffset] = useState<{ x: number; z: number } | null>(null);
 
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
+
+  useEffect(() => {
+    return xrAnalysisStore.subscribe((state, prevState) => {
+      if (state.session === prevState.session) return;
+      setArActive(state.session != null);
+      // Every new session gets a fresh reference-space origin, so any
+      // calibration from a previous session is no longer valid.
+      if (state.session == null) setCalibrationOffset(null);
+    });
+  }, []);
 
   const result = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
@@ -173,7 +247,12 @@ export default function AnalysisScreen() {
     xrAnalysisStore.getState().session?.end();
   }
 
+  function recalibrate() {
+    setCalibrationOffset(null);
+  }
+
   return (
+    <>
     <div className="screen" style={{ maxWidth: 680, paddingBottom: 96 }}>
 
       {/* Header */}
@@ -247,72 +326,19 @@ export default function AnalysisScreen() {
                 <p className="card-title">AR Clearance Overlay</p>
                 <p className="card-subtitle">Inspect color zones live in your room</p>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  style={{ width: 'auto', fontSize: '0.875rem', padding: '10px 14px', minHeight: 40 }}
-                  onClick={() => setArPreviewOpen((v) => !v)}
-                >
-                  {arPreviewOpen ? 'Hide 3D' : '3D Preview'}
-                </button>
-                <button
-                  className="btn btn-primary"
-                  type="button"
-                  style={{ width: 'auto', fontSize: '0.875rem', padding: '10px 14px', minHeight: 40 }}
-                  onClick={openArOverlay}
-                >
-                  Open AR
-                </button>
-              </div>
+              <button
+                className="btn btn-primary"
+                type="button"
+                style={{ width: 'auto', fontSize: '0.875rem', padding: '10px 14px', minHeight: 40, flexShrink: 0 }}
+                onClick={openArOverlay}
+              >
+                Open AR
+              </button>
             </div>
 
             {arError && (
               <p className="form-error" style={{ marginTop: 8 }}>{arError}</p>
             )}
-
-            {/* Canvas is always mounted so xrAnalysisStore.enterAR() has a
-                Three.js context to attach to; the container controls visibility */}
-            <div style={{
-              marginTop: arPreviewOpen ? 12 : 0,
-              height: arPreviewOpen ? 340 : 0,
-              overflow: 'hidden',
-              borderRadius: 10,
-              border: arPreviewOpen ? '1px solid var(--border)' : 'none',
-              background: '#f0f4f8',
-            }}>
-              <Canvas
-                camera={{ position: [0, 4.5, 5.5], fov: 48 }}
-                style={{ width: '100%', height: 340 }}
-                gl={{ antialias: true, alpha: true }}
-              >
-                <XR store={xrAnalysisStore}>
-                  <AnalysisScene
-                    items={items}
-                    classifications={result.allClassifications}
-                    roomWidthCm={roomWidthCm}
-                    roomLengthCm={roomLengthCm}
-                  />
-                  <XRDomOverlay>
-                    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none' }}>
-                      <button
-                        type="button"
-                        onClick={exitAR}
-                        style={{
-                          position: 'absolute', top: 16, right: 16,
-                          background: 'rgba(239,68,68,0.92)', color: 'white',
-                          border: 0, borderRadius: 12, padding: '12px 16px',
-                          fontWeight: 700, fontSize: 14,
-                          backdropFilter: 'blur(8px)', pointerEvents: 'auto',
-                        }}
-                      >
-                        Exit AR
-                      </button>
-                    </div>
-                  </XRDomOverlay>
-                </XR>
-              </Canvas>
-            </div>
           </section>
 
           {/* Violations / all-clear */}
@@ -353,6 +379,76 @@ export default function AnalysisScreen() {
         </div>
       </div>
     </div>
+
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: arActive ? 9999 : -1,
+        visibility: arActive ? 'visible' : 'hidden',
+        pointerEvents: arActive ? 'auto' : 'none',
+      }}
+    >
+      <Canvas style={{ position: 'absolute', inset: 0 }} gl={{ antialias: true, alpha: true }}>
+        <XR store={xrAnalysisStore}>
+          <AnalysisScene
+            items={items}
+            classifications={result.allClassifications}
+            roomWidthCm={roomWidthCm}
+            roomLengthCm={roomLengthCm}
+            calibrationOffset={calibrationOffset}
+            onCalibrate={setCalibrationOffset}
+          />
+          <XRDomOverlay>
+            <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', fontFamily: "'Inter', system-ui, sans-serif" }}>
+              <div
+                style={{
+                  position: 'absolute', top: 16, left: 16, right: 16,
+                  display: 'flex', gap: 12, alignItems: 'flex-start', pointerEvents: 'auto',
+                }}
+              >
+                <div style={{
+                  flex: 1, background: 'rgba(17, 24, 39, 0.86)', color: 'white',
+                  padding: '10px 12px', borderRadius: 8, fontSize: 13, lineHeight: 1.45,
+                }}>
+                  <strong>Clearance Overlay</strong>
+                  <br />
+                  {calibrationOffset
+                    ? 'Overlay aligned to your room. Colour zones and furniture outlines are shown at your placed positions.'
+                    : 'Tap the floor at the base of any furniture piece you already placed, to align the overlay to your room.'}
+                </div>
+                <button
+                  type="button"
+                  onClick={exitAR}
+                  style={{
+                    background: '#ef4444', color: 'white', border: 0, borderRadius: 8,
+                    padding: '10px 14px', fontWeight: 700,
+                  }}
+                >
+                  Exit
+                </button>
+              </div>
+
+              {calibrationOffset && (
+                <button
+                  type="button"
+                  onClick={recalibrate}
+                  style={{
+                    position: 'absolute', left: 16, right: 16, bottom: 24,
+                    background: 'rgba(17, 24, 39, 0.86)', color: 'white', border: 0,
+                    borderRadius: 8, padding: '12px 14px', fontWeight: 700,
+                    pointerEvents: 'auto',
+                  }}
+                >
+                  Recalibrate
+                </button>
+              )}
+            </div>
+          </XRDomOverlay>
+        </XR>
+      </Canvas>
+    </div>
+    </>
   );
 }
 
