@@ -5,7 +5,13 @@ import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
 import ClearanceOverlay from '../ar/ClearanceOverlay';
 import CorrectionArrow from '../ar/CorrectionArrow';
 import { createFurnitureShape } from '../ar/shapeLibrary';
+import FloorPlan2D from '../components/FloorPlan2D';
+import PlanSandbox from '../components/PlanSandbox';
+import { commitLines } from '../components/previewMove';
+import type { PreviewMove } from '../components/previewMove';
+import { findingReason } from '../components/findingText';
 import { runClearanceAnalysis } from '../engine/clearance';
+import type { WallSide } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
@@ -115,6 +121,29 @@ function buildFurnitureGroups(violations: Violation[], skippedIds: Set<string>):
     });
 }
 
+// Express the engine's own recommendation for a furniture group using the SAME
+// commitLines sentence builder the sandbox handoff uses — one instruction
+// format across both paths, never two separately-formatted strings.
+function engineMoveLines(group: FurnitureGroup): string[] {
+  return group.directionGroups.flatMap((dg) => {
+    const w = dg.word.toLowerCase();
+    const directionWall: WallSide | null =
+      w === 'north' || w === 'south' || w === 'east' || w === 'west' ? w : null;
+    const move: PreviewMove = {
+      itemId: group.furnitureId,
+      itemLabel: group.furnitureLabel,
+      directionWall,
+      distanceCm: dg.distanceCm,
+      dxCm: 0,
+      dzCm: 0,
+      rotationDeltaRad: 0,
+      rotationDeg: 0,
+      facingAfter: null,
+    };
+    return commitLines(move);
+  });
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function FurnitureMesh({ item }: { item: FurnitureItem }) {
@@ -132,38 +161,6 @@ function FurnitureMesh({ item }: { item: FurnitureItem }) {
   );
 }
 
-function DirectionBlock({ dg }: { dg: DirectionGroup }) {
-  const bgColor = dg.color === '#E24B4A' ? '#FEF2F2' : '#FFFBEB';
-  const borderColor = dg.color === '#E24B4A' ? '#FECACA' : '#FCD34D';
-
-  return (
-    <div style={{ background: bgColor, border: `1px solid ${borderColor}`, borderRadius: 12, padding: '12px 14px', marginBottom: 8 }}>
-      {/* Arrow + distance row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-        <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>{dg.arrow}</span>
-        <div>
-          <p style={{ margin: 0, fontSize: 20, fontWeight: 850, color: dg.color, lineHeight: 1 }}>
-            {dg.distanceCm} cm
-          </p>
-          <p style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 600, color: '#64748b' }}>
-            toward {dg.word.toLowerCase()} wall
-          </p>
-        </div>
-      </div>
-
-      {/* Rule chips */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-        {dg.violations.map((v) => (
-          <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#ffffff', border: `1px solid ${borderColor}`, borderRadius: 8, padding: '3px 8px' }}>
-            <span style={{ fontSize: 10, fontWeight: 800, color: dg.color }}>{v.ruleCode}</span>
-            <span style={{ fontSize: 10, color: '#475569', fontWeight: 500 }}>{v.ruleLabel}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function RecommendationScreen() {
@@ -174,11 +171,15 @@ export default function RecommendationScreen() {
   const refreshViolations   = useViolationStore((s) => s.refreshViolations);
   const resolveViolations   = useViolationStore((s) => s.resolveViolations);
   const setSpaceScoreAfter  = useViolationStore((s) => s.setSpaceScoreAfter);
-  const spaceScoreAfter     = useViolationStore((s) => s.spaceScoreAfter);
 
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
   const [arError, setArError] = useState('');
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
+  // Interactive sandbox: whether it's open, and the move the user handed back
+  // from it ("Use this — show me how"). When set, the guided card shows THIS
+  // move as the current instruction instead of the engine's default direction.
+  const [showSandbox, setShowSandbox] = useState(false);
+  const [sandboxMove, setSandboxMove] = useState<PreviewMove | null>(null);
 
   const result = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
@@ -212,7 +213,6 @@ export default function RecommendationScreen() {
   const currentGroup    = pendingGroups[0] ?? null;
   const totalCount      = allFurnitureItems.length;
   const doneCount       = totalCount - pendingGroups.length;
-  const displayedScore  = spaceScoreAfter || result.spaceScoreBefore;
 
 
   async function launchAR() {
@@ -231,21 +231,43 @@ export default function RecommendationScreen() {
   function handleDone() {
     if (!currentGroup) return;
 
-    // Mark all violations for this furniture piece as resolved.
-    // This causes pendingGroups to recompute excluding this furniture → screen advances.
+    // 1. Mark this furniture's findings resolved. Keyed by stableViolationKey
+    //    now, so the resolution survives the re-analysis below even though
+    //    every id changes with the new measurements.
     resolveViolations(currentGroup.allViolations.map((v) => v.id));
 
-    // Score: add a fixed increment per resolved violation weighted by severity.
-    const redCount  = currentGroup.allViolations.filter((v) => v.classification === 'RED').length;
-    const yellCount = currentGroup.allViolations.filter((v) => v.classification === 'YELLOW').length;
-    const gained    = Math.min(10, redCount * 2.5 + yellCount * 1.0);
-    const baseScore = spaceScoreAfter > 0 ? spaceScoreAfter : result.spaceScoreBefore;
-    setSpaceScoreAfter(Math.min(99, Math.round((baseScore + gained) * 10) / 10));
+    // 2. Re-check the REAL current layout rather than trusting the report.
+    //    Read straight from the store for the freshest positions at click time.
+    const liveItems = useFurnitureStore.getState().items;
+    const fresh = runClearanceAnalysis(liveItems, roomWidthCm, roomLengthCm);
+
+    // 3. Resync recommendations to the fresh layout. Resolved (stable keys) and
+    //    skipped (furnitureId) both carry forward; any newly-introduced or
+    //    newly-worsened finding appears here instead of being trusted away.
+    refreshViolations(fresh.violations);
+
+    // 4. Real free-floor-area from the fresh analysis — no synthetic increment.
+    //    Tracked internally (for the report), not shown raw to the user.
+    setSpaceScoreAfter(fresh.spaceScoreBefore);
+
+    // Advancing to the next piece — drop any sandbox move from this one.
+    setSandboxMove(null);
+    setShowSandbox(false);
   }
 
   function handleSkip() {
     if (!currentGroup) return;
     setSkippedIds((prev) => new Set([...prev, currentGroup.furnitureId]));
+    setSandboxMove(null);
+    setShowSandbox(false);
+  }
+
+  // Handoff target: the sandbox hands its built move back here, and the guided
+  // card pre-loads it as the current instruction (no store write happens here —
+  // the move still only becomes real through the AR-confirmed "Done" step).
+  function handleUseSandboxMove(m: PreviewMove) {
+    setSandboxMove(m);
+    setShowSandbox(false);
   }
 
   // ── Empty state ─────────────────────────────────────────────────────────────
@@ -297,6 +319,11 @@ export default function RecommendationScreen() {
     );
   }
 
+  // One instruction format for both paths: the sandbox move if the user chose
+  // one, otherwise the engine's own recommendation — both through commitLines.
+  const instructionLines = sandboxMove ? commitLines(sandboxMove) : engineMoveLines(currentGroup);
+  const reasonViolation = currentGroup.directionGroups[0]?.violations[0] ?? currentGroup.allViolations[0];
+
   return (
     <div className="screen" style={{ maxWidth: 640, paddingBottom: 92 }}>
 
@@ -308,7 +335,7 @@ export default function RecommendationScreen() {
           <h2>Fix Violations</h2>
         </div>
         <span style={stepCountStyle}>
-          {doneCount + 1} / {totalCount}
+          {doneCount + 1} of {totalCount}
         </span>
       </div>
 
@@ -332,30 +359,60 @@ export default function RecommendationScreen() {
         })}
       </div>
 
-      {/* ── Main instruction card — animates when furniture changes ────────── */}
+      {/* ── 2D plan — current real layout, target highlighted ─────────────── */}
+      <section className="card card-sm">
+        <FloorPlan2D
+          items={items}
+          roomWidthCm={roomWidthCm}
+          roomLengthCm={roomLengthCm}
+          highlightItemId={currentGroup.furnitureId}
+        />
+      </section>
+
+      {/* ── Action card — the single instruction ──────────────────────────── */}
       <section
         key={currentGroup.furnitureId}
         className="card"
         style={{ borderLeft: `5px solid ${currentGroup.color}`, animation: 'screenFadeIn 0.3s ease' }}
       >
-        {/* Furniture name */}
         <p style={{ margin: '0 0 2px', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Move this furniture
+          {sandboxMove ? 'Your chosen move' : 'What to do'}
         </p>
-        <p style={{ margin: '0 0 14px', fontSize: '1.375rem', fontWeight: 850, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+        <p style={{ margin: '0 0 12px', fontSize: '1.375rem', fontWeight: 850, color: 'var(--text-primary)', lineHeight: 1.2 }}>
           {currentGroup.furnitureLabel}
         </p>
 
-        {/* One block per direction */}
-        {currentGroup.directionGroups.map((dg) => (
-          <DirectionBlock key={dg.label} dg={dg} />
+        {/* Instruction — identical commitLines format for engine + sandbox paths */}
+        {instructionLines.map((line) => (
+          <p key={line} style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.35 }}>
+            {line}
+          </p>
         ))}
 
-        {/* Summary count */}
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b', fontWeight: 500 }}>
-          {currentGroup.allViolations.length} clearance issue{currentGroup.allViolations.length !== 1 ? 's' : ''} addressed with this move
-        </p>
+        {/* Reason — names both objects and the human consequence */}
+        {reasonViolation && (
+          <p style={{ margin: '6px 0 0', fontSize: 15, color: '#6B7280', lineHeight: 1.45 }}>
+            {findingReason(reasonViolation, items)}
+          </p>
+        )}
+
+        {/* Optional interactive path — not the first thing shown. */}
+        <button type="button" onClick={() => setShowSandbox((v) => !v)} style={tryItBtnStyle}>
+          {showSandbox ? 'Hide' : sandboxMove ? 'Adjust it yourself' : 'Or try it yourself'}
+        </button>
       </section>
+
+      {showSandbox && (
+        <section className="card card-sm">
+          <PlanSandbox
+            baseItems={items}
+            targetItemId={currentGroup.furnitureId}
+            roomWidthCm={roomWidthCm}
+            roomLengthCm={roomLengthCm}
+            onUseThisMove={handleUseSandboxMove}
+          />
+        </section>
+      )}
 
       {/* ── AR guidance ─────────────────────────────────────────────────────── */}
       <section className="card card-sm">
@@ -434,9 +491,6 @@ export default function RecommendationScreen() {
           <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
             {doneCount} of {totalCount} furniture piece{totalCount !== 1 ? 's' : ''} addressed
           </p>
-          <p className="card-subtitle" style={{ marginTop: 2 }}>
-            Free floor area: {displayedScore.toFixed(1)}%
-          </p>
         </div>
         <div style={{
           width: 48, height: 48, borderRadius: '50%',
@@ -489,4 +543,17 @@ const stickyFooterStyle: CSSProperties = {
   borderTop: '1px solid var(--border)',
   backdropFilter: 'blur(10px)',
   zIndex: 20,
+};
+
+const tryItBtnStyle: CSSProperties = {
+  marginTop: 14,
+  width: '100%',
+  minHeight: 44,
+  borderRadius: 12,
+  border: '1px solid var(--border)',
+  background: 'transparent',
+  color: '#1F3864',
+  fontWeight: 700,
+  fontSize: 15,
+  cursor: 'pointer',
 };

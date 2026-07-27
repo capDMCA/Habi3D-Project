@@ -1,9 +1,14 @@
 import { create } from 'zustand';
+import { stableViolationKey } from '../engine/violationKey';
 import type { Violation } from '../types';
 
 interface ViolationState {
   violations: Violation[];
   recommendations: Violation[];
+  // Source of truth for what the user has resolved. Keyed by stableViolationKey
+  // (NOT Violation.id), so resolved status survives a re-analysis that changes
+  // measuredCm — and therefore the ids — of every finding.
+  resolvedKeys: Set<string>;
   currentStepIndex: number;
   spaceScoreBefore: number;
   spaceScoreAfter: number;
@@ -19,19 +24,28 @@ interface ViolationState {
   clearViolations: () => void;
 }
 
+/** Re-derive each violation's `resolved` boolean from the resolved-key set. */
+function applyResolved(list: Violation[], resolvedKeys: Set<string>): Violation[] {
+  return list.map((v) => ({ ...v, resolved: resolvedKeys.has(stableViolationKey(v)) }));
+}
+
 export const useViolationStore = create<ViolationState>((set) => ({
   violations: [],
   recommendations: [],
+  resolvedKeys: new Set<string>(),
   currentStepIndex: 0,
   spaceScoreBefore: 0,
   spaceScoreAfter: 0,
   setViolations: (violations) =>
     set(() => {
+      // Fresh seed (first analysis of a session) — nothing resolved yet.
+      const resolvedKeys = new Set<string>();
       const recommendations = [...violations].sort((a, b) => b.priorityScore - a.priorityScore);
       const firstUnresolved = recommendations.findIndex((v) => !v.resolved);
       return {
         violations,
         recommendations,
+        resolvedKeys,
         currentStepIndex: firstUnresolved === -1 ? recommendations.length : firstUnresolved,
         spaceScoreBefore: 0,
         spaceScoreAfter: 0,
@@ -39,14 +53,10 @@ export const useViolationStore = create<ViolationState>((set) => ({
     }),
   refreshViolations: (violations) =>
     set((state) => {
-      const resolvedIds = new Set(
-        state.violations.filter((item) => item.resolved).map((item) => item.id),
-      );
-      const merged = violations.map((violation) => ({
-        ...violation,
-        resolved: resolvedIds.has(violation.id) ? true : violation.resolved,
-      }));
-
+      // Resolved status carries forward via the stable key set, so a
+      // re-analysis (new ids, new measuredCm) keeps prior resolutions.
+      const { resolvedKeys } = state;
+      const merged = applyResolved(violations, resolvedKeys);
       const recommendations = [...merged].sort((a, b) => b.priorityScore - a.priorityScore);
 
       // find next unresolved starting at the previous index
@@ -80,13 +90,11 @@ export const useViolationStore = create<ViolationState>((set) => ({
       const current = state.recommendations[state.currentStepIndex];
       if (!current) return state;
 
-      const updatedRecommendations = state.recommendations.map((violation) =>
-        violation.id === current.id ? { ...violation, resolved: true } : violation,
-      );
+      const resolvedKeys = new Set(state.resolvedKeys);
+      resolvedKeys.add(stableViolationKey(current));
 
-      const updatedViolations = state.violations.map((violation) =>
-        violation.id === current.id ? { ...violation, resolved: true } : violation,
-      );
+      const updatedRecommendations = applyResolved(state.recommendations, resolvedKeys);
+      const updatedViolations = applyResolved(state.violations, resolvedKeys);
 
       // find next unresolved after current index
       let nextIndex = updatedRecommendations.length;
@@ -99,6 +107,7 @@ export const useViolationStore = create<ViolationState>((set) => ({
 
       // if none found, set to length to indicate completion
       return {
+        resolvedKeys,
         violations: updatedViolations,
         recommendations: updatedRecommendations,
         currentStepIndex: nextIndex,
@@ -107,14 +116,18 @@ export const useViolationStore = create<ViolationState>((set) => ({
   resolveViolations: (ids) =>
     set((state) => {
       const idSet = new Set(ids);
-      const updatedRecommendations = state.recommendations.map((v) =>
-        idSet.has(v.id) ? { ...v, resolved: true } : v,
-      );
-      const updatedViolations = state.violations.map((v) =>
-        idSet.has(v.id) ? { ...v, resolved: true } : v,
-      );
+      // Resolve by STABLE key, not by id: look up the targeted violations,
+      // take their stable keys, and add them to the persistent set.
+      const resolvedKeys = new Set(state.resolvedKeys);
+      state.recommendations
+        .filter((v) => idSet.has(v.id))
+        .forEach((v) => resolvedKeys.add(stableViolationKey(v)));
+
+      const updatedRecommendations = applyResolved(state.recommendations, resolvedKeys);
+      const updatedViolations = applyResolved(state.violations, resolvedKeys);
       const firstUnresolved = updatedRecommendations.findIndex((v) => !v.resolved);
       return {
+        resolvedKeys,
         recommendations: updatedRecommendations,
         violations: updatedViolations,
         currentStepIndex: firstUnresolved === -1 ? updatedRecommendations.length : firstUnresolved,
@@ -137,6 +150,7 @@ export const useViolationStore = create<ViolationState>((set) => ({
     set({
       violations: [],
       recommendations: [],
+      resolvedKeys: new Set<string>(),
       currentStepIndex: 0,
       spaceScoreBefore: 0,
       spaceScoreAfter: 0,
@@ -145,6 +159,7 @@ export const useViolationStore = create<ViolationState>((set) => ({
     set({
       violations: [],
       recommendations: [],
+      resolvedKeys: new Set<string>(),
       currentStepIndex: 0,
       spaceScoreBefore: 0,
       spaceScoreAfter: 0,

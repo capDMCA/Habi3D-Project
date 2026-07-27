@@ -18,7 +18,7 @@ export interface ClearanceResult {
   allClassifications: GapClassification[];
 }
 
-interface ItemBounds {
+export interface ItemBounds {
   item: FurnitureItem;
   minX: number;
   maxX: number;
@@ -47,9 +47,32 @@ function getRule(ruleCode: string) {
   return rule;
 }
 
-function toBounds(item: FurnitureItem): ItemBounds {
-  const lengthM = item.lengthCm / 100;
-  const widthM = item.widthCm / 100;
+/**
+ * Axis-aligned envelope of a rotated rectangular footprint.
+ * Conservative: for non-orthogonal angles this over-estimates the
+ * occupied footprint, so clearances are under-reported, never
+ * over-reported.
+ *
+ * rotationY is already in radians — no conversion.
+ *
+ * At rotationY = 0 these return lengthCm / widthCm exactly (x*1 + y*0),
+ * so unrotated layouts are bit-identical to the pre-rotation engine.
+ */
+export function effectiveLengthCm(item: FurnitureItem): number {
+  const cos = Math.abs(Math.cos(item.rotationY));
+  const sin = Math.abs(Math.sin(item.rotationY));
+  return item.lengthCm * cos + item.widthCm * sin;
+}
+
+export function effectiveWidthCm(item: FurnitureItem): number {
+  const cos = Math.abs(Math.cos(item.rotationY));
+  const sin = Math.abs(Math.sin(item.rotationY));
+  return item.lengthCm * sin + item.widthCm * cos;
+}
+
+export function toBounds(item: FurnitureItem): ItemBounds {
+  const lengthM = effectiveLengthCm(item) / 100;
+  const widthM = effectiveWidthCm(item) / 100;
 
   return {
     item,
@@ -60,6 +83,89 @@ function toBounds(item: FurnitureItem): ItemBounds {
     lengthM,
     widthM,
   };
+}
+
+export type LayoutViolation =
+  | { kind: 'OUT_OF_BOUNDS'; itemId: string }
+  | { kind: 'OVERLAP'; itemIdA: string; itemIdB: string };
+
+// Metres. 1 cm of slack so an item flush against a wall (gap ≈ 0) or two
+// items touching edge-to-edge do NOT register as violations — only a real
+// excursion past the wall or a positive-area overlap does. This tolerance
+// also absorbs the float noise from effectiveLength/Width at odd angles.
+const FEASIBILITY_EPSILON_M = 0.01;
+
+/**
+ * Fast overlap / out-of-bounds predicate. Returns the FIRST violation
+ * found, or null. Pure and exception-free — safe to call on every
+ * drag-frame in a tight loop.
+ */
+export function findLayoutViolation(
+  bounds: ItemBounds[],
+  roomWidthM: number,
+  roomLengthM: number,
+): LayoutViolation | null {
+  const e = FEASIBILITY_EPSILON_M;
+
+  for (const b of bounds) {
+    if (
+      b.minX < -e ||
+      b.minZ < -e ||
+      b.maxX > roomWidthM + e ||
+      b.maxZ > roomLengthM + e
+    ) {
+      return { kind: 'OUT_OF_BOUNDS', itemId: b.item.id };
+    }
+  }
+
+  for (let i = 0; i < bounds.length; i += 1) {
+    for (let j = i + 1; j < bounds.length; j += 1) {
+      const a = bounds[i];
+      const b = bounds[j];
+      const overlapX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+      const overlapZ = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ);
+      // Positive overlap on BOTH axes = genuine footprint intersection.
+      if (overlapX > e && overlapZ > e) {
+        return { kind: 'OVERLAP', itemIdA: a.item.id, itemIdB: b.item.id };
+      }
+    }
+  }
+
+  return null;
+}
+
+function boundsCm(b: ItemBounds): string {
+  const cm = (m: number) => Math.round(m * 100);
+  return `x[${cm(b.minX)}..${cm(b.maxX)}] z[${cm(b.minZ)}..${cm(b.maxZ)}]`;
+}
+
+/**
+ * Throwing counterpart of findLayoutViolation. Runs the same predicate
+ * and, if a layout is physically impossible, fails loudly with the
+ * offending ids and bounds. This is the engine's guard: it should never
+ * fire from ordinary UI interaction, because callers filter infeasible
+ * candidates with findLayoutViolation first.
+ */
+function assertValidLayout(
+  bounds: ItemBounds[],
+  roomWidthM: number,
+  roomLengthM: number,
+): void {
+  const v = findLayoutViolation(bounds, roomWidthM, roomLengthM);
+  if (!v) return;
+
+  const roomCm = `room x[0..${Math.round(roomWidthM * 100)}] z[0..${Math.round(roomLengthM * 100)}]`;
+  if (v.kind === 'OUT_OF_BOUNDS') {
+    const b = bounds.find((entry) => entry.item.id === v.itemId)!;
+    throw new Error(
+      `Invalid layout: item "${v.itemId}" is out of bounds — ${boundsCm(b)} cm, ${roomCm} cm.`,
+    );
+  }
+  const a = bounds.find((entry) => entry.item.id === v.itemIdA)!;
+  const b = bounds.find((entry) => entry.item.id === v.itemIdB)!;
+  throw new Error(
+    `Invalid layout: items "${v.itemIdA}" ${boundsCm(a)} cm and "${v.itemIdB}" ${boundsCm(b)} cm overlap. ${roomCm} cm.`,
+  );
 }
 
 function getPairGap(a: ItemBounds, b: ItemBounds): PairGap {
@@ -191,7 +297,10 @@ function addPairCheck(params: {
       classification,
       measuredCm: gap.measuredCm,
       requiredCm: requiredForClassification(classification, params.ruleCode),
-      affectedEdgeLengthCm: gap.gapX >= gap.gapZ ? params.a.item.widthCm : params.a.item.lengthCm,
+      affectedEdgeLengthCm:
+        gap.gapX >= gap.gapZ
+          ? effectiveWidthCm(params.a.item)
+          : effectiveLengthCm(params.a.item),
       item: params.a.item,
       itemBId: params.b.item.id,
       fixDirectionLabel: gap.directionLabel,
@@ -229,8 +338,8 @@ function addWallCheck(params: {
       requiredCm: requiredForClassification(classification, params.ruleCode),
       affectedEdgeLengthCm:
         params.wallGap.wallSide === 'west' || params.wallGap.wallSide === 'east'
-          ? params.bounds.item.widthCm
-          : params.bounds.item.lengthCm,
+          ? effectiveWidthCm(params.bounds.item)
+          : effectiveLengthCm(params.bounds.item),
       item: params.bounds.item,
       itemBId: 'wall',
       wallSide: params.wallGap.wallSide,
@@ -284,6 +393,7 @@ export function runClearanceAnalysis(
   const bounds = items.map(toBounds);
   const roomWidthM = roomWidthCm / 100;
   const roomLengthM = roomLengthCm / 100;
+  assertValidLayout(bounds, roomWidthM, roomLengthM);
   const classifications: GapClassification[] = [];
   const violations: Violation[] = [];
 
