@@ -5,6 +5,7 @@ import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
 import ClearanceOverlay from '../ar/ClearanceOverlay';
 import CorrectionArrow from '../ar/CorrectionArrow';
 import { createFurnitureShape } from '../ar/shapeLibrary';
+import ErrorBoundary from '../components/ErrorBoundary';
 import FloorPlan2D from '../components/FloorPlan2D';
 import PlanSandbox from '../components/PlanSandbox';
 import { commitLines } from '../components/previewMove';
@@ -442,6 +443,7 @@ export default function RecommendationScreen() {
           border: 'none',
           background: '#f0f4f8',
         }}>
+          <ErrorBoundary where="Recommendation AR view" fallback={null}>
           <Canvas
             camera={{ position: [0, 3.5, 4.5], fov: 52 }}
             style={{ width: '100%', height: 280 }}
@@ -482,6 +484,7 @@ export default function RecommendationScreen() {
               </XRDomOverlay>
             </XR>
           </Canvas>
+          </ErrorBoundary>
         </div>
       </section>
 

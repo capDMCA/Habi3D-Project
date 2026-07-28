@@ -4,6 +4,7 @@ import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay, XROrigin, useXRHitTest } from '@react-three/xr';
 import * as THREE from 'three';
 import ClearanceOverlay from '../ar/ClearanceOverlay';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
@@ -389,6 +390,18 @@ export default function AnalysisScreen() {
         pointerEvents: arActive ? 'auto' : 'none',
       }}
     >
+      <ErrorBoundary
+        where="Analysis AR view"
+        fallback={
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', padding: 24, textAlign: 'center', color: '#fff',
+            background: 'rgba(10,22,44,0.92)', fontSize: 15, lineHeight: 1.5,
+          }}>
+            AR view isn’t available on this device. Your clearance results are still shown on the page.
+          </div>
+        }
+      >
       <Canvas style={{ position: 'absolute', inset: 0 }} gl={{ antialias: true, alpha: true }}>
         <XR store={xrAnalysisStore}>
           <AnalysisScene
@@ -447,6 +460,7 @@ export default function AnalysisScreen() {
           </XRDomOverlay>
         </XR>
       </Canvas>
+      </ErrorBoundary>
     </div>
     </>
   );

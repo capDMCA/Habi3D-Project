@@ -134,40 +134,6 @@ export function findLayoutViolation(
   return null;
 }
 
-function boundsCm(b: ItemBounds): string {
-  const cm = (m: number) => Math.round(m * 100);
-  return `x[${cm(b.minX)}..${cm(b.maxX)}] z[${cm(b.minZ)}..${cm(b.maxZ)}]`;
-}
-
-/**
- * Throwing counterpart of findLayoutViolation. Runs the same predicate
- * and, if a layout is physically impossible, fails loudly with the
- * offending ids and bounds. This is the engine's guard: it should never
- * fire from ordinary UI interaction, because callers filter infeasible
- * candidates with findLayoutViolation first.
- */
-function assertValidLayout(
-  bounds: ItemBounds[],
-  roomWidthM: number,
-  roomLengthM: number,
-): void {
-  const v = findLayoutViolation(bounds, roomWidthM, roomLengthM);
-  if (!v) return;
-
-  const roomCm = `room x[0..${Math.round(roomWidthM * 100)}] z[0..${Math.round(roomLengthM * 100)}]`;
-  if (v.kind === 'OUT_OF_BOUNDS') {
-    const b = bounds.find((entry) => entry.item.id === v.itemId)!;
-    throw new Error(
-      `Invalid layout: item "${v.itemId}" is out of bounds — ${boundsCm(b)} cm, ${roomCm} cm.`,
-    );
-  }
-  const a = bounds.find((entry) => entry.item.id === v.itemIdA)!;
-  const b = bounds.find((entry) => entry.item.id === v.itemIdB)!;
-  throw new Error(
-    `Invalid layout: items "${v.itemIdA}" ${boundsCm(a)} cm and "${v.itemIdB}" ${boundsCm(b)} cm overlap. ${roomCm} cm.`,
-  );
-}
-
 function getPairGap(a: ItemBounds, b: ItemBounds): PairGap {
   const gapX = Math.max(0, Math.max(a.minX, b.minX) - Math.min(a.maxX, b.maxX));
   const gapZ = Math.max(0, Math.max(a.minZ, b.minZ) - Math.min(a.maxZ, b.maxZ));
@@ -393,7 +359,14 @@ export function runClearanceAnalysis(
   const bounds = items.map(toBounds);
   const roomWidthM = roomWidthCm / 100;
   const roomLengthM = roomLengthCm / 100;
-  assertValidLayout(bounds, roomWidthM, roomLengthM);
+  // NOTE: no validity guard here. Real AR-placed furniture carries coordinates
+  // relative to the AR session origin, not normalized to [0, roomWidth], so it
+  // routinely reads as out-of-bounds — and pieces can overlap. Throwing here
+  // would crash the Analysis/Recommendation screens on ordinary layouts. The
+  // sandbox, which DOES need to reject impossible candidates, gates them itself
+  // with findLayoutViolation (the non-throwing predicate) before ever calling
+  // this. Wall-gap numbers on un-anchored AR coords are approximate; the
+  // furniture-to-furniture gaps are correct regardless of origin.
   const classifications: GapClassification[] = [];
   const violations: Violation[] = [];
 
