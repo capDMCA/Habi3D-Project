@@ -3,6 +3,7 @@
 import { useMemo, useRef } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { projectItems } from './floorPlanGeometry';
+import { color } from './designTokens';
 import type { FurnitureItem } from '../types';
 
 /**
@@ -49,15 +50,15 @@ export interface FloorPlan2DProps {
 }
 
 const PAD_CM = 40;
-const ROOM_STROKE = '#94A3B8';
-const ITEM_FILL = '#E7ECF3';
-const ITEM_STROKE = '#64748B';
-const LABEL_COLOR = '#334155';
-const NORTH_COLOR = '#94A3B8';
-const SEL_FILL = '#DCE6F5';
-const SEL_STROKE = '#2B4E8C';
-const BAD_FILL = '#FEE2E2';
-const BAD_STROKE = '#EF4444';
+const ROOM_STROKE = color.roomStroke;
+const ITEM_FILL = color.itemFill;
+const ITEM_STROKE = color.itemStroke;
+const LABEL_COLOR = color.inkSoft;
+const NORTH_COLOR = color.inkMute;
+const SEL_FILL = color.accentFill;
+const SEL_STROKE = color.accent;
+const BAD_FILL = color.attentionBg;
+const BAD_STROKE = color.attentionFg;
 
 /** Pointer client coords → world metres, using the SVG's own screen CTM. No
  *  fallback: if the SVG isn't laid out yet there's no valid transform, and a
@@ -117,7 +118,7 @@ export default function FloorPlan2D({ items, roomWidthCm, roomLengthCm, highligh
         y={0}
         width={roomWidthCm}
         height={roomLengthCm}
-        fill="#FFFFFF"
+        fill={color.surface}
         stroke={ROOM_STROKE}
         strokeWidth={4}
         rx={6}

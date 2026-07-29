@@ -11,6 +11,7 @@ import PlanSandbox from '../components/PlanSandbox';
 import { commitLines } from '../components/previewMove';
 import type { PreviewMove } from '../components/previewMove';
 import { findingReason } from '../components/findingText';
+import { color as t, type as typeScale } from '../components/designTokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import type { WallSide } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
@@ -98,7 +99,7 @@ function buildFurnitureGroups(violations: Violation[], skippedIds: Set<string>):
           word: directionWord(label),
           distanceCm: Math.max(...dvs.map((v) => v.fixDirectionCm)),
           violations: dvs.sort((a, b) => b.priorityScore - a.priorityScore),
-          color: dvs.some((v) => v.classification === 'RED') ? '#E24B4A' : '#F0A500',
+          color: dvs.some((v) => v.classification === 'RED') ? t.attentionFg : t.tightFg,
         }))
         .sort((a, b) => {
           const aRed = a.violations.some((v) => v.classification === 'RED') ? 1 : 0;
@@ -106,7 +107,7 @@ function buildFurnitureGroups(violations: Violation[], skippedIds: Set<string>):
           return bRed - aRed || b.distanceCm - a.distanceCm;
         });
 
-      const color = vs.some((v) => v.classification === 'RED') ? '#E24B4A' : '#F0A500';
+      const color = vs.some((v) => v.classification === 'RED') ? t.attentionFg : t.tightFg;
       return {
         furnitureId,
         furnitureLabel: vs[0].furnitureLabel,
@@ -278,15 +279,17 @@ export default function RecommendationScreen() {
         <div className="screen-header">
           <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
           <div className="screen-header-info">
-            <span className="step-label">Recommendations</span>
-            <h2>Fix Violations</h2>
+            <span className="step-label">Your room</span>
+            <h2>Make room</h2>
           </div>
         </div>
-        <div className="card" style={{ borderLeft: '5px solid #4CAF50', background: '#ECFDF5', textAlign: 'center', padding: 'var(--space-xl)' }}>
-          <p className="card-title" style={{ color: '#166534' }}>No violations to fix</p>
-          <p className="card-subtitle" style={{ marginTop: 6 }}>Your layout meets all clearance standards.</p>
+        <div className="card" style={{ borderLeft: `5px solid ${t.comfortFg}`, background: t.comfortBg, padding: 'var(--space-xl)' }}>
+          <p style={{ ...typeScale.display, margin: 0, color: t.ink }}>Everything has room</p>
+          <p style={{ ...typeScale.body, margin: '8px 0 0', color: t.inkSoft }}>
+            None of your furniture is crowding a wall or another piece. There&rsquo;s nothing to move.
+          </p>
           <button className="btn btn-primary" style={{ marginTop: 'var(--space-lg)' }} onClick={() => navigateTo('report')}>
-            View Report
+            See the summary
           </button>
         </div>
       </div>
@@ -294,26 +297,34 @@ export default function RecommendationScreen() {
   }
 
   if (!currentGroup) {
+    const stillTight = result.violations.filter((v) => v.classification === 'YELLOW').length;
+    const stillAttention = result.violations.filter((v) => v.classification === 'RED').length;
+    const headColor = stillAttention > 0 ? t.attentionFg : stillTight > 0 ? t.tightFg : t.comfortFg;
+    const headBg = stillAttention > 0 ? t.attentionBg : stillTight > 0 ? t.tightBg : t.comfortBg;
+    const body =
+      stillAttention > 0
+        ? `${stillAttention} spot${stillAttention === 1 ? '' : 's'} could still use more room — you can go back and adjust, or see the summary.`
+        : stillTight > 0
+          ? `${stillTight} spot${stillTight === 1 ? ' is' : 's are'} still a little tight, but nothing needs urgent room. You can leave ${stillTight === 1 ? 'it' : 'them'} as is or come back later.`
+          : 'Every piece now has comfortable clearance.';
     return (
       <div className="screen" style={{ maxWidth: 640 }}>
         <div className="screen-header">
           <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
           <div className="screen-header-info">
-            <span className="step-label">Recommendations</span>
-            <h2>Fix Violations</h2>
+            <span className="step-label">Your room</span>
+            <h2>Make room</h2>
           </div>
         </div>
-        <div className="card" style={{ borderLeft: '5px solid #4CAF50', background: '#ECFDF5', textAlign: 'center', padding: 'var(--space-xl)' }}>
-          <p className="card-title" style={{ color: '#166534' }}>All items addressed</p>
-          <p className="card-subtitle" style={{ marginTop: 6 }}>
-            You have worked through all clearance recommendations for this session.
-          </p>
+        <div className="card" style={{ borderLeft: `5px solid ${headColor}`, background: headBg, padding: 'var(--space-xl)' }}>
+          <p style={{ ...typeScale.display, margin: 0, color: t.ink }}>You&rsquo;ve been through every piece</p>
+          <p style={{ ...typeScale.body, margin: '8px 0 0', color: t.inkSoft }}>{body}</p>
           <button
             className="btn btn-primary"
             style={{ marginTop: 'var(--space-lg)', maxWidth: 280 }}
             onClick={() => navigateTo('report')}
           >
-            View Report
+            See the summary
           </button>
         </div>
       </div>
@@ -332,8 +343,8 @@ export default function RecommendationScreen() {
       <div className="screen-header">
         <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
         <div className="screen-header-info">
-          <span className="step-label">Recommendations</span>
-          <h2>Fix Violations</h2>
+          <span className="step-label">Your room</span>
+          <h2>Make room</h2>
         </div>
         <span style={stepCountStyle}>
           {doneCount + 1} of {totalCount}
@@ -351,9 +362,9 @@ export default function RecommendationScreen() {
               style={{
                 flex: 1, height: 5, borderRadius: 3,
                 transition: 'background 0.4s ease',
-                background: !isPending ? '#4CAF50'
+                background: !isPending ? t.comfortFg
                           : isCurrent ? currentGroup.color
-                          : '#E2E8F0',
+                          : t.line,
               }}
             />
           );
@@ -376,23 +387,23 @@ export default function RecommendationScreen() {
         className="card"
         style={{ borderLeft: `5px solid ${currentGroup.color}`, animation: 'screenFadeIn 0.3s ease' }}
       >
-        <p style={{ margin: '0 0 2px', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <p style={{ ...typeScale.label, margin: '0 0 2px', color: t.inkMute }}>
           {sandboxMove ? 'Your chosen move' : 'What to do'}
         </p>
-        <p style={{ margin: '0 0 12px', fontSize: '1.375rem', fontWeight: 850, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+        <p style={{ ...typeScale.display, margin: '0 0 12px', color: t.ink }}>
           {currentGroup.furnitureLabel}
         </p>
 
         {/* Instruction — identical commitLines format for engine + sandbox paths */}
         {instructionLines.map((line) => (
-          <p key={line} style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.35 }}>
+          <p key={line} style={{ ...typeScale.title, margin: '0 0 8px', color: t.ink }}>
             {line}
           </p>
         ))}
 
         {/* Reason — names both objects and the human consequence */}
         {reasonViolation && (
-          <p style={{ margin: '6px 0 0', fontSize: 15, color: '#6B7280', lineHeight: 1.45 }}>
+          <p style={{ ...typeScale.body, margin: '6px 0 0', color: t.inkSoft }}>
             {findingReason(reasonViolation, items)}
           </p>
         )}
@@ -524,14 +535,15 @@ export default function RecommendationScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const stepCountStyle: CSSProperties = {
+  ...typeScale.label,
   display: 'inline-flex',
   alignItems: 'center',
   padding: '4px 12px',
   borderRadius: 99,
-  background: '#e6edf8',
-  color: '#1F3864',
-  fontSize: 13,
-  fontWeight: 700,
+  background: t.brandTint,
+  color: t.brand,
+  letterSpacing: 'normal',
+  textTransform: 'none',
   flexShrink: 0,
 };
 
@@ -555,7 +567,7 @@ const tryItBtnStyle: CSSProperties = {
   borderRadius: 12,
   border: '1px solid var(--border)',
   background: 'transparent',
-  color: '#1F3864',
+  color: t.brand,
   fontWeight: 700,
   fontSize: 15,
   cursor: 'pointer',

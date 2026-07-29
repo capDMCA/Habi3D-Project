@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { StatusKey } from './statusVocabulary';
 import { statusMeta } from './statusVocabulary';
+import { color, type as typeScale } from './designTokens';
 
 /**
  * One finding, presented calmly: a state icon, a plain-language label, and a
@@ -68,15 +69,14 @@ const iconWrap: CSSProperties = {
 };
 
 const titleStyle: CSSProperties = {
+  ...typeScale.body,
   margin: 0,
-  fontSize: 16,
   fontWeight: 600,
-  color: '#1A1A2E',
-  lineHeight: 1.3,
+  color: color.ink,
 };
 
 const detailStyle: CSSProperties = {
+  ...typeScale.body,
   margin: '2px 0 0',
-  fontSize: 15,
   fontWeight: 600,
 };

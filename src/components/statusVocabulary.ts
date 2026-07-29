@@ -1,3 +1,4 @@
+import { color } from './designTokens';
 import type { GapClassificationLevel } from '../types';
 
 /**
@@ -24,9 +25,9 @@ export interface StatusMeta {
 }
 
 const META: Record<StatusKey, StatusMeta> = {
-  comfortable: { key: 'comfortable', label: 'Comfortable', color: '#10B981', bg: '#ECFDF5' },
-  tight: { key: 'tight', label: 'Tight', color: '#F59E0B', bg: '#FFFBEB' },
-  'needs-attention': { key: 'needs-attention', label: 'Needs attention', color: '#EF4444', bg: '#FEF2F2' },
+  comfortable: { key: 'comfortable', label: 'Comfortable', color: color.comfortFg, bg: color.comfortBg },
+  tight: { key: 'tight', label: 'Tight', color: color.tightFg, bg: color.tightBg },
+  'needs-attention': { key: 'needs-attention', label: 'Needs attention', color: color.attentionFg, bg: color.attentionBg },
 };
 
 export function statusMeta(key: StatusKey): StatusMeta {
