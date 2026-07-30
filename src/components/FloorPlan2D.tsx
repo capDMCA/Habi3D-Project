@@ -38,15 +38,6 @@ export interface FloorPlan2DInteraction {
   onDragEnd: () => void;
 }
 
-export interface FloorPlan2DInteraction {
-  draggableItemId: string;
-  /** Tint the draggable block to show its current position is not allowed. */
-  infeasible: boolean;
-  onDragStart: (itemId: string) => void;
-  onDragMove: (worldXMetres: number, worldZMetres: number) => void;
-  onDragEnd: () => void;
-}
-
 export interface FloorPlan2DProps {
   items: FurnitureItem[];
   roomWidthCm: number;

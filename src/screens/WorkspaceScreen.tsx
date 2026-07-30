@@ -5,151 +5,95 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { stableViolationKey } from '../engine/violationKey';
-import { describeFinding } from '../components/findingText';
 import { statusMeta } from '../components/statusVocabulary';
-import { color as t, type as typeScale, radius, space } from '../components/designTokens';
+import { color as t, radius } from '../components/designTokens';
 import FloorPlan2D from '../components/FloorPlan2D';
 import { isFeasible, snapCm, withMovedItem, withRotatedItem } from '../components/floorPlanDrag';
-import { commitLines } from '../components/previewMove';
 import type { FurnitureItem, Violation } from '../types';
 
-// ─── Normalization Helper ───────────────────────────────────────────────────
+// ─── Normalization ──────────────────────────────────────────────────────────
 function normalizeFurniturePositions(
   items: FurnitureItem[],
   roomWidthCm: number,
-  roomLengthCm: number
+  roomLengthCm: number,
 ): FurnitureItem[] {
   if (items.length === 0) return [];
-  const roomWidthM = roomWidthCm / 100;
-  const roomLengthM = roomLengthCm / 100;
+  const rW = roomWidthCm / 100;
+  const rL = roomLengthCm / 100;
 
-  // Calculate layout bounding box
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-
-  items.forEach((item) => {
-    const halfL = (item.lengthCm / 100) / 2;
-    const halfW = (item.widthCm / 100) / 2;
-    minX = Math.min(minX, item.posX - halfL);
-    maxX = Math.max(maxX, item.posX + halfL);
-    minZ = Math.min(minZ, item.posZ - halfW);
-    maxZ = Math.max(maxZ, item.posZ + halfW);
-  });
-
-  const layoutCenterX = (minX + maxX) / 2;
-  const layoutCenterZ = (minZ + maxZ) / 2;
-
-  // Center the layout in the room coordinates
-  const dx = (roomWidthM / 2) - layoutCenterX;
-  const dz = (roomLengthM / 2) - layoutCenterZ;
-
-  return items.map((item) => {
-    let newX = item.posX + dx;
-    let newZ = item.posZ + dz;
-
-    const halfL = (item.lengthCm / 100) / 2;
-    const halfW = (item.widthCm / 100) / 2;
-
-    // Apply a safe 5cm padding boundary
-    const pad = 0.05;
-    newX = Math.max(halfL + pad, Math.min(roomWidthM - halfL - pad, newX));
-    newZ = Math.max(halfW + pad, Math.min(roomLengthM - halfW - pad, newZ));
-
-    return { ...item, posX: newX, posZ: newZ };
-  });
-}
-
-// ─── Direction & Shift Mapping ──────────────────────────────────────────────
-function getGhostItem(item: FurnitureItem, violation: Violation | undefined): FurnitureItem | null {
-  if (!violation || violation.resolved) return null;
-  const label = violation.fixDirectionLabel.toLowerCase();
-  const distanceM = violation.fixDirectionCm / 100;
-
-  let dx = 0;
-  let dz = 0;
-
-  if (label.includes('west')) {
-    dx = -distanceM;
-  } else if (label.includes('east')) {
-    dx = distanceM;
-  } else if (label.includes('north')) {
-    dz = -distanceM;
-  } else if (label.includes('south')) {
-    dz = distanceM;
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const it of items) {
+    const hL = (it.lengthCm / 100) / 2;
+    const hW = (it.widthCm / 100) / 2;
+    minX = Math.min(minX, it.posX - hL);
+    maxX = Math.max(maxX, it.posX + hL);
+    minZ = Math.min(minZ, it.posZ - hW);
+    maxZ = Math.max(maxZ, it.posZ + hW);
   }
 
-  return {
-    ...item,
-    posX: item.posX + dx,
-    posZ: item.posZ + dz,
-  };
+  const dx = (rW / 2) - (minX + maxX) / 2;
+  const dz = (rL / 2) - (minZ + maxZ) / 2;
+  const pad = 0.05;
+
+  return items.map((it) => {
+    const hL = (it.lengthCm / 100) / 2;
+    const hW = (it.widthCm / 100) / 2;
+    const x = Math.max(hL + pad, Math.min(rW - hL - pad, it.posX + dx));
+    const z = Math.max(hW + pad, Math.min(rL - hW - pad, it.posZ + dz));
+    return { ...it, posX: x, posZ: z };
+  });
 }
 
-// ─── Lookahead Lookups (Validation Engine) ───────────────────────────────────
-interface LookaheadResult {
-  hasWorsened: boolean;
-  warnings: string[];
+// ─── Ghost position helper ──────────────────────────────────────────────────
+function getGhostItem(item: FurnitureItem, v: Violation | undefined): FurnitureItem | null {
+  if (!v || v.resolved) return null;
+  const dir = v.fixDirectionLabel.toLowerCase();
+  const d = v.fixDirectionCm / 100;
+  let dx = 0, dz = 0;
+  if (dir.includes('west')) dx = -d;
+  else if (dir.includes('east')) dx = d;
+  else if (dir.includes('north')) dz = -d;
+  else if (dir.includes('south')) dz = d;
+  return { ...item, posX: item.posX + dx, posZ: item.posZ + dz };
 }
 
-function getLookaheadValidation(
+// ─── Lookahead validation ───────────────────────────────────────────────────
+function getLookaheadWarnings(
   items: FurnitureItem[],
   itemId: string,
-  targetX: number,
-  targetZ: number,
-  targetRot: number,
+  ghost: FurnitureItem,
   roomWidthCm: number,
-  roomLengthCm: number
-): LookaheadResult {
-  let candidate = withRotatedItem(items, itemId, targetRot);
-  candidate = withMovedItem(candidate, itemId, targetX, targetZ);
+  roomLengthCm: number,
+): string[] {
+  const candidate = withMovedItem(items, itemId, ghost.posX, ghost.posZ);
+  if (!isFeasible(candidate, roomWidthCm, roomLengthCm)) return ['Overlaps other furniture or walls.'];
 
-  if (!isFeasible(candidate, roomWidthCm, roomLengthCm)) {
-    return {
-      hasWorsened: true,
-      warnings: ["Position overlaps walls or other furniture blocks."],
-    };
-  }
-
-  const baseAnalysis = runClearanceAnalysis(items, roomWidthCm, roomLengthCm);
-  const simulatedAnalysis = runClearanceAnalysis(candidate, roomWidthCm, roomLengthCm);
-
-  const baseKeys = new Map<string, Violation>();
-  baseAnalysis.violations.forEach((v) => baseKeys.set(stableViolationKey(v), v));
-
+  const before = runClearanceAnalysis(items, roomWidthCm, roomLengthCm);
+  const after = runClearanceAnalysis(candidate, roomWidthCm, roomLengthCm);
+  const baseKeys = new Set(before.violations.map(stableViolationKey));
   const warnings: string[] = [];
-  let hasWorsened = false;
 
-  simulatedAnalysis.violations.forEach((h) => {
-    const key = stableViolationKey(h);
-    const base = baseKeys.get(key);
-
-    if (!base) {
-      hasWorsened = true;
-      warnings.push(
-        `Crowds space near the ${h.wallSide ? h.wallSide + ' wall' : 'furniture'} (${h.ruleLabel})`
-      );
-    } else if (h.classification === 'RED' && base.classification === 'YELLOW') {
-      hasWorsened = true;
-      warnings.push(`Worsens walkway space clearance with ${h.furnitureLabel} from tight to critical`);
+  for (const v of after.violations) {
+    if (!baseKeys.has(stableViolationKey(v))) {
+      warnings.push(`New issue: ${v.ruleLabel} near ${v.furnitureLabel}`);
     }
-  });
-
-  return { hasWorsened, warnings };
+  }
+  return warnings;
 }
 
-// ─── Main Workspace Screen ──────────────────────────────────────────────────
+// ─── Tab enum ───────────────────────────────────────────────────────────────
+type Tab = 'plan' | 'issues' | 'checklist';
+
+// ─── Main Component ─────────────────────────────────────────────────────────
 export default function WorkspaceScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const roomDimensions = useSessionStore((s) => s.roomDimensions);
   const items = useFurnitureStore((s) => s.items);
   const updatePosition = useFurnitureStore((s) => s.updatePosition);
-
-  const recommendations = useViolationStore((s) => s.recommendations);
   const refreshViolations = useViolationStore((s) => s.refreshViolations);
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
   const setSpaceScoreAfter = useViolationStore((s) => s.setSpaceScoreAfter);
+  const recommendations = useViolationStore((s) => s.recommendations);
 
   const roomWidthCm = useMemo(() => {
     if (!roomDimensions) return 360;
@@ -161,61 +105,49 @@ export default function WorkspaceScreen() {
     return roomDimensions.livingDepthCm + roomDimensions.diningDepthCm;
   }, [roomDimensions]);
 
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [initialLoaded, setInitialLoaded] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [infeasible, setInfeasible] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('plan');
 
-  // Local dragged copy representing the workspace coordinate preview
   const [preview, setPreview] = useState<FurnitureItem[]>(items);
   const previewRef = useRef<FurnitureItem[]>(items);
-  const lastFeasibleRef = useRef<{ x: number; z: number } | null>(null);
-  const currentFeasibleRef = useRef(true);
+  const lastOkRef = useRef<{ x: number; z: number } | null>(null);
+  const okRef = useRef(true);
 
-  // 1. Initial Coordinate Normalization check
+  // ── Normalize once on mount ───────────────────────────────────────────────
   useEffect(() => {
-    if (items.length > 0 && !initialLoaded) {
-      // Check if coordinates land outside room boundaries
-      const needsNormalization = items.some((item) => {
-        const halfL = item.lengthCm / 200;
-        const halfW = item.widthCm / 200;
-        return (
-          item.posX - halfL < 0 ||
-          item.posZ - halfW < 0 ||
-          item.posX + halfL > roomWidthCm / 100 ||
-          item.posZ + halfW > roomLengthCm / 100
-        );
+    if (items.length > 0 && !loaded) {
+      const outOfBounds = items.some((it) => {
+        const hL = it.lengthCm / 200;
+        const hW = it.widthCm / 200;
+        return it.posX - hL < 0 || it.posZ - hW < 0
+          || it.posX + hL > roomWidthCm / 100 || it.posZ + hW > roomLengthCm / 100;
       });
-
-      if (needsNormalization) {
-        const normalized = normalizeFurniturePositions(items, roomWidthCm, roomLengthCm);
-        normalized.forEach((item) => {
-          updatePosition(item.id, item.posX, item.posZ, item.rotationY);
-        });
-        setPreview(normalized);
-        previewRef.current = normalized;
+      if (outOfBounds) {
+        const norm = normalizeFurniturePositions(items, roomWidthCm, roomLengthCm);
+        norm.forEach((it) => updatePosition(it.id, it.posX, it.posZ, it.rotationY));
+        setPreview(norm);
+        previewRef.current = norm;
       } else {
         setPreview(items);
         previewRef.current = items;
       }
-      setInitialLoaded(true);
+      setLoaded(true);
     }
-  }, [items, roomWidthCm, roomLengthCm, updatePosition, initialLoaded]);
+  }, [items, roomWidthCm, roomLengthCm, updatePosition, loaded]);
 
-  // Synchronize local preview with store additions/changes
+  // ── Keep preview in sync with store ───────────────────────────────────────
   useEffect(() => {
-    if (initialLoaded) {
-      setPreview(items);
-      previewRef.current = items;
-    }
-  }, [items, initialLoaded]);
+    if (loaded) { setPreview(items); previewRef.current = items; }
+  }, [items, loaded]);
 
-  // Analysis derived from store coordinates
+  // ── Analysis ──────────────────────────────────────────────────────────────
   const analysis = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
-    [items, roomWidthCm, roomLengthCm]
+    [items, roomWidthCm, roomLengthCm],
   );
 
-  // Sync analysis to violationStore
   useEffect(() => {
     if (analysis.violations.length > 0 && recommendations.length === 0) {
       refreshViolations(analysis.violations);
@@ -223,161 +155,92 @@ export default function WorkspaceScreen() {
     }
   }, [analysis, refreshViolations, recommendations.length, setSpaceScoreBefore]);
 
-  // Active target & selection setup
+  // ── Selection ─────────────────────────────────────────────────────────────
   const selectedItem = useMemo(() => {
-    if (selectedItemId) {
-      return preview.find((it) => it.id === selectedItemId) ?? null;
-    }
-    // Default to the first item that has an active violation
-    const firstViolationId = analysis.violations[0]?.furnitureId;
-    if (firstViolationId) {
-      return preview.find((it) => it.id === firstViolationId) ?? null;
-    }
+    if (selectedId) return preview.find((it) => it.id === selectedId) ?? null;
     return preview[0] ?? null;
-  }, [selectedItemId, preview, analysis.violations]);
+  }, [selectedId, preview]);
 
-  // Sync selected target back to selectedItemId state
   useEffect(() => {
-    if (selectedItem && selectedItemId !== selectedItem.id) {
-      setSelectedItemId(selectedItem.id);
-    }
-  }, [selectedItem, selectedItemId]);
+    if (selectedItem && selectedId !== selectedItem.id) setSelectedId(selectedItem.id);
+  }, [selectedItem, selectedId]);
 
   const activeViolation = useMemo(() => {
     if (!selectedItem) return undefined;
     return analysis.violations.find((v) => v.furnitureId === selectedItem.id);
   }, [selectedItem, analysis.violations]);
 
-  const ghostItem = useMemo(() => {
-    if (!selectedItem) return null;
-    return getGhostItem(selectedItem, activeViolation);
-  }, [selectedItem, activeViolation]);
+  const ghostItem = useMemo(
+    () => selectedItem ? getGhostItem(selectedItem, activeViolation) : null,
+    [selectedItem, activeViolation],
+  );
 
-  // Determine item-to-status mappings for FloorPlan2D coloring
+  const lookaheadWarnings = useMemo(() => {
+    if (!selectedItem || !ghostItem) return [];
+    return getLookaheadWarnings(preview, selectedItem.id, ghostItem, roomWidthCm, roomLengthCm);
+  }, [selectedItem, ghostItem, preview, roomWidthCm, roomLengthCm]);
+
+  // ── Status map ────────────────────────────────────────────────────────────
   const itemStatuses = useMemo(() => {
-    const statuses: Record<string, 'RED' | 'YELLOW' | 'GREEN'> = {};
-    preview.forEach((item) => {
-      const itemViolations = analysis.violations.filter(
-        (v) => v.furnitureId === item.id || v.itemBId === item.id
-      );
-      if (itemViolations.some((v) => v.classification === 'RED')) {
-        statuses[item.id] = 'RED';
-      } else if (itemViolations.some((v) => v.classification === 'YELLOW')) {
-        statuses[item.id] = 'YELLOW';
-      } else {
-        statuses[item.id] = 'GREEN';
-      }
-    });
-    return statuses;
+    const s: Record<string, 'RED' | 'YELLOW' | 'GREEN'> = {};
+    for (const it of preview) {
+      const vs = analysis.violations.filter((v) => v.furnitureId === it.id || v.itemBId === it.id);
+      if (vs.some((v) => v.classification === 'RED')) s[it.id] = 'RED';
+      else if (vs.some((v) => v.classification === 'YELLOW')) s[it.id] = 'YELLOW';
+      else s[it.id] = 'GREEN';
+    }
+    return s;
   }, [preview, analysis.violations]);
 
-  // Checklist Categories
-  const checklist = useMemo(() => {
-    const walkingStatus = analysis.violations.some(
-      (v) => ['L1', 'L3', 'L4'].includes(v.ruleCode) && v.itemBId !== 'wall'
-    )
-      ? 'Needs Adjustment'
-      : 'Good';
+  // ── Drag handlers ─────────────────────────────────────────────────────────
+  const handleDragStart = useCallback((id: string) => {
+    const it = preview.find((p) => p.id === id);
+    if (!it) return;
+    lastOkRef.current = { x: it.posX, z: it.posZ };
+    okRef.current = true;
+    setInfeasible(false);
+  }, [preview]);
 
-    const wallStatus = analysis.violations.some(
-      (v) => (v.ruleCode === 'L1' && v.itemBId === 'wall') || ['D1', 'D2', 'D3'].includes(v.ruleCode)
-    )
-      ? 'Needs Adjustment'
-      : 'Good';
-
-    const diningStatus = analysis.violations.some((v) => ['D4', 'D5'].includes(v.ruleCode))
-      ? 'Needs Adjustment'
-      : 'Good';
-
-    const tvStatus = analysis.violations.some((v) => ['L2', 'L5'].includes(v.ruleCode))
-      ? 'Needs Adjustment'
-      : 'Good';
-
-    return {
-      walking: walkingStatus,
-      wall: wallStatus,
-      dining: diningStatus,
-      tv: tvStatus,
-      totalIssues: analysis.violations.length,
-      resolvedIssues: items.length - analysis.violations.length, // approximation of solved items
-    };
-  }, [analysis.violations, items.length]);
-
-  // ─── LOOKAHEAD SIMULATION LOOKUPS ──────────────────────────────────────────
-  const recommendedValidation = useMemo(() => {
-    if (!selectedItem || !activeViolation) return null;
-    const ghost = getGhostItem(selectedItem, activeViolation);
-    if (!ghost) return null;
-
-    return getLookaheadValidation(
-      preview,
-      selectedItem.id,
-      ghost.posX,
-      ghost.posZ,
-      ghost.rotationY,
-      roomWidthCm,
-      roomLengthCm
-    );
-  }, [selectedItem, activeViolation, preview, roomWidthCm, roomLengthCm]);
-
-  // Drag handlers
-  const handleDragStart = useCallback(
-    (itemId: string) => {
-      const it = preview.find((p) => p.id === itemId);
-      if (!it) return;
-      lastFeasibleRef.current = { x: it.posX, z: it.posZ };
-      currentFeasibleRef.current = true;
-      setInfeasible(false);
-    },
-    [preview]
-  );
-
-  const handleDragMove = useCallback(
-    (worldXMetres: number, worldZMetres: number) => {
-      if (!selectedItem) return;
-      const snappedX = snapCm(worldXMetres * 100) / 100;
-      const snappedZ = snapCm(worldZMetres * 100) / 100;
-      const candidate = withMovedItem(preview, selectedItem.id, snappedX, snappedZ);
-      const ok = isFeasible(candidate, roomWidthCm, roomLengthCm);
-
-      setPreview(candidate);
-      previewRef.current = candidate;
-      setInfeasible(!ok);
-      currentFeasibleRef.current = ok;
-      if (ok) lastFeasibleRef.current = { x: snappedX, z: snappedZ };
-    },
-    [preview, selectedItem, roomWidthCm, roomLengthCm]
-  );
+  const handleDragMove = useCallback((xm: number, zm: number) => {
+    if (!selectedItem) return;
+    const sx = snapCm(xm * 100) / 100;
+    const sz = snapCm(zm * 100) / 100;
+    const next = withMovedItem(preview, selectedItem.id, sx, sz);
+    const ok = isFeasible(next, roomWidthCm, roomLengthCm);
+    setPreview(next);
+    previewRef.current = next;
+    setInfeasible(!ok);
+    okRef.current = ok;
+    if (ok) lastOkRef.current = { x: sx, z: sz };
+  }, [preview, selectedItem, roomWidthCm, roomLengthCm]);
 
   const handleDragEnd = useCallback(() => {
     if (!selectedItem) return;
     let settled = previewRef.current;
 
-    if (!currentFeasibleRef.current && lastFeasibleRef.current) {
-      settled = withMovedItem(previewRef.current, selectedItem.id, lastFeasibleRef.current.x, lastFeasibleRef.current.z);
+    // Snap back to last feasible if current is infeasible
+    if (!okRef.current && lastOkRef.current) {
+      settled = withMovedItem(settled, selectedItem.id, lastOkRef.current.x, lastOkRef.current.z);
       previewRef.current = settled;
       setPreview(settled);
       setInfeasible(false);
-      currentFeasibleRef.current = true;
+      okRef.current = true;
     }
 
-    // Auto-snapping to Ghost recommended outline within 5cm tolerance
-    const finalItem = settled.find((it) => it.id === selectedItem.id);
-    if (finalItem && ghostItem) {
-      const dx = Math.abs(finalItem.posX - ghostItem.posX);
-      const dz = Math.abs(finalItem.posZ - ghostItem.posZ);
-      if (dx <= 0.05 && dz <= 0.05) {
+    // Auto-snap within 5cm of ghost
+    const fin = settled.find((it) => it.id === selectedItem.id);
+    if (fin && ghostItem) {
+      if (Math.abs(fin.posX - ghostItem.posX) <= 0.05 && Math.abs(fin.posZ - ghostItem.posZ) <= 0.05) {
         settled = withMovedItem(settled, selectedItem.id, ghostItem.posX, ghostItem.posZ);
         setPreview(settled);
         previewRef.current = settled;
       }
     }
 
-    // Write directly to store coordinate systems
-    const settledItem = settled.find((it) => it.id === selectedItem.id);
-    if (settledItem) {
-      updatePosition(settledItem.id, settledItem.posX, settledItem.posZ, settledItem.rotationY);
-      // Update analysis state
+    // Commit to store
+    const s = settled.find((it) => it.id === selectedItem.id);
+    if (s) {
+      updatePosition(s.id, s.posX, s.posZ, s.rotationY);
       const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
       refreshViolations(fresh.violations);
       setSpaceScoreAfter(fresh.spaceScoreBefore);
@@ -386,11 +249,10 @@ export default function WorkspaceScreen() {
 
   const handleRotate = useCallback(() => {
     if (!selectedItem) return;
-    const candidate = withRotatedItem(preview, selectedItem.id, selectedItem.rotationY + Math.PI / 2);
-
-    if (isFeasible(candidate, roomWidthCm, roomLengthCm)) {
-      setPreview(candidate);
-      previewRef.current = candidate;
+    const next = withRotatedItem(preview, selectedItem.id, selectedItem.rotationY + Math.PI / 2);
+    if (isFeasible(next, roomWidthCm, roomLengthCm)) {
+      setPreview(next);
+      previewRef.current = next;
       updatePosition(selectedItem.id, selectedItem.posX, selectedItem.posZ, selectedItem.rotationY + Math.PI / 2);
       const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
       refreshViolations(fresh.violations);
@@ -398,465 +260,418 @@ export default function WorkspaceScreen() {
     }
   }, [selectedItem, preview, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter]);
 
-  const handleResetPosition = useCallback(() => {
-    if (!selectedItem) return;
-    // Standard starting layout centroids center coordinates can serve as resets
-    const normalizedItems = normalizeFurniturePositions(
-      useFurnitureStore.getState().items,
-      roomWidthCm,
-      roomLengthCm
-    );
-    const origin = normalizedItems.find((it) => it.id === selectedItem.id);
-    if (origin) {
-      updatePosition(selectedItem.id, origin.posX, origin.posZ, origin.rotationY);
-      setPreview(useFurnitureStore.getState().items);
-    }
-  }, [selectedItem, roomWidthCm, roomLengthCm, updatePosition]);
+  // ── Render ────────────────────────────────────────────────────────────────
+  const issueCount = analysis.violations.length;
+  const redCount = analysis.violations.filter((v) => v.classification === 'RED').length;
+  const yellowCount = analysis.violations.filter((v) => v.classification === 'YELLOW').length;
+  const greenCount = preview.length - redCount - yellowCount;
 
   return (
-    <div style={containerStyle}>
-      {/* ─── HEADER ─────────────────────────────────────────────────────────── */}
-      <header style={headerStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: space.sm }}>
-          <button style={backBtnStyle} onClick={() => navigateTo('positionMap')}>
-            ← Back
-          </button>
-          <div>
-            <h1 style={{ ...typeScale.title, margin: 0 }}>Habi3D Layout Workspace</h1>
-            <span style={{ ...typeScale.label, color: t.inkSoft, textTransform: 'none' }}>
-              Drag, select, and optimize layout live
-            </span>
-          </div>
+    <div style={shell}>
+      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
+      <header style={header}>
+        <button style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
+        <div style={{ flex: 1 }}>
+          <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: t.ink }}>Layout Workspace</h1>
+          <p style={{ margin: 0, fontSize: 12, color: t.inkSoft }}>
+            {issueCount === 0
+              ? '✅ All clearances passed'
+              : `${issueCount} clearance issue${issueCount > 1 ? 's' : ''} found`}
+          </p>
         </div>
-        <button style={finishBtnStyle} onClick={() => navigateTo('report')}>
-          Finish Session
-        </button>
+        <button style={finishBtn} onClick={() => navigateTo('report')}>Done</button>
       </header>
 
-      {/* ─── 3-COLUMN WORKSPACE BODY ────────────────────────────────────────── */}
-      <main style={mainLayoutStyle}>
-        {/* COLUMN 1: FURNITURE LIST */}
-        <section style={leftColStyle}>
-          <h2 style={{ ...typeScale.label, color: t.inkMute, marginBottom: space.sm }}>Furniture List</h2>
-          <div style={scrollContainer}>
-            {preview.map((item) => {
-              const status = itemStatuses[item.id] ?? 'GREEN';
-              const isSelected = selectedItem?.id === item.id;
-              const meta = statusMeta(status === 'RED' ? 'needs-attention' : status === 'YELLOW' ? 'tight' : 'comfortable');
+      {/* ── STATUS PILLS ───────────────────────────────────────────────────── */}
+      <div style={pillRow}>
+        {redCount > 0 && <span style={pill(t.attentionBg, t.attentionFg)}>{redCount} Critical</span>}
+        {yellowCount > 0 && <span style={pill(t.tightBg, t.tightFg)}>{yellowCount} Tight</span>}
+        <span style={pill(t.comfortBg, t.comfortFg)}>{greenCount} Good</span>
+      </div>
 
-              return (
-                <div
-                  key={item.id}
-                  onClick={() => setSelectedItemId(item.id)}
-                  style={{
-                    ...itemCardStyle(isSelected),
-                    borderLeft: `5px solid ${meta.color}`,
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 700, color: t.brand }}>{item.label}</span>
-                    <span style={{ ...badgeStyle, background: meta.bg, color: meta.color }}>
-                      {status === 'RED' ? 'Needs Attention' : status === 'YELLOW' ? 'Tight' : 'Comfortable'}
+      {/* ── INTERACTIVE FLOOR PLAN ─────────────────────────────────────────── */}
+      <section style={planSection}>
+        <FloorPlan2D
+          items={preview}
+          roomWidthCm={roomWidthCm}
+          roomLengthCm={roomLengthCm}
+          highlightItemId={selectedItem?.id}
+          itemStatuses={itemStatuses}
+          ghostItem={ghostItem}
+          onSelectItem={setSelectedId}
+          interactive={
+            selectedItem
+              ? {
+                  draggableItemId: selectedItem.id,
+                  infeasible,
+                  onDragStart: handleDragStart,
+                  onDragMove: handleDragMove,
+                  onDragEnd: handleDragEnd,
+                }
+              : undefined
+          }
+        />
+
+        {/* Inline feedback */}
+        <p style={feedbackText}>
+          {infeasible
+            ? <span style={{ color: t.attentionFg, fontWeight: 700 }}>❌ Can't place here — overlaps furniture or wall</span>
+            : selectedItem
+              ? <span>👆 Drag <strong>{selectedItem.label}</strong> to move it</span>
+              : <span>👆 Tap a block to select it</span>
+          }
+        </p>
+
+        {/* Action buttons */}
+        <div style={actionRow}>
+          <button style={actionBtn} onClick={handleRotate} disabled={!selectedItem}>
+            🔄 Rotate 90°
+          </button>
+        </div>
+      </section>
+
+      {/* ── BOTTOM DRAWER ──────────────────────────────────────────────────── */}
+      <section style={drawer}>
+        {/* Tab bar */}
+        <div style={tabBar}>
+          {(['plan', 'issues', 'checklist'] as Tab[]).map((tab) => (
+            <button
+              key={tab}
+              style={tabBtn(activeTab === tab)}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === 'plan' ? `📋 Items (${preview.length})`
+                : tab === 'issues' ? `⚠️ Issues (${issueCount})`
+                : '✅ Checklist'}
+            </button>
+          ))}
+        </div>
+
+        <div style={tabContent}>
+          {/* TAB: Items list */}
+          {activeTab === 'plan' && (
+            <div style={scrollList}>
+              {preview.map((item) => {
+                const status = itemStatuses[item.id] ?? 'GREEN';
+                const sel = selectedItem?.id === item.id;
+                const meta = statusMeta(
+                  status === 'RED' ? 'needs-attention'
+                    : status === 'YELLOW' ? 'tight'
+                    : 'comfortable',
+                );
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedId(item.id)}
+                    style={{
+                      ...listItem(sel),
+                      borderLeftColor: meta.color,
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, color: sel ? t.brand : t.ink, fontSize: 14 }}>
+                      {item.label}
+                    </span>
+                    <span style={{ ...badge, background: meta.bg, color: meta.color }}>
+                      {status === 'RED' ? 'Needs Attention'
+                        : status === 'YELLOW' ? 'Tight'
+                        : 'Good'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 12, color: t.inkSoft, marginTop: 4 }}>
-                    {item.lengthCm} x {item.widthCm} x {item.heightCm} cm
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: space.sm }}>
-            <button style={btnActionStyle} onClick={handleResetPosition} disabled={!selectedItem}>
-              Reset Position
-            </button>
-          </div>
-        </section>
-
-        {/* COLUMN 2: SVG FLOOR PLAN CENTER */}
-        <section style={centerColStyle}>
-          <div style={canvasBoxStyle}>
-            <FloorPlan2D
-              items={preview}
-              roomWidthCm={roomWidthCm}
-              roomLengthCm={roomLengthCm}
-              highlightItemId={selectedItem?.id}
-              itemStatuses={itemStatuses}
-              ghostItem={ghostItem}
-              onSelectItem={setSelectedItemId}
-              interactive={
-                selectedItem
-                  ? {
-                      draggableItemId: selectedItem.id,
-                      infeasible,
-                      onDragStart: handleDragStart,
-                      onDragMove: handleDragMove,
-                      onDragEnd: handleDragEnd,
-                    }
-                  : undefined
-              }
-            />
-          </div>
-
-          <div style={toolRowStyle}>
-            <p style={{ ...typeScale.body, color: t.inkSoft, margin: 0 }}>
-              {infeasible ? (
-                <span style={{ color: t.attentionFg }}>❌ Position overlaps boundaries or furniture.</span>
-              ) : (
-                '💡 Drag furniture blocks to experiment with alternative layouts.'
-              )}
-            </p>
-            <div style={{ display: 'flex', gap: space.sm }}>
-              <button style={btnRotateStyle} onClick={handleRotate} disabled={!selectedItem}>
-                Rotate 90°
-              </button>
+                );
+              })}
             </div>
-          </div>
-        </section>
-
-        {/* COLUMN 3: INTELLIGENT DESIGN ASSISTANT */}
-        <section style={rightColStyle}>
-          <h2 style={{ ...typeScale.label, color: t.inkMute, marginBottom: space.sm }}>Design Assistant</h2>
-
-          {selectedItem && activeViolation ? (
-            <div style={assistantCard}>
-              <span style={{ ...badgeStyle, background: t.attentionBg, color: t.attentionFg, marginBottom: 8, display: 'inline-block' }}>
-                Issue Detected
-              </span>
-              <p style={{ ...typeScale.title, margin: '0 0 4px', color: t.ink }}>{selectedItem.label}</p>
-              <p style={{ ...typeScale.body, fontWeight: 700, margin: '0 0 12px', color: t.inkSoft }}>
-                {describeFinding(activeViolation, preview)}
-              </p>
-
-              <div style={specRowStyle}>
-                <div>
-                  <span style={specLabel}>Current Gap</span>
-                  <span style={specVal(t.attentionFg)}>{activeViolation.measuredCm} cm</span>
-                </div>
-                <div>
-                  <span style={specLabel}>Target Gap</span>
-                  <span style={specVal(t.comfortFg)}>{activeViolation.requiredCm} cm</span>
-                </div>
-              </div>
-
-              <div style={{ margin: '16px 0', borderTop: `1px solid ${t.line}`, paddingTop: 12 }}>
-                <span style={specLabel}>Recommended Adjustment</span>
-                <p style={{ ...typeScale.body, color: t.ink, fontWeight: 600 }}>
-                  {commitLines({
-                    itemId: selectedItem.id,
-                    itemLabel: selectedItem.label,
-                    directionWall: activeViolation.wallSide ?? null,
-                    distanceCm: activeViolation.fixDirectionCm,
-                    dxCm: 0,
-                    dzCm: 0,
-                    rotationDeltaRad: 0,
-                    rotationDeg: 0,
-                    facingAfter: null,
-                  }).join(' ')}
-                </p>
-              </div>
-
-              {/* SIMULATED LOOKAHEAD RECOMMENDATION VALIDATION */}
-              <div style={lookaheadBox(recommendedValidation?.hasWorsened ?? false)}>
-                <span style={{ ...typeScale.label, fontSize: 11, color: t.brand, marginBottom: 4 }}>
-                  Whole-Room Simulation Lookahead
-                </span>
-                {recommendedValidation ? (
-                  recommendedValidation.hasWorsened ? (
-                    <div>
-                      <p style={{ ...typeScale.body, color: t.attentionFg, fontWeight: 700, margin: 0 }}>
-                        ⚠️ Warning: Creating new crowding issues:
-                      </p>
-                      <ul style={{ margin: '4px 0 0', paddingLeft: 20, fontSize: 13, color: t.attentionFg }}>
-                        {recommendedValidation.warnings.map((w, idx) => (
-                          <li key={idx}>{w}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <p style={{ ...typeScale.body, color: t.comfortFg, fontWeight: 600, margin: 0 }}>
-                      ✅ Safely validated: No secondary violations created elsewhere in the room.
-                    </p>
-                  )
-                ) : null}
-              </div>
-            </div>
-          ) : selectedItem ? (
-            <div style={assistantCard}>
-              <p style={{ ...typeScale.title, color: t.comfortFg, margin: '0 0 6px' }}>✅ Clearance Compliant</p>
-              <p style={{ ...typeScale.body, color: t.inkSoft, margin: 0 }}>
-                {selectedItem.label} satisfies all clearance requirements in this layout position.
-              </p>
-            </div>
-          ) : (
-            <p style={{ color: t.inkSoft, textAlign: 'center', marginTop: 32 }}>Select an item to view recommendations.</p>
           )}
 
-          {/* Actionable Category Checklist */}
-          <div style={{ marginTop: 'auto', borderTop: `1px solid ${t.line}`, paddingTop: 16 }}>
-            <h3 style={{ ...typeScale.label, color: t.inkMute, marginBottom: 12 }}>Room Quality Checklist</h3>
-            <div style={checklistRow}>
-              <span>🚶 Walking Paths</span>
-              <span style={checklistBadge(checklist.walking === 'Good')}>{checklist.walking}</span>
-            </div>
-            <div style={checklistRow}>
-              <span>🏢 Wall Clearances</span>
-              <span style={checklistBadge(checklist.wall === 'Good')}>{checklist.wall}</span>
-            </div>
-            <div style={checklistRow}>
-              <span>🍽️ Dining Areas</span>
-              <span style={checklistBadge(checklist.dining === 'Good')}>{checklist.dining}</span>
-            </div>
-            <div style={checklistRow}>
-              <span>📺 TV Viewing clearances</span>
-              <span style={checklistBadge(checklist.tv === 'Good')}>{checklist.tv}</span>
-            </div>
-          </div>
-        </section>
-      </main>
+          {/* TAB: Violation details */}
+          {activeTab === 'issues' && (
+            <div style={scrollList}>
+              {issueCount === 0 ? (
+                <p style={{ textAlign: 'center', color: t.comfortFg, fontWeight: 600, padding: 24 }}>
+                  🎉 No clearance issues — great layout!
+                </p>
+              ) : (
+                analysis.violations.map((v) => (
+                  <div
+                    key={v.id}
+                    style={{
+                      ...violationCard,
+                      borderLeftColor: v.classification === 'RED' ? t.attentionFg : t.tightFg,
+                    }}
+                    onClick={() => setSelectedId(v.furnitureId)}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, color: t.ink, fontSize: 14 }}>{v.furnitureLabel}</span>
+                      <span style={{
+                        ...badge,
+                        background: v.classification === 'RED' ? t.attentionBg : t.tightBg,
+                        color: v.classification === 'RED' ? t.attentionFg : t.tightFg,
+                      }}>
+                        {v.ruleCode}
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: 13, color: t.inkSoft }}>{v.ruleLabel}</p>
+                    <div style={metricsRow}>
+                      <span>Gap: <strong>{v.measuredCm}cm</strong></span>
+                      <span>Need: <strong>{v.requiredCm}cm</strong></span>
+                      <span style={{ color: t.attentionFg }}>Short: <strong>{v.shortfallCm}cm</strong></span>
+                    </div>
+                  </div>
+                ))
+              )}
 
-      {/* ─── LIVE SUMMARY FOOTER ────────────────────────────────────────────── */}
-      <footer style={footerStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          <span style={{ ...typeScale.body, fontWeight: 700, color: t.ink }}>
-            Issues Resolved: {checklist.resolvedIssues} of {items.length} items compliant
-          </span>
-          <div style={barTrack}>
-            <div
-              style={{
-                height: '100%',
-                background: checklist.totalIssues === 0 ? t.comfortFg : t.brand,
-                width: `${items.length > 0 ? (checklist.resolvedIssues / items.length) * 100 : 0}%`,
-                transition: 'width 0.4s ease',
-              }}
-            />
-          </div>
+              {/* Lookahead validation for selected item */}
+              {selectedItem && ghostItem && (
+                <div style={lookaheadCard(lookaheadWarnings.length > 0)}>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: t.brand, marginBottom: 4 }}>
+                    RECOMMENDATION VALIDATION
+                  </p>
+                  {lookaheadWarnings.length === 0 ? (
+                    <p style={{ margin: 0, fontSize: 13, color: t.comfortFg, fontWeight: 600 }}>
+                      ✅ Suggested move is safe — no new issues created
+                    </p>
+                  ) : (
+                    <>
+                      <p style={{ margin: '0 0 4px', fontSize: 13, color: t.attentionFg, fontWeight: 600 }}>
+                        ⚠️ Suggested move creates new issues:
+                      </p>
+                      {lookaheadWarnings.map((w, i) => (
+                        <p key={i} style={{ margin: '2px 0', fontSize: 12, color: t.attentionFg }}>• {w}</p>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: Room quality checklist */}
+          {activeTab === 'checklist' && (
+            <div style={scrollList}>
+              {[
+                { label: '🚶 Walking Paths', codes: ['L1', 'L3', 'L4'] },
+                { label: '🏢 Wall Clearance', codes: ['D1', 'D2', 'D3'] },
+                { label: '🍽️ Dining Space', codes: ['D4', 'D5'] },
+                { label: '📺 TV Distance', codes: ['L2', 'L5'] },
+              ].map(({ label, codes }) => {
+                const hasIssue = analysis.violations.some((v) => codes.includes(v.ruleCode));
+                return (
+                  <div key={label} style={checkRow}>
+                    <span style={{ fontSize: 14, color: t.ink }}>{label}</span>
+                    <span style={{
+                      ...badge,
+                      background: hasIssue ? t.tightBg : t.comfortBg,
+                      color: hasIssue ? t.tightFg : t.comfortFg,
+                    }}>
+                      {hasIssue ? 'Needs Work' : 'Good'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <span style={{ ...typeScale.body, color: t.inkSoft, fontStyle: 'italic' }}>
-          {checklist.totalIssues === 0
-            ? '🎉 Excellent layout: all clearance rules satisfied!'
-            : `⚠️ ${checklist.totalIssues} clearance issue(s) remaining`}
-        </span>
-      </footer>
+      </section>
     </div>
   );
 }
 
-// ─── STYLES ──────────────────────────────────────────────────────────────────
-const containerStyle: CSSProperties = {
+// ─── STYLES — MOBILE-FIRST ──────────────────────────────────────────────────
+
+const shell: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  height: '100vh',
-  width: '100vw',
+  height: '100dvh',
+  width: '100%',
   background: t.ground,
-  color: t.ink,
   fontFamily: "'Inter', system-ui, sans-serif",
   overflow: 'hidden',
 };
 
-const headerStyle: CSSProperties = {
+const header: CSSProperties = {
   display: 'flex',
-  justifyContent: 'space-between',
   alignItems: 'center',
-  padding: '16px 24px',
+  gap: 10,
+  padding: '12px 16px',
   background: t.surface,
   borderBottom: `1px solid ${t.line}`,
+  flexShrink: 0,
 };
 
-const backBtnStyle: CSSProperties = {
+const backBtn: CSSProperties = {
   background: 'none',
   border: 'none',
   color: t.brand,
-  cursor: 'pointer',
+  fontSize: 18,
   fontWeight: 700,
-  fontSize: 14,
+  cursor: 'pointer',
+  padding: '4px 8px',
+  minWidth: 36,
+  minHeight: 36,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
-const finishBtnStyle: CSSProperties = {
+const finishBtn: CSSProperties = {
   background: t.brand,
-  color: t.surface,
+  color: '#fff',
   border: 'none',
   padding: '8px 16px',
   borderRadius: radius.sm,
   fontWeight: 700,
+  fontSize: 13,
   cursor: 'pointer',
 };
 
-const mainLayoutStyle: CSSProperties = {
+const pillRow: CSSProperties = {
   display: 'flex',
-  flex: 1,
-  height: 'calc(100vh - 140px)',
-  overflow: 'hidden',
-};
-
-const leftColStyle: CSSProperties = {
-  width: '280px',
+  gap: 8,
+  padding: '8px 16px',
   background: t.surface,
-  borderRight: `1px solid ${t.line}`,
-  padding: '16px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '12px',
+  flexShrink: 0,
+  overflowX: 'auto',
 };
 
-const scrollContainer: CSSProperties = {
-  flex: 1,
-  overflowY: 'auto',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '10px',
-  paddingRight: '4px',
-};
-
-const itemCardStyle = (isSelected: boolean): CSSProperties => ({
-  background: isSelected ? t.brandTint : t.ground,
-  border: `1px solid ${isSelected ? t.brand : t.line}`,
-  padding: '12px',
-  borderRadius: radius.sm,
-  cursor: 'pointer',
-  transition: 'all 0.2s ease',
+const pill = (bg: string, fg: string): CSSProperties => ({
+  fontSize: 11,
+  fontWeight: 700,
+  padding: '4px 10px',
+  borderRadius: 20,
+  background: bg,
+  color: fg,
+  whiteSpace: 'nowrap',
 });
 
-const badgeStyle: CSSProperties = {
-  fontSize: '11px',
-  fontWeight: 700,
-  padding: '3px 8px',
-  borderRadius: '20px',
-};
-
-const btnActionStyle: CSSProperties = {
-  background: t.surface,
-  border: `1px solid ${t.line}`,
-  color: t.ink,
-  padding: '10px',
-  borderRadius: radius.sm,
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const centerColStyle: CSSProperties = {
+const planSection: CSSProperties = {
   flex: 1,
-  padding: '24px',
+  minHeight: 0,
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  background: t.ground,
+  padding: '12px 16px 0',
+  overflow: 'hidden',
 };
 
-const canvasBoxStyle: CSSProperties = {
-  width: '100%',
-  maxWidth: '520px',
-  background: t.surface,
-  borderRadius: radius.md,
-  padding: '16px',
-  boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-  border: `1px solid ${t.line}`,
+const feedbackText: CSSProperties = {
+  margin: '8px 0 0',
+  fontSize: 13,
+  color: t.inkSoft,
+  textAlign: 'center',
 };
 
-const toolRowStyle: CSSProperties = {
-  width: '100%',
-  maxWidth: '520px',
-  marginTop: '16px',
+const actionRow: CSSProperties = {
   display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
+  gap: 8,
+  padding: '8px 0 4px',
 };
 
-const btnRotateStyle: CSSProperties = {
+const actionBtn: CSSProperties = {
   background: t.surface,
   border: `1px solid ${t.line}`,
   color: t.brand,
   padding: '8px 16px',
   borderRadius: radius.sm,
-  fontWeight: 700,
+  fontWeight: 600,
+  fontSize: 13,
   cursor: 'pointer',
 };
 
-const rightColStyle: CSSProperties = {
-  width: '320px',
-  background: t.surface,
-  borderLeft: `1px solid ${t.line}`,
-  padding: '16px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '16px',
-};
-
-const assistantCard: CSSProperties = {
-  background: t.ground,
-  padding: '14px',
-  borderRadius: radius.md,
-  border: `1px solid ${t.line}`,
-};
-
-const specRowStyle: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: '12px',
-  background: t.surface,
-  padding: '8px 12px',
-  borderRadius: radius.sm,
-  border: `1px solid ${t.line}`,
-};
-
-const specLabel: CSSProperties = {
-  fontSize: '11px',
-  fontWeight: 700,
-  color: t.inkMute,
-  textTransform: 'uppercase',
-  display: 'block',
-  marginBottom: '2px',
-};
-
-const specVal = (color: string): CSSProperties => ({
-  fontSize: '15px',
-  fontWeight: 800,
-  color,
-});
-
-const lookaheadBox = (worsened: boolean): CSSProperties => ({
-  marginTop: '12px',
-  background: worsened ? t.attentionBg : t.comfortBg,
-  border: `1px solid ${worsened ? t.attentionFg : t.comfortFg}`,
-  padding: '10px 12px',
-  borderRadius: radius.sm,
-  display: 'flex',
-  flexDirection: 'column',
-});
-
-const checklistRow: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: '8px 0',
-  borderBottom: `1px solid ${t.line}`,
-  fontSize: '14px',
-};
-
-const checklistBadge = (isGood: boolean): CSSProperties => ({
-  fontSize: '11px',
-  fontWeight: 700,
-  color: isGood ? t.comfortFg : t.tightFg,
-  background: isGood ? t.comfortBg : t.tightBg,
-  padding: '3px 8px',
-  borderRadius: '20px',
-});
-
-const footerStyle: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: '14px 24px',
+const drawer: CSSProperties = {
   background: t.surface,
   borderTop: `1px solid ${t.line}`,
+  borderRadius: '16px 16px 0 0',
+  boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
+  display: 'flex',
+  flexDirection: 'column',
+  maxHeight: '40vh',
+  flexShrink: 0,
 };
 
-const barTrack: CSSProperties = {
-  width: '180px',
-  height: '8px',
-  borderRadius: '4px',
-  background: t.line,
+const tabBar: CSSProperties = {
+  display: 'flex',
+  borderBottom: `1px solid ${t.line}`,
+  flexShrink: 0,
+};
+
+const tabBtn = (active: boolean): CSSProperties => ({
+  flex: 1,
+  padding: '10px 0',
+  border: 'none',
+  background: 'none',
+  fontFamily: "'Inter', system-ui, sans-serif",
+  fontSize: 12,
+  fontWeight: 700,
+  color: active ? t.brand : t.inkMute,
+  borderBottom: active ? `2px solid ${t.brand}` : '2px solid transparent',
+  cursor: 'pointer',
+});
+
+const tabContent: CSSProperties = {
+  flex: 1,
   overflow: 'hidden',
 };
+
+const scrollList: CSSProperties = {
+  overflowY: 'auto',
+  padding: '8px 16px 16px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  maxHeight: 'calc(40vh - 48px)',
+};
+
+const listItem = (sel: boolean): CSSProperties => ({
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  padding: '10px 12px',
+  borderRadius: radius.sm,
+  background: sel ? t.brandTint : t.ground,
+  border: `1px solid ${sel ? t.brand : t.line}`,
+  borderLeft: '4px solid',
+  cursor: 'pointer',
+  transition: 'all 0.15s ease',
+});
+
+const badge: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 700,
+  padding: '3px 8px',
+  borderRadius: 20,
+};
+
+const violationCard: CSSProperties = {
+  padding: '10px 12px',
+  borderRadius: radius.sm,
+  background: t.ground,
+  border: `1px solid ${t.line}`,
+  borderLeft: '4px solid',
+  cursor: 'pointer',
+};
+
+const metricsRow: CSSProperties = {
+  display: 'flex',
+  gap: 16,
+  marginTop: 6,
+  fontSize: 12,
+  color: t.inkSoft,
+};
+
+const checkRow: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  padding: '10px 12px',
+  borderRadius: radius.sm,
+  background: t.ground,
+  border: `1px solid ${t.line}`,
+};
+
+const lookaheadCard = (warn: boolean): CSSProperties => ({
+  marginTop: 4,
+  padding: '10px 12px',
+  borderRadius: radius.sm,
+  background: warn ? t.attentionBg : t.comfortBg,
+  border: `1px solid ${warn ? t.attentionFg : t.comfortFg}`,
+});
