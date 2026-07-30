@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
@@ -6,7 +6,6 @@ import ClearanceOverlay from '../ar/ClearanceOverlay';
 import CorrectionArrow from '../ar/CorrectionArrow';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import ErrorBoundary from '../components/ErrorBoundary';
-import FloorPlan2D from '../components/FloorPlan2D';
 import PlanSandbox from '../components/PlanSandbox';
 import { commitLines } from '../components/previewMove';
 import type { PreviewMove } from '../components/previewMove';
@@ -124,8 +123,7 @@ function buildFurnitureGroups(violations: Violation[], skippedIds: Set<string>):
 }
 
 // Express the engine's own recommendation for a furniture group using the SAME
-// commitLines sentence builder the sandbox handoff uses — one instruction
-// format across both paths, never two separately-formatted strings.
+// commitLines sentence builder — stable anchor instruction format across the path.
 function engineMoveLines(group: FurnitureGroup): string[] {
   return group.directionGroups.flatMap((dg) => {
     const w = dg.word.toLowerCase();
@@ -177,11 +175,12 @@ export default function RecommendationScreen() {
   const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
   const [arError, setArError] = useState('');
   const [skippedIds, setSkippedIds] = useState<Set<string>>(new Set());
-  // Interactive sandbox: whether it's open, and the move the user handed back
-  // from it ("Use this — show me how"). When set, the guided card shows THIS
-  // move as the current instruction instead of the engine's default direction.
-  const [showSandbox, setShowSandbox] = useState(false);
-  const [sandboxMove, setSandboxMove] = useState<PreviewMove | null>(null);
+
+  const [settledState, setSettledState] = useState<{
+    item: FurnitureItem | null;
+    isMoved: boolean;
+    isDragging: boolean;
+  }>({ item: null, isMoved: false, isDragging: false });
 
   const result = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
@@ -216,6 +215,16 @@ export default function RecommendationScreen() {
   const totalCount      = allFurnitureItems.length;
   const doneCount       = totalCount - pendingGroups.length;
 
+  useEffect(() => {
+    setSettledState({ item: null, isMoved: false, isDragging: false });
+  }, [currentGroup?.furnitureId]);
+
+  const handleSettledChange = useCallback(
+    (settledItem: FurnitureItem | null, isMoved: boolean, isDragging: boolean) => {
+      setSettledState({ item: settledItem, isMoved, isDragging });
+    },
+    [],
+  );
 
   async function launchAR() {
     setArError('');
@@ -230,46 +239,37 @@ export default function RecommendationScreen() {
     xrRecommendationStore.getState().session?.end();
   }
 
-  function handleDone() {
-    if (!currentGroup) return;
+  function handleConfirm() {
+    if (!currentGroup || !settledState.item || !settledState.isMoved) return;
 
-    // 1. Mark this furniture's findings resolved. Keyed by stableViolationKey
-    //    now, so the resolution survives the re-analysis below even though
-    //    every id changes with the new measurements.
+    // 1. Write the dragged position and rotation to furnitureStore for that item
+    //    using updatePosition — this is the ONLY place that writes to the store.
+    useFurnitureStore.getState().updatePosition(
+      settledState.item.id,
+      settledState.item.posX,
+      settledState.item.posZ,
+      settledState.item.rotationY
+    );
+
+    // 2. Mark this furniture's findings resolved by stable key
     resolveViolations(currentGroup.allViolations.map((v) => v.id));
 
-    // 2. Re-check the REAL current layout rather than trusting the report.
-    //    Read straight from the store for the freshest positions at click time.
+    // 3. Re-run full runClearanceAnalysis on actual updated store state
     const liveItems = useFurnitureStore.getState().items;
     const fresh = runClearanceAnalysis(liveItems, roomWidthCm, roomLengthCm);
 
-    // 3. Resync recommendations to the fresh layout. Resolved (stable keys) and
-    //    skipped (furnitureId) both carry forward; any newly-introduced or
-    //    newly-worsened finding appears here instead of being trusted away.
+    // 4. Refresh recommendations and space score
     refreshViolations(fresh.violations);
-
-    // 4. Real free-floor-area from the fresh analysis — no synthetic increment.
-    //    Tracked internally (for the report), not shown raw to the user.
     setSpaceScoreAfter(fresh.spaceScoreBefore);
 
-    // Advancing to the next piece — drop any sandbox move from this one.
-    setSandboxMove(null);
-    setShowSandbox(false);
+    // Reset local settled state for next item
+    setSettledState({ item: null, isMoved: false, isDragging: false });
   }
 
   function handleSkip() {
     if (!currentGroup) return;
     setSkippedIds((prev) => new Set([...prev, currentGroup.furnitureId]));
-    setSandboxMove(null);
-    setShowSandbox(false);
-  }
-
-  // Handoff target: the sandbox hands its built move back here, and the guided
-  // card pre-loads it as the current instruction (no store write happens here —
-  // the move still only becomes real through the AR-confirmed "Done" step).
-  function handleUseSandboxMove(m: PreviewMove) {
-    setSandboxMove(m);
-    setShowSandbox(false);
+    setSettledState({ item: null, isMoved: false, isDragging: false });
   }
 
   // ── Empty state ─────────────────────────────────────────────────────────────
@@ -331,9 +331,7 @@ export default function RecommendationScreen() {
     );
   }
 
-  // One instruction format for both paths: the sandbox move if the user chose
-  // one, otherwise the engine's own recommendation — both through commitLines.
-  const instructionLines = sandboxMove ? commitLines(sandboxMove) : engineMoveLines(currentGroup);
+  const instructionLines = engineMoveLines(currentGroup);
   const reasonViolation = currentGroup.directionGroups[0]?.violations[0] ?? currentGroup.allViolations[0];
 
   return (
@@ -371,60 +369,47 @@ export default function RecommendationScreen() {
         })}
       </div>
 
-      {/* ── 2D plan — current real layout, target highlighted ─────────────── */}
-      <section className="card card-sm">
-        <FloorPlan2D
-          items={items}
-          roomWidthCm={roomWidthCm}
-          roomLengthCm={roomLengthCm}
-          highlightItemId={currentGroup.furnitureId}
-        />
-      </section>
-
-      {/* ── Action card — the single instruction ──────────────────────────── */}
+      {/* ── Action card — the engine's stable recommendation ──────────────── */}
+      {/* This sentence describes the top suggestion for the REAL layout and does
+          NOT change as the user drags the plan below — it's steady guidance. */}
       <section
         key={currentGroup.furnitureId}
         className="card"
         style={{ borderLeft: `5px solid ${currentGroup.color}`, animation: 'screenFadeIn 0.3s ease' }}
       >
         <p style={{ ...typeScale.label, margin: '0 0 2px', color: t.inkMute }}>
-          {sandboxMove ? 'Your chosen move' : 'What to do'}
+          What to do
         </p>
         <p style={{ ...typeScale.display, margin: '0 0 12px', color: t.ink }}>
           {currentGroup.furnitureLabel}
         </p>
 
-        {/* Instruction — identical commitLines format for engine + sandbox paths */}
         {instructionLines.map((line) => (
           <p key={line} style={{ ...typeScale.title, margin: '0 0 8px', color: t.ink }}>
             {line}
           </p>
         ))}
 
-        {/* Reason — names both objects and the human consequence */}
         {reasonViolation && (
           <p style={{ ...typeScale.body, margin: '6px 0 0', color: t.inkSoft }}>
             {findingReason(reasonViolation, items)}
           </p>
         )}
-
-        {/* Optional interactive path — not the first thing shown. */}
-        <button type="button" onClick={() => setShowSandbox((v) => !v)} style={tryItBtnStyle}>
-          {showSandbox ? 'Hide' : sandboxMove ? 'Adjust it yourself' : 'Or try it yourself'}
-        </button>
       </section>
 
-      {showSandbox && (
-        <section className="card card-sm">
-          <PlanSandbox
-            baseItems={items}
-            targetItemId={currentGroup.furnitureId}
-            roomWidthCm={roomWidthCm}
-            roomLengthCm={roomLengthCm}
-            onUseThisMove={handleUseSandboxMove}
-          />
-        </section>
-      )}
+      {/* ── Interactive plan — the primary, always-visible sandbox ─────────── */}
+      {/* Drag the block to explore; the status list below reacts live. No ghost
+          target — the suggestion is the sentence in the action card above. */}
+      <section className="card card-sm">
+        <PlanSandbox
+          key={currentGroup.furnitureId}
+          baseItems={items}
+          targetItemId={currentGroup.furnitureId}
+          roomWidthCm={roomWidthCm}
+          roomLengthCm={roomLengthCm}
+          onSettledChange={handleSettledChange}
+        />
+      </section>
 
       {/* ── AR guidance ─────────────────────────────────────────────────────── */}
       <section className="card card-sm">
@@ -518,16 +503,31 @@ export default function RecommendationScreen() {
       </div>
 
       {/* ── Sticky action buttons ─────────────────────────────────────────────── */}
-      <div style={stickyFooterStyle}>
-        <div style={{ maxWidth: 640, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <button className="btn btn-secondary" type="button" onClick={handleSkip}>
-            Skip
-          </button>
-          <button className="btn btn-primary" type="button" onClick={handleDone}>
-            Done — I moved it
-          </button>
-        </div>
-      </div>
+      {(() => {
+        const showConfirm = settledState.isMoved && !settledState.isDragging && settledState.item !== null;
+        return (
+          <div style={stickyFooterStyle}>
+            <div
+              style={{
+                maxWidth: 640,
+                margin: '0 auto',
+                display: 'grid',
+                gridTemplateColumns: showConfirm ? '1fr 1fr' : '1fr',
+                gap: 10,
+              }}
+            >
+              <button className="btn btn-secondary" type="button" onClick={handleSkip}>
+                Skip
+              </button>
+              {showConfirm && (
+                <button className="btn btn-primary" type="button" onClick={handleConfirm}>
+                  I placed it here
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -560,15 +560,3 @@ const stickyFooterStyle: CSSProperties = {
   zIndex: 20,
 };
 
-const tryItBtnStyle: CSSProperties = {
-  marginTop: 14,
-  width: '100%',
-  minHeight: 44,
-  borderRadius: 12,
-  border: '1px solid var(--border)',
-  background: 'transparent',
-  color: t.brand,
-  fontWeight: 700,
-  fontSize: 15,
-  cursor: 'pointer',
-};

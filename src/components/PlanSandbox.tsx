@@ -1,29 +1,37 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import FloorPlan2D from './FloorPlan2D';
 import StatusRow from './StatusRow';
 import { isFeasible, snapCm, withMovedItem, withRotatedItem } from './floorPlanDrag';
 import { describeFinding, findingDetail } from './findingText';
 import { statusForClassification } from './statusVocabulary';
-import { commitLines, computeMove } from './previewMove';
-import type { PreviewMove } from './previewMove';
+import { color as t, type as typeScale } from './designTokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import type { ClearanceResult } from '../engine/clearance';
 import type { FurnitureItem } from '../types';
 
 /**
- * Interactive floor-plan sandbox: the user drags one block (the recommendation's
- * target furniture) to try out a new position.
+ * Interactive floor plan — the primary way the user explores where a piece
+ * could go. They drag the target block on a 5cm grid; a fast feasibility check
+ * runs every frame (red tint + snap-back if it doesn't fit). When they settle
+ * on a position, the FULL clearance analysis re-runs automatically and the
+ * status list below updates to show what that layout would be — no button.
  *
- * Cheap feasibility (findLayoutViolation) runs live during drag. The FULL
- * clearance analysis runs only on an explicit "Preview this" tap, against the
- * exact hypothetical layout already held in `preview` — no parallel layout is
- * rebuilt for it.
+ * There is NO ghost/suggested-position outline here: the engine's recommendation
+ * lives only as a sentence in the action card above. The plan is a pure sandbox.
  *
- * The preview lives entirely in local state. This component never writes to
- * furnitureStore — a move only becomes real through the existing AR-confirmed
- * step (Phase 5 hands off to it).
+ * The preview lives entirely in local state — this component never writes to
+ * furnitureStore. (Writing the chosen position is the confirm step, Phase 3.)
  */
+
+function checkIsMoved(base: FurnitureItem | undefined, current: FurnitureItem | undefined): boolean {
+  if (!base || !current) return false;
+  const dx = Math.abs(current.posX - base.posX);
+  const dz = Math.abs(current.posZ - base.posZ);
+  let dRot = Math.abs(current.rotationY - base.rotationY) % (2 * Math.PI);
+  if (dRot > Math.PI) dRot = 2 * Math.PI - dRot;
+  return dx >= 0.01 || dz >= 0.01 || dRot >= 0.01;
+}
 
 export interface PlanSandboxProps {
   /** The real placed layout. Treated as read-only. */
@@ -32,41 +40,34 @@ export interface PlanSandboxProps {
   targetItemId: string;
   roomWidthCm: number;
   roomLengthCm: number;
-  /**
-   * Hand the built move to the existing guided-instruction / AR-confirm flow.
-   * The sandbox never commits anything itself — it only calls into this. The
-   * receiver (RecommendationScreen) pre-loads the move as the current target;
-   * the move becomes real solely through that flow's AR-confirmed step.
-   */
-  onUseThisMove: (move: PreviewMove) => void;
+  /** Notifies caller of settled position, movement status, and drag state. */
+  onSettledChange?: (settledItem: FurnitureItem | null, isMoved: boolean, isDragging: boolean) => void;
 }
 
-export default function PlanSandbox({ baseItems, targetItemId, roomWidthCm, roomLengthCm, onUseThisMove }: PlanSandboxProps) {
-  // Preview = the layout as the user is tentatively arranging it. Starts as
-  // the real layout (which is feasible by construction).
+export default function PlanSandbox({ baseItems, targetItemId, roomWidthCm, roomLengthCm, onSettledChange }: PlanSandboxProps) {
+  // Preview = the layout as the user is tentatively arranging it.
   const [preview, setPreview] = useState<FurnitureItem[]>(baseItems);
   const [infeasible, setInfeasible] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  // Full-analysis result of the last "Preview this" tap. Cleared whenever the
-  // layout changes so a stale analysis is never shown against a newer position.
-  const [analysis, setAnalysis] = useState<ClearanceResult | null>(null);
+  // Live status for whatever position the block last SETTLED on. Seeded from the
+  // real layout so the list is populated the moment the plan appears.
+  const [analysis, setAnalysis] = useState<ClearanceResult>(() =>
+    runClearanceAnalysis(baseItems, roomWidthCm, roomLengthCm),
+  );
 
-  // The last position the dragged block passed through that was allowed. On an
-  // infeasible release we return here. Seeded at drag start with the block's
-  // resting position, which is always feasible.
+  // Freshest preview array, for reading in drag-end without a stale closure.
+  const previewRef = useRef<FurnitureItem[]>(baseItems);
+  // Last feasible position dragged through; where we snap back to on an
+  // infeasible release. Seeded at drag start with the resting position.
   const lastFeasibleRef = useRef<{ x: number; z: number } | null>(null);
-  // Live feasibility, tracked in a ref so onDragEnd reads the current value
-  // rather than a stale render closure.
   const currentFeasibleRef = useRef(true);
 
+  const baseTarget = useMemo(() => baseItems.find((it) => it.id === targetItemId), [baseItems, targetItemId]);
   const target = preview.find((it) => it.id === targetItemId);
-  const baseTarget = baseItems.find((it) => it.id === targetItemId);
-  const moved =
-    !!target &&
-    !!baseTarget &&
-    (target.posX !== baseTarget.posX ||
-      target.posZ !== baseTarget.posZ ||
-      target.rotationY !== baseTarget.rotationY);
+
+  const runStatus = useCallback(
+    (layout: FurnitureItem[]) => setAnalysis(runClearanceAnalysis(layout, roomWidthCm, roomLengthCm)),
+    [roomWidthCm, roomLengthCm],
+  );
 
   const handleDragStart = useCallback(
     (itemId: string) => {
@@ -75,10 +76,9 @@ export default function PlanSandbox({ baseItems, targetItemId, roomWidthCm, room
       lastFeasibleRef.current = { x: it.posX, z: it.posZ };
       currentFeasibleRef.current = true;
       setInfeasible(false);
-      setDragging(true);
-      setAnalysis(null); // the position is about to change — drop any stale preview
+      onSettledChange?.(null, false, true);
     },
-    [preview],
+    [preview, onSettledChange],
   );
 
   const handleDragMove = useCallback(
@@ -89,68 +89,52 @@ export default function PlanSandbox({ baseItems, targetItemId, roomWidthCm, room
       const candidate = withMovedItem(preview, targetItemId, snappedX, snappedZ);
       const ok = isFeasible(candidate, roomWidthCm, roomLengthCm);
 
-      // Always follow the pointer, even into an infeasible spot — just flag it
-      // rather than blocking the gesture (blocking feels broken on touch).
+      // Follow the pointer even into an infeasible spot — flag it, don't block.
       setPreview(candidate);
+      previewRef.current = candidate;
       setInfeasible(!ok);
       currentFeasibleRef.current = ok;
       if (ok) lastFeasibleRef.current = { x: snappedX, z: snappedZ };
+      onSettledChange?.(null, false, true);
     },
-    [preview, targetItemId, roomWidthCm, roomLengthCm],
+    [preview, targetItemId, roomWidthCm, roomLengthCm, onSettledChange],
   );
 
   const handleDragEnd = useCallback(() => {
-    setDragging(false);
-    if (currentFeasibleRef.current) return; // dropped somewhere valid — keep it
-    const back = lastFeasibleRef.current;
-    if (!back) return;
-    // Snap back to the last allowed position dragged through.
-    setPreview((p) => withMovedItem(p, targetItemId, back.x, back.z));
-    setInfeasible(false);
-    currentFeasibleRef.current = true;
-  }, [targetItemId]);
+    // Resolve the SETTLED layout: the current position if it's allowed, else
+    // snap back to the last allowed position dragged through.
+    let settled = previewRef.current;
+    if (!currentFeasibleRef.current && lastFeasibleRef.current) {
+      settled = withMovedItem(previewRef.current, targetItemId, lastFeasibleRef.current.x, lastFeasibleRef.current.z);
+      previewRef.current = settled;
+      setPreview(settled);
+      setInfeasible(false);
+      currentFeasibleRef.current = true;
+    }
+    // Automatic feedback: re-run the full analysis for the settled position.
+    runStatus(settled);
+    const settledItem = settled.find((it) => it.id === targetItemId) ?? null;
+    const isMoved = checkIsMoved(baseTarget, settledItem ?? undefined);
+    onSettledChange?.(settledItem, isMoved, false);
+  }, [targetItemId, runStatus, baseTarget, onSettledChange]);
 
-  // Rotate is a discrete action: apply the quarter-turn only if the result is
-  // allowed. There is no drag-release to snap back from, so a rotation that
-  // would overlap or leave the room is simply not applied.
+  // Rotate is a discrete action: apply the quarter-turn only if the result fits.
   function rotate() {
     if (!target) return;
     const candidate = withRotatedItem(preview, targetItemId, target.rotationY + Math.PI / 2);
     if (isFeasible(candidate, roomWidthCm, roomLengthCm)) {
       setPreview(candidate);
+      previewRef.current = candidate;
       setInfeasible(false);
       currentFeasibleRef.current = true;
-      setAnalysis(null); // layout changed — the previous preview no longer applies
+      runStatus(candidate);
+      const rotatedItem = candidate.find((it) => it.id === targetItemId) ?? null;
+      const isMoved = checkIsMoved(baseTarget, rotatedItem ?? undefined);
+      onSettledChange?.(rotatedItem, isMoved, false);
     }
   }
 
-  // Full analysis on explicit confirm. `preview` IS the hypothetical layout the
-  // feasibility check already accepted, so it is passed straight through — no
-  // second layout is built. No try/catch: findLayoutViolation has already gated
-  // everything reaching here, so if runClearanceAnalysis's own guard throws it
-  // means the two checks have drifted and we want to see it, not swallow it.
-  function runPreview() {
-    setAnalysis(runClearanceAnalysis(preview, roomWidthCm, roomLengthCm));
-  }
-
-  // Discard the preview and return to the real layout. No store write — the
-  // real layout was never changed, so there is nothing to undo.
-  function reset() {
-    setPreview(baseItems);
-    setAnalysis(null);
-    setInfeasible(false);
-    setDragging(false);
-    lastFeasibleRef.current = null;
-    currentFeasibleRef.current = true;
-  }
-
-  const canPreview = !dragging && !infeasible && moved && !analysis;
-  const findings = analysis ? analysis.violations : [];
-
-  // The move to hand off, derived from the real vs previewed target. Only
-  // meaningful once a preview is showing for a genuinely changed position.
-  const move = analysis && moved && target && baseTarget ? computeMove(baseTarget, target) : null;
-  const lines = move ? commitLines(move) : [];
+  const findings = analysis.violations;
 
   return (
     <div>
@@ -171,55 +155,31 @@ export default function PlanSandbox({ baseItems, targetItemId, roomWidthCm, room
         <p style={hintText}>
           {infeasible
             ? "That spot doesn't fit — let go to snap back."
-            : 'Drag the highlighted block to try a new spot.'}
+            : 'Drag your furniture to try a new spot.'}
         </p>
         <button type="button" onClick={rotate} style={rotateBtn}>
           Rotate 90°
         </button>
       </div>
 
-      {canPreview && (
-        <button type="button" onClick={runPreview} style={previewBtn}>
-          Preview this
-        </button>
-      )}
-
-      {analysis && (
-        <section style={resultCard}>
-          {findings.length === 0 ? (
+      <section style={resultCard} aria-live="polite">
+        {findings.length === 0 ? (
+          <StatusRow
+            status="comfortable"
+            title="Everything fits comfortably"
+            detail="Enough space around every piece"
+          />
+        ) : (
+          findings.map((v) => (
             <StatusRow
-              status="comfortable"
-              title="Everything fits comfortably"
-              detail="Enough space around every piece"
+              key={v.id}
+              status={statusForClassification(v.classification).key}
+              title={describeFinding(v, preview)}
+              detail={findingDetail(v)}
             />
-          ) : (
-            findings.map((v) => (
-              <StatusRow
-                key={v.id}
-                status={statusForClassification(v.classification).key}
-                title={describeFinding(v, preview)}
-                detail={findingDetail(v)}
-              />
-            ))
-          )}
-        </section>
-      )}
-
-      {move && (
-        <section style={commitCard}>
-          {lines.map((line) => (
-            <p key={line} style={commitLine}>{line}</p>
-          ))}
-          <div style={commitButtons}>
-            <button type="button" onClick={reset} style={resetBtn}>
-              Reset
-            </button>
-            <button type="button" onClick={() => onUseThisMove(move)} style={useThisBtn}>
-              Use this — show me how
-            </button>
-          </div>
-        </section>
-      )}
+          ))
+        )}
+      </section>
     </div>
   );
 }
@@ -233,9 +193,9 @@ const controlsRow: CSSProperties = {
 };
 
 const hintText: CSSProperties = {
+  ...typeScale.body,
   margin: 0,
-  fontSize: 15,
-  color: '#6B7280',
+  color: t.inkSoft,
 };
 
 const rotateBtn: CSSProperties = {
@@ -243,24 +203,11 @@ const rotateBtn: CSSProperties = {
   minHeight: 44,
   padding: '0 16px',
   borderRadius: 12,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#1F3864',
+  border: `1px solid ${t.line}`,
+  background: t.surface,
+  color: t.brand,
   fontWeight: 700,
   fontSize: 15,
-  cursor: 'pointer',
-};
-
-const previewBtn: CSSProperties = {
-  width: '100%',
-  minHeight: 48,
-  marginTop: 14,
-  borderRadius: 12,
-  border: 0,
-  background: '#1F3864',
-  color: '#FFFFFF',
-  fontWeight: 700,
-  fontSize: 16,
   cursor: 'pointer',
 };
 
@@ -268,48 +215,6 @@ const resultCard: CSSProperties = {
   marginTop: 16,
   padding: '6px 14px',
   borderRadius: 14,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-};
-
-const commitCard: CSSProperties = {
-  marginTop: 14,
-};
-
-const commitLine: CSSProperties = {
-  margin: '0 0 12px',
-  fontSize: 17,
-  fontWeight: 700,
-  color: '#1A1A2E',
-  lineHeight: 1.35,
-};
-
-const commitButtons: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'auto 1fr',
-  gap: 10,
-};
-
-const resetBtn: CSSProperties = {
-  minHeight: 48,
-  padding: '0 18px',
-  borderRadius: 12,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#6B7280',
-  fontWeight: 700,
-  fontSize: 16,
-  cursor: 'pointer',
-};
-
-const useThisBtn: CSSProperties = {
-  minHeight: 48,
-  padding: '0 18px',
-  borderRadius: 12,
-  border: 0,
-  background: '#1F3864',
-  color: '#FFFFFF',
-  fontWeight: 700,
-  fontSize: 16,
-  cursor: 'pointer',
+  border: `1px solid ${t.line}`,
+  background: t.surface,
 };
