@@ -38,31 +38,46 @@ export interface FloorPlan2DInteraction {
   onDragEnd: () => void;
 }
 
+export interface FloorPlan2DInteraction {
+  draggableItemId: string;
+  /** Tint the draggable block to show its current position is not allowed. */
+  infeasible: boolean;
+  onDragStart: (itemId: string) => void;
+  onDragMove: (worldXMetres: number, worldZMetres: number) => void;
+  onDragEnd: () => void;
+}
+
 export interface FloorPlan2DProps {
   items: FurnitureItem[];
   roomWidthCm: number;
   roomLengthCm: number;
-  /** Highlight one item without making it interactive (e.g. the recommendation
-   *  target in the read-only default view). Ignored while `interactive` drives
-   *  the same item. */
   highlightItemId?: string;
+  /** Clearance status of each furniture item. */
+  itemStatuses?: Record<string, 'RED' | 'YELLOW' | 'GREEN'>;
+  /** Optional ghost/recommended position to display. */
+  ghostItem?: FurnitureItem | null;
   interactive?: FloorPlan2DInteraction;
+  onSelectItem?: (itemId: string) => void;
 }
 
 const PAD_CM = 40;
 const ROOM_STROKE = color.roomStroke;
-const ITEM_FILL = color.itemFill;
-const ITEM_STROKE = color.itemStroke;
 const LABEL_COLOR = color.inkSoft;
 const NORTH_COLOR = color.inkMute;
+
+// Phase 1 tokens for selections and bounds
 const SEL_FILL = color.accentFill;
 const SEL_STROKE = color.accent;
 const BAD_FILL = color.attentionBg;
 const BAD_STROKE = color.attentionFg;
 
-/** Pointer client coords → world metres, using the SVG's own screen CTM. No
- *  fallback: if the SVG isn't laid out yet there's no valid transform, and a
- *  silent guess would put furniture in the wrong place — fail loudly instead. */
+// Clearance status colors for other items
+const STATUS_COLORS = {
+  RED: { fill: color.attentionBg, stroke: color.attentionFg },
+  YELLOW: { fill: color.tightBg, stroke: color.tightFg },
+  GREEN: { fill: color.comfortBg, stroke: color.comfortFg },
+} as const;
+
 function eventToWorldMetres(svg: SVGSVGElement, e: ReactPointerEvent): { xm: number; zm: number } {
   const ctm = svg.getScreenCTM();
   if (!ctm) throw new Error('FloorPlan2D: SVG has no screen CTM (not laid out); cannot map pointer to world.');
@@ -70,19 +85,30 @@ function eventToWorldMetres(svg: SVGSVGElement, e: ReactPointerEvent): { xm: num
   return { xm: p.x / 100, zm: p.y / 100 }; // viewBox units are centimetres
 }
 
-export default function FloorPlan2D({ items, roomWidthCm, roomLengthCm, highlightItemId, interactive }: FloorPlan2DProps) {
+export default function FloorPlan2D({
+  items,
+  roomWidthCm,
+  roomLengthCm,
+  highlightItemId,
+  itemStatuses = {},
+  ghostItem,
+  interactive,
+  onSelectItem,
+}: FloorPlan2DProps) {
   const rects = useMemo(() => projectItems(items), [items]);
+  const ghostRects = useMemo(() => (ghostItem ? projectItems([ghostItem]) : []), [ghostItem]);
   const svgRef = useRef<SVGSVGElement>(null);
   const draggingRef = useRef(false);
 
-  // Label size in cm-units, tuned to land at a readable on-screen size once
-  // the SVG scales to its container. Clamped so tiny/huge rooms stay legible.
   const fontCm = Math.min(28, Math.max(16, Math.min(roomWidthCm, roomLengthCm) * 0.045));
-
   const vbW = roomWidthCm + PAD_CM * 2;
   const vbH = roomLengthCm + PAD_CM * 2;
 
   function handlePointerDown(e: ReactPointerEvent<SVGRectElement>, itemId: string) {
+    if (onSelectItem) {
+      onSelectItem(itemId);
+    }
+    // Allow dragging only if the item matches the active interactive target
     if (!interactive || itemId !== interactive.draggableItemId) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     draggingRef.current = true;
@@ -124,7 +150,7 @@ export default function FloorPlan2D({ items, roomWidthCm, roomLengthCm, highligh
         rx={6}
       />
 
-      {/* Single north label, centred above the top (north) wall */}
+      {/* Single north label */}
       <text
         x={roomWidthCm / 2}
         y={-PAD_CM / 2}
@@ -137,13 +163,65 @@ export default function FloorPlan2D({ items, roomWidthCm, roomLengthCm, highligh
         N
       </text>
 
+      {/* Ghost recommendation overlay */}
+      {ghostRects.map((r) => (
+        <g key={`ghost-${r.id}`}>
+          <rect
+            x={r.xCm}
+            y={r.yCm}
+            width={r.wCm}
+            height={r.hCm}
+            fill="none"
+            stroke={color.accent}
+            strokeWidth={3}
+            strokeDasharray="10 8"
+            rx={4}
+            opacity={0.65}
+            style={{ pointerEvents: 'none' }}
+          />
+          <text
+            x={r.xCm + r.wCm / 2}
+            y={r.yCm + r.hCm / 2}
+            fontSize={fontCm * 0.85}
+            fontWeight={700}
+            fill={color.accent}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            opacity={0.7}
+            style={pointerNoneText}
+          >
+            Recommended Position
+          </text>
+        </g>
+      ))}
+
       {/* Furniture */}
       {rects.map((r) => {
+        const isSelected = highlightItemId === r.id;
         const isDraggable = interactive?.draggableItemId === r.id;
-        const isHighlighted = isDraggable || highlightItemId === r.id;
         const isBad = isDraggable && interactive!.infeasible;
-        const fill = isBad ? BAD_FILL : isHighlighted ? SEL_FILL : ITEM_FILL;
-        const stroke = isBad ? BAD_STROKE : isHighlighted ? SEL_STROKE : ITEM_STROKE;
+
+        // Visual rules:
+        // 1. If actively dragging/infeasible -> show red infeasibility tint.
+        // 2. If it is the selected item -> show solid Phase 1 accent blue tokens.
+        // 3. Otherwise -> color code according to its current clearance status.
+        let fill: string = color.itemFill;
+        let stroke: string = color.itemStroke;
+
+        if (isBad) {
+          fill = BAD_FILL;
+          stroke = BAD_STROKE;
+        } else if (isSelected) {
+          fill = SEL_FILL;
+          stroke = SEL_STROKE;
+        } else {
+          const status = itemStatuses[r.id] ?? 'GREEN';
+          fill = STATUS_COLORS[status].fill;
+          stroke = STATUS_COLORS[status].stroke;
+        }
+
+        const strokeWidth = isSelected ? 5 : 3;
+
         return (
           <g key={r.id}>
             <rect
@@ -153,10 +231,13 @@ export default function FloorPlan2D({ items, roomWidthCm, roomLengthCm, highligh
               height={r.hCm}
               fill={fill}
               stroke={stroke}
-              strokeWidth={isHighlighted ? 5 : 3}
+              strokeWidth={strokeWidth}
               rx={4}
-              style={isDraggable ? draggableRectStyle : undefined}
-              onPointerDown={isDraggable ? (e) => handlePointerDown(e, r.id) : undefined}
+              style={{
+                cursor: isDraggable ? 'grab' : 'pointer',
+                touchAction: 'none',
+              }}
+              onPointerDown={(e) => handlePointerDown(e, r.id)}
               onPointerMove={isDraggable ? handlePointerMove : undefined}
               onPointerUp={isDraggable ? handlePointerUp : undefined}
               onPointerCancel={isDraggable ? handlePointerUp : undefined}
@@ -189,5 +270,4 @@ const svgStyle: CSSProperties = {
   touchAction: 'none', // let the SVG own the drag gesture, not the page scroll
 };
 
-const draggableRectStyle: CSSProperties = { cursor: 'grab', touchAction: 'none' };
 const pointerNoneText: CSSProperties = { pointerEvents: 'none', userSelect: 'none' };
