@@ -181,6 +181,7 @@ export default function RecommendationScreen() {
     isMoved: boolean;
     isDragging: boolean;
   }>({ item: null, isMoved: false, isDragging: false });
+  const [settledForFurnitureId, setSettledForFurnitureId] = useState<string | undefined>(undefined);
 
   const result = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
@@ -215,9 +216,10 @@ export default function RecommendationScreen() {
   const totalCount      = allFurnitureItems.length;
   const doneCount       = totalCount - pendingGroups.length;
 
-  useEffect(() => {
+  if (currentGroup?.furnitureId !== settledForFurnitureId) {
+    setSettledForFurnitureId(currentGroup?.furnitureId);
     setSettledState({ item: null, isMoved: false, isDragging: false });
-  }, [currentGroup?.furnitureId]);
+  }
 
   const handleSettledChange = useCallback(
     (settledItem: FurnitureItem | null, isMoved: boolean, isDragging: boolean) => {

@@ -20,6 +20,58 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* --- Digital Twin floor plan blocks --- */
+.fp-block:hover {
+  filter: brightness(0.96);
+}
+.fp-block:active {
+  cursor: grabbing !important;
+}
+
+/* --- Digital Twin workspace buttons --- */
+.wksp-icon-btn {
+  border-radius: 10px;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.wksp-icon-btn:hover {
+  background: #EEF2F7;
+}
+.wksp-icon-btn:active {
+  transform: scale(0.94);
+}
+
+.wksp-solid-btn {
+  transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+.wksp-solid-btn:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 2px 8px rgba(31, 56, 100, 0.25);
+}
+.wksp-solid-btn:active {
+  transform: scale(0.97);
+}
+
+.wksp-outline-btn:hover:not(:disabled) {
+  background: #F8FAFC !important;
+  border-color: #94A3B8 !important;
+}
+.wksp-outline-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.wksp-tab-btn:hover {
+  background: #F8FAFC;
+}
+
+.wksp-list-row:hover {
+  background: #F1F5F9 !important;
+}
+
 /* --- Screen Header --- */
 .screen-header {
   display: flex;

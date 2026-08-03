@@ -167,9 +167,9 @@ export default function WorkspaceScreen() {
     return preview[0] ?? null;
   }, [selectedId, preview]);
 
-  useEffect(() => {
-    if (selectedItem && selectedId !== selectedItem.id) setSelectedId(selectedItem.id);
-  }, [selectedItem, selectedId]);
+  if (selectedItem && selectedId !== selectedItem.id) {
+    setSelectedId(selectedItem.id);
+  }
 
   const activeViolation = useMemo(() => {
     if (!selectedItem) return undefined;
@@ -307,7 +307,7 @@ export default function WorkspaceScreen() {
     <div style={shell}>
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <header style={header}>
-        <button style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
+        <button className="wksp-icon-btn" style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
         <div style={{ flex: 1 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: t.ink }}>Mulberry Place Digital Twin</h1>
           <p style={{ margin: 0, fontSize: 14, color: t.inkSoft, fontWeight: 500 }}>
@@ -316,7 +316,7 @@ export default function WorkspaceScreen() {
               : `${issueCount} clearance issues · ${blockedWalkwaysCount} blocked walkways`}
           </p>
         </div>
-        <button style={finishBtn} onClick={() => navigateTo('report')}>Done</button>
+        <button className="wksp-solid-btn" style={finishBtn} onClick={() => navigateTo('report')}>Done</button>
       </header>
 
       {/* ── SPLIT WORKSPACE ────────────────────────────────────────────────── */}
@@ -337,7 +337,6 @@ export default function WorkspaceScreen() {
               items={preview}
               highlightItemId={selectedItem?.id}
               itemStatuses={itemStatuses}
-              ghostItem={ghostItem}
               onSelectItem={setSelectedId}
               walkwayStatuses={walkwayStatuses}
               interactive={
@@ -369,10 +368,20 @@ export default function WorkspaceScreen() {
               )}
             </span>
             <div style={{ display: 'flex', gap: 12 }}>
-              <button style={actionBtn} onClick={handleRotate} disabled={!selectedItem}>
+              <button
+                className="wksp-outline-btn"
+                style={actionBtn(!selectedItem)}
+                onClick={handleRotate}
+                disabled={!selectedItem}
+              >
                 Rotate 90
               </button>
-              <button style={secBtn} onClick={handleResetPosition} disabled={!selectedItem}>
+              <button
+                className="wksp-outline-btn"
+                style={secBtn(!selectedItem)}
+                onClick={handleResetPosition}
+                disabled={!selectedItem}
+              >
                 Reset
               </button>
             </div>
@@ -385,6 +394,7 @@ export default function WorkspaceScreen() {
             {(['plan', 'issues', 'walkways', 'checklist'] as Tab[]).map((tab) => (
               <button
                 key={tab}
+                className="wksp-tab-btn"
                 style={tabBtn(activeTab === tab)}
                 onClick={() => setActiveTab(tab)}
               >
@@ -412,6 +422,7 @@ export default function WorkspaceScreen() {
                   return (
                     <div
                       key={item.id}
+                      className="wksp-list-row"
                       onClick={() => setSelectedId(item.id)}
                       style={{
                         ...listItemStyle(sel),
@@ -443,13 +454,14 @@ export default function WorkspaceScreen() {
                   analysis.violations.map((v) => (
                     <div
                       key={v.id}
+                      className="wksp-list-row"
                       style={{
                         ...violationCard,
                         borderLeftColor: v.classification === 'RED' ? t.attentionFg : t.tightFg,
                       }}
                       onClick={() => setSelectedId(v.furnitureId)}
                     >
-                      <div style={{ display: 'flex', justifySelf: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: 700, color: t.ink, fontSize: 13 }}>{v.furnitureLabel}</span>
                         <span style={{
                           ...badgeStyle,
@@ -684,26 +696,30 @@ const feedbackHint: CSSProperties = {
   fontWeight: 500,
 };
 
-const actionBtn: CSSProperties = {
-  background: '#FFFFFF',
-  border: '1px solid #CBD5E1',
-  color: t.brand,
+const actionBtn = (disabled: boolean): CSSProperties => ({
+  background: disabled ? '#F1F5F9' : '#FFFFFF',
+  border: `1px solid ${disabled ? '#E2E8F0' : '#CBD5E1'}`,
+  color: disabled ? t.inkMute : t.brand,
   padding: '10px 20px',
   borderRadius: radius.sm,
   fontWeight: 700,
   fontSize: 16,
-  cursor: 'pointer',
-};
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  opacity: disabled ? 0.6 : 1,
+  transition: 'all 0.15s ease',
+});
 
-const secBtn: CSSProperties = {
+const secBtn = (disabled: boolean): CSSProperties => ({
   background: 'none',
   border: '1px solid transparent',
-  color: t.inkSoft,
+  color: disabled ? t.inkMute : t.inkSoft,
   padding: '10px 16px',
   fontSize: 16,
   fontWeight: 600,
-  cursor: 'pointer',
-};
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  opacity: disabled ? 0.6 : 1,
+  transition: 'all 0.15s ease',
+});
 
 const sideDrawer: CSSProperties = {
   flex: '18% 1 250px', // takes 18% width on desktop

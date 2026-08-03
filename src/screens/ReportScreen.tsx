@@ -1,25 +1,71 @@
+import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
-import { stableViolationKey } from '../engine/violationKey';
-import type { Violation } from '../types';
+import { useFurnitureStore } from '../stores/furnitureStore';
+import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
+import { color as t, radius } from '../components/designTokens';
+
+type RoomStatus = 'RED' | 'YELLOW' | 'GREEN';
 
 export default function ReportScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const recommendations = useViolationStore((s) => s.recommendations);
   const violations = useViolationStore((s) => s.violations);
-  const spaceScoreBefore = useViolationStore((s) => s.spaceScoreBefore);
-  const spaceScoreAfter = useViolationStore((s) => s.spaceScoreAfter);
+  const items = useFurnitureStore((s) => s.items);
 
-  const activeKeys = new Set(violations.map(stableViolationKey));
+  const totalIssues = recommendations.length;
+  const redRemaining = violations.some((v) => v.classification === 'RED');
+  const yellowRemaining = violations.some((v) => v.classification === 'YELLOW');
 
-  // An issue is resolved if it was present initially but is no longer in the active violations list
-  const completedSteps = recommendations.filter((v) => !activeKeys.has(stableViolationKey(v))).length;
-  const totalViolations = recommendations.length;
-  const improvement = spaceScoreAfter - spaceScoreBefore;
+  // ── Per-room qualitative status — worst classification among that room's furniture ──
+  const roomStatuses = useMemo(() => {
+    const roomsWithFurniture = new Set<string>();
+    const worstByRoom = new Map<string, RoomStatus>();
 
-  const redRemaining = violations.filter((v) => v.classification === 'RED').length;
-  const yellowRemaining = violations.filter((v) => v.classification === 'YELLOW').length;
+    items.forEach((item) => {
+      const roomId = item.roomId || getRoomForCategory(item.category, item.label);
+      roomsWithFurniture.add(roomId);
+      if (!worstByRoom.has(roomId)) worstByRoom.set(roomId, 'GREEN');
+    });
+
+    violations.forEach((v) => {
+      const item = items.find((it) => it.id === v.furnitureId);
+      if (!item) return;
+      const roomId = item.roomId || getRoomForCategory(item.category, item.label);
+      const current = worstByRoom.get(roomId) ?? 'GREEN';
+      if (v.classification === 'RED') {
+        worstByRoom.set(roomId, 'RED');
+      } else if (v.classification === 'YELLOW' && current !== 'RED') {
+        worstByRoom.set(roomId, 'YELLOW');
+      }
+    });
+
+    return CONDO_ROOMS.filter((r) => roomsWithFurniture.has(r.id)).map((r) => ({
+      id: r.id,
+      label: r.label,
+      status: worstByRoom.get(r.id) ?? 'GREEN',
+    }));
+  }, [items, violations]);
+
+  // ── Plain-language headline ──────────────────────────────────────────────
+  const headline =
+    totalIssues === 0
+      ? 'Everything already fit comfortably'
+      : redRemaining
+        ? 'A few spots still need more room'
+        : yellowRemaining
+          ? 'Your layout is mostly comfortable'
+          : 'Every piece now has comfortable clearance';
+
+  const subtext =
+    totalIssues === 0
+      ? 'No changes were needed — your starting layout already had good clearance throughout.'
+      : redRemaining
+        ? 'Some furniture is still crowding a wall, a walkway, or another piece. You can go back and keep adjusting, or finish here.'
+        : yellowRemaining
+          ? 'A couple of spots are a little tight, but nothing urgent. You can leave them as is or fine-tune further.'
+          : 'Nice work — every piece you adjusted this session now has comfortable clearance.';
 
   return (
     <div className="screen" style={{ maxWidth: 640, padding: '24px 16px', margin: '0 auto' }}>
@@ -38,89 +84,30 @@ export default function ReportScreen() {
         </div>
       </div>
 
-      {/* ── Utilization Score ─────────────────────────────────────────────── */}
-      <section className="card" style={cardStyle}>
-        <span style={stepBadgeStyle}>Space Utilization</span>
-        <h3 style={{ margin: '8px 0 14px', fontSize: 18, fontWeight: 700 }}>Before vs After</h3>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div style={scoreBoxStyle('#FEF2F2', '#E24B4A')}>
-            <p className="info-label" style={infoLabelStyle}>BEFORE</p>
-            <p style={{ margin: 0, fontSize: 32, fontWeight: 800, color: '#E24B4A', lineHeight: 1 }}>
-              {spaceScoreBefore.toFixed(1)}%
-            </p>
-            <BarTrack value={spaceScoreBefore} color="#E24B4A" />
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#6B7280' }}>free floor area</p>
-          </div>
-
-          <div style={scoreBoxStyle('#F0FDF4', '#4CAF50')}>
-            <p className="info-label" style={infoLabelStyle}>AFTER</p>
-            <p style={{ margin: 0, fontSize: 32, fontWeight: 800, color: '#4CAF50', lineHeight: 1 }}>
-              {spaceScoreAfter.toFixed(1)}%
-            </p>
-            <BarTrack value={spaceScoreAfter} color="#4CAF50" />
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#6B7280' }}>free floor area</p>
-          </div>
-        </div>
-
-        <div style={{
-          marginTop: 16,
-          padding: '12px 16px',
-          borderRadius: 12,
-          background: improvement >= 0 ? '#F0FDF4' : '#FEF2F2',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-        }}>
-          <span style={{ fontSize: 24, fontWeight: 800, color: improvement >= 0 ? '#4CAF50' : '#E24B4A' }}>
-            {improvement >= 0 ? '+' : ''}{improvement.toFixed(1)} pts
-          </span>
-          <span style={{ fontSize: 14, color: '#374151', fontWeight: 500 }}>free floor area gained this session</span>
-        </div>
+      {/* ── Plain-language summary ────────────────────────────────────────── */}
+      <section
+        className="card"
+        style={{
+          ...cardStyle,
+          borderLeft: `5px solid ${redRemaining ? t.attentionFg : yellowRemaining ? t.tightFg : t.comfortFg}`,
+        }}
+      >
+        <span style={stepBadgeStyle}>Summary</span>
+        <h3 style={{ margin: '10px 0 6px', fontSize: 20, fontWeight: 800, color: t.ink }}>{headline}</h3>
+        <p style={{ margin: 0, fontSize: 15, color: t.inkSoft, lineHeight: 1.5 }}>{subtext}</p>
       </section>
 
-      {/* ── Clearance Issues ──────────────────────────────────────────────── */}
-      <section className="card" style={cardStyle}>
-        <span style={stepBadgeStyle}>Clearance Status</span>
-        <h3 style={{ margin: '8px 0 4px', fontSize: 18, fontWeight: 700 }}>
-          {completedSteps} of {totalViolations} issues resolved
-        </h3>
-        <p style={{ marginTop: 4, marginBottom: 16, color: '#4B5563', fontSize: 14 }}>
-          {totalViolations === 0
-            ? 'No clearance violations were detected.'
-            : completedSteps === totalViolations
-              ? 'All clearance violations have been addressed.'
-              : `${redRemaining > 0 ? `${redRemaining} critical` : ''}${redRemaining > 0 && yellowRemaining > 0 ? ' and ' : ''}${yellowRemaining > 0 ? `${yellowRemaining} moderate` : ''} issues remaining`}
-        </p>
-
-        {totalViolations > 0 && (
-          <div style={{ height: 8, borderRadius: 99, background: '#E5E7EB', overflow: 'hidden' }}>
-            <div style={{
-              height: '100%',
-              borderRadius: 99,
-              background: completedSteps === totalViolations ? '#4CAF50' : '#1F3864',
-              width: `${(completedSteps / totalViolations) * 100}%`,
-              transition: 'width 0.4s ease',
-            }} />
-          </div>
-        )}
-      </section>
-
-      {/* ── Final Status per Rule ────────────────────────────────────────── */}
-      {totalViolations > 0 && (
+      {/* ── Room by room ───────────────────────────────────────────────────── */}
+      {roomStatuses.length > 0 && (
         <section className="card" style={cardStyle}>
-          <span style={stepBadgeStyle}>Rule Analysis</span>
-          <h3 style={{ margin: '8px 0 4px', fontSize: 18, fontWeight: 700 }}>Clearance results per rule</h3>
-          <p style={{ marginTop: 0, marginBottom: 16, color: '#6B7280', fontSize: 13 }}>
-            Unresolved issues shown first
-          </p>
+          <span style={stepBadgeStyle}>Room by Room</span>
+          <h3 style={{ margin: '8px 0 14px', fontSize: 18, fontWeight: 700, color: t.ink }}>
+            How each space turned out
+          </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {recommendations.map((v) => {
-              const isResolved = !activeKeys.has(stableViolationKey(v));
-              return (
-                <ViolationRow key={v.id} violation={v} isResolved={isResolved} />
-              );
-            })}
+            {roomStatuses.map((r) => (
+              <RoomStatusRow key={r.id} label={r.label} status={r.status} />
+            ))}
           </div>
         </section>
       )}
@@ -153,46 +140,47 @@ export default function ReportScreen() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function BarTrack({ value, color }: { value: number; color: string }) {
-  const pct = Math.min(100, Math.max(0, value));
-  return (
-    <div style={{ height: 6, borderRadius: 99, background: '#E5E7EB', marginTop: 12, overflow: 'hidden' }}>
-      <div style={{ height: '100%', borderRadius: 99, background: color, width: `${pct}%` }} />
-    </div>
-  );
-}
+function RoomStatusRow({ label, status }: { label: string; status: RoomStatus }) {
+  const wordFor: Record<RoomStatus, string> = {
+    RED: 'Needs attention',
+    YELLOW: 'A bit tight',
+    GREEN: 'Comfortable',
+  };
+  const colorFor: Record<RoomStatus, string> = {
+    RED: t.attentionFg,
+    YELLOW: t.tightFg,
+    GREEN: t.comfortFg,
+  };
+  const bgFor: Record<RoomStatus, string> = {
+    RED: t.attentionBg,
+    YELLOW: t.tightBg,
+    GREEN: t.comfortBg,
+  };
 
-function ViolationRow({ violation: v, isResolved }: { violation: Violation; isResolved: boolean }) {
-  const badgeLabel = isResolved ? 'CLEAR' : v.classification;
-  const badgeColor = isResolved ? '#047857' : v.classification === 'RED' ? '#DC2626' : '#B45309';
-  const badgeBg = isResolved ? '#E7F4EF' : v.classification === 'RED' ? '#FEECEC' : '#FBF1E4';
-  const dotColor = isResolved ? '#047857' : v.classification === 'RED' ? '#DC2626' : '#B45309';
-
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      padding: '12px 0',
-      borderBottom: '1px solid #E2E8F0',
-    }}>
-      <div style={{ width: 10, height: 10, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-      <span style={{ fontSize: 13, fontWeight: 700, color: '#1F3864', minWidth: 40, flexShrink: 0 }}>
-        {v.ruleCode}
-      </span>
-      <span style={{ flex: 1, fontSize: 14, color: '#1E293B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {v.furnitureLabel}
-      </span>
-      <span style={{
-        fontSize: 12,
-        fontWeight: 700,
-        color: badgeColor,
-        background: badgeBg,
-        padding: '4px 12px',
-        borderRadius: 20,
-        flexShrink: 0,
-      }}>
-        {badgeLabel}
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '12px 0',
+        borderBottom: '1px solid #E2E8F0',
+      }}
+    >
+      <div style={{ width: 10, height: 10, borderRadius: '50%', background: colorFor[status], flexShrink: 0 }} />
+      <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: t.ink }}>{label}</span>
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: colorFor[status],
+          background: bgFor[status],
+          padding: '4px 12px',
+          borderRadius: 20,
+          flexShrink: 0,
+        }}
+      >
+        {wordFor[status]}
       </span>
     </div>
   );
@@ -203,26 +191,18 @@ function ViolationRow({ violation: v, isResolved }: { violation: Violation; isRe
 const cardStyle: CSSProperties = {
   background: '#FFFFFF',
   border: '1px solid #E2E8F0',
-  borderRadius: 16,
+  borderRadius: radius.lg,
   padding: 20,
   marginBottom: 20,
   boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
 };
 
-const infoLabelStyle: CSSProperties = {
-  fontSize: 11,
-  fontWeight: 700,
-  color: '#6B7280',
-  letterSpacing: '0.05em',
-  margin: '0 0 6px',
-};
-
 const primaryBtnStyle: CSSProperties = {
-  background: '#1F3864',
+  background: t.brand,
   color: '#FFFFFF',
   border: 'none',
   padding: '14px 24px',
-  borderRadius: 12,
+  borderRadius: radius.md,
   fontWeight: 700,
   fontSize: 16,
   cursor: 'pointer',
@@ -235,30 +215,19 @@ const secondaryBtnStyle: CSSProperties = {
   border: '1px solid #CBD5E1',
   color: '#4B5563',
   padding: '14px 24px',
-  borderRadius: 12,
+  borderRadius: radius.md,
   fontWeight: 600,
   fontSize: 16,
   cursor: 'pointer',
   textAlign: 'center',
 };
 
-function scoreBoxStyle(bg: string, border: string): CSSProperties {
-  return {
-    padding: 16,
-    borderRadius: 16,
-    background: bg,
-    border: `1px solid ${border}22`,
-    display: 'flex',
-    flexDirection: 'column',
-  };
-}
-
 const stepBadgeStyle: CSSProperties = {
   display: 'inline-block',
   fontSize: 11,
   fontWeight: 700,
-  color: '#1F3864',
-  backgroundColor: '#E6EDF8',
+  color: t.brand,
+  backgroundColor: t.brandTint,
   padding: '4px 12px',
   borderRadius: 20,
   textTransform: 'uppercase',

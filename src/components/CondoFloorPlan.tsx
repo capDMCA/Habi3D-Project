@@ -19,7 +19,6 @@ export interface CondoFloorPlanProps {
   items: FurnitureItem[];
   highlightItemId?: string;
   itemStatuses?: Record<string, 'RED' | 'YELLOW' | 'GREEN'>;
-  ghostItem?: FurnitureItem | null;
   interactive?: CondoFloorPlanInteraction;
   onSelectItem?: (itemId: string) => void;
   walkwayStatuses?: WalkwayStatus[];
@@ -40,7 +39,6 @@ export default function CondoFloorPlan({
   items,
   highlightItemId,
   itemStatuses = {},
-  ghostItem,
   interactive,
   onSelectItem,
   walkwayStatuses = [],
@@ -50,7 +48,6 @@ export default function CondoFloorPlan({
 
   // Project furniture items
   const rects = useMemo(() => projectItems(items), [items]);
-  const ghostRects = useMemo(() => (ghostItem ? projectItems([ghostItem]) : []), [ghostItem]);
 
   // Find the selected furniture and its corresponding room zone
   const selectedItem = useMemo(() => {
@@ -62,13 +59,17 @@ export default function CondoFloorPlan({
     return selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
   }, [selectedItem]);
 
-  // Handlers for pointer gestures
+  // Handlers for pointer gestures.
+  // NOTE: onSelectItem(itemId) triggers a parent state update, so `interactive`
+  // still reflects the PREVIOUS render's props for the rest of this call — we
+  // must not gate drag-start on interactive.draggableItemId matching itemId,
+  // or the first click on any newly-selected block would never start a drag.
   function handlePointerDown(e: ReactPointerEvent<SVGRectElement>, itemId: string) {
     if (onSelectItem) {
       onSelectItem(itemId);
     }
-    if (!interactive || itemId !== interactive.draggableItemId) return;
-    
+    if (!interactive) return;
+
     e.currentTarget.setPointerCapture(e.pointerId);
     draggingRef.current = true;
     interactive.onDragStart(itemId);
@@ -76,17 +77,17 @@ export default function CondoFloorPlan({
 
   function handlePointerMove(e: ReactPointerEvent<SVGRectElement>) {
     if (!interactive || !draggingRef.current || !svgRef.current || !selectedItem) return;
-    
+
     const { xm, zm } = eventToWorldMetres(svgRef.current, e);
     const roomZoneId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
     const room = CONDO_ROOMS.find((r) => r.id === roomZoneId);
-    
+
     if (!room) return;
 
     // Apply smart snapping first, then clamp fully inside the room zone
-    const targetSnap = snapTarget(xm, zm, selectedItem, items, ghostItem || null, room);
+    const targetSnap = snapTarget(xm, zm, selectedItem, items, null, room);
     const clamped = clampToRoom({ ...selectedItem, posX: targetSnap.posX, posZ: targetSnap.posZ }, room);
-    
+
     interactive.onDragMove(clamped.posX, clamped.posZ);
   }
 
@@ -191,39 +192,7 @@ export default function CondoFloorPlan({
           );
         })}
 
-        {/* 3. GHOST RECOMMENDATION OUTLINE */}
-        {ghostRects.map((r) => (
-          <g key={`ghost-${r.id}`}>
-            <rect
-              x={r.xCm}
-              y={r.yCm}
-              width={r.wCm}
-              height={r.hCm}
-              fill="none"
-              stroke={t.accent}
-              strokeWidth={3}
-              strokeDasharray="8 6"
-              rx={4}
-              opacity={0.7}
-              style={pointerNone}
-            />
-            <text
-              x={r.xCm + r.wCm / 2}
-              y={r.yCm + r.hCm / 2}
-              fontSize={16}
-              fontWeight={700}
-              fill={t.accent}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              opacity={0.8}
-              style={pointerNone}
-            >
-              Recommended
-            </text>
-          </g>
-        ))}
-
-        {/* 4. FURNITURE ITEMS */}
+        {/* 3. FURNITURE ITEMS */}
         {rects.map((r) => {
           const isSelected = highlightItemId === r.id;
           const isDraggable = interactive?.draggableItemId === r.id;
@@ -233,8 +202,8 @@ export default function CondoFloorPlan({
           const itemRoomId = item?.roomId || (item ? getRoomForCategory(item.category, item.label) : null);
           const isItemDimmed = activeRoomId && activeRoomId !== itemRoomId;
 
-          let fill: string = t.itemFill;
-          let stroke: string = t.itemStroke;
+          let fill: string;
+          let stroke: string;
 
           if (isBad) {
             fill = t.attentionBg;
@@ -259,8 +228,12 @@ export default function CondoFloorPlan({
           const strokeWidth = isSelected ? 4 : 2;
 
           return (
-            <g key={r.id} style={{ opacity: isItemDimmed ? 0.4 : 1, transition: 'opacity 0.25s ease' }}>
+            <g
+              key={r.id}
+              style={{ opacity: isItemDimmed ? 0.45 : 1, transition: 'opacity 0.3s cubic-bezier(0.4,0,0.2,1)' }}
+            >
               <rect
+                className="fp-block"
                 x={r.xCm}
                 y={r.yCm}
                 width={r.wCm}
@@ -272,6 +245,7 @@ export default function CondoFloorPlan({
                 style={{
                   cursor: isDraggable ? 'grab' : 'pointer',
                   touchAction: 'none',
+                  transition: 'stroke-width 0.15s ease, fill 0.15s ease, stroke 0.15s ease, filter 0.15s ease',
                 }}
                 onPointerDown={(e) => handlePointerDown(e, r.id)}
                 onPointerMove={isDraggable ? handlePointerMove : undefined}
