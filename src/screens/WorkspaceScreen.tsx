@@ -213,19 +213,31 @@ export default function WorkspaceScreen() {
     const next = withMovedItem(preview, selectedItem.id, xm, zm);
     const ok = isFeasible(next, roomWidthCm, roomLengthCm);
 
-    // If candidate goes completely out of the room, clamp coordinates.
-    // The CondoFloorPlan will feed clamped coordinates already, but we also enforce it here.
     const roomZoneId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
     const room = CONDO_ROOMS.find((r) => r.id === roomZoneId);
 
     if (room) {
       const halfL = (selectedItem.lengthCm / 100) / 2;
       const halfW = (selectedItem.widthCm / 100) / 2;
-      const exceedsX = xm - halfL <= room.x / 100 || xm + halfL >= (room.x + room.width) / 100;
-      const exceedsZ = zm - halfW <= room.y / 100 || zm + halfW >= (room.y + room.height) / 100;
+
+      let roomMinX = room.x / 100;
+      let roomMaxX = (room.x + room.width) / 100;
+      let roomMinZ = room.y / 100;
+      let roomMaxZ = (room.y + room.height) / 100;
+
+      if (selectedItem.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
+        roomMinX = 0;
+        roomMaxX = 2.60;
+        roomMinZ = 3.40;
+        roomMaxZ = 8.80;
+      }
+
+      const exceedsX = xm - halfL <= roomMinX || xm + halfL >= roomMaxX;
+      const exceedsZ = zm - halfW <= roomMinZ || zm + halfW >= roomMaxZ;
 
       if (exceedsX || exceedsZ) {
-        showToast(`${selectedItem.label} belongs inside the ${selectedRoomLabel}.`);
+        const roomName = selectedItem.category === 'cabinet' ? 'Living Room or Dining Area' : selectedRoomLabel;
+        showToast(`${selectedItem.label} belongs inside the ${roomName}.`);
       }
     }
 
@@ -297,10 +309,10 @@ export default function WorkspaceScreen() {
       <header style={header}>
         <button style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
         <div style={{ flex: 1 }}>
-          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: t.ink }}>Mulberry Place Digital Twin</h1>
-          <p style={{ margin: 0, fontSize: 12, color: t.inkSoft }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: t.ink }}>Mulberry Place Digital Twin</h1>
+          <p style={{ margin: 0, fontSize: 14, color: t.inkSoft, fontWeight: 500 }}>
             {issueCount === 0 && blockedWalkwaysCount === 0
-              ? '✅ All rooms and walkways clear'
+              ? 'All rooms and walkways clear'
               : `${issueCount} clearance issues · ${blockedWalkwaysCount} blocked walkways`}
           </p>
         </div>
@@ -309,13 +321,13 @@ export default function WorkspaceScreen() {
 
       {/* ── SPLIT WORKSPACE ────────────────────────────────────────────────── */}
       <div style={workspaceLayout}>
-        {/* LEFT COLUMN: INTERACTIVE DIGITAL TWIN FLOOR PLAN (75% WIDTH ON DESKTOP) */}
+        {/* LEFT COLUMN: INTERACTIVE DIGITAL TWIN FLOOR PLAN (82% WIDTH ON DESKTOP) */}
         <section style={planPanel}>
           <div style={pillRow}>
             {redCount > 0 && <span style={pill(t.attentionBg, t.attentionFg)}>{redCount} Issues</span>}
             {yellowCount > 0 && <span style={pill(t.tightBg, t.tightFg)}>{yellowCount} Warnings</span>}
             {blockedWalkwaysCount > 0 && (
-              <span style={pill(t.attentionBg, t.attentionFg)}>🚨 {blockedWalkwaysCount} Walkways Blocked</span>
+              <span style={pill(t.attentionBg, t.attentionFg)}>{blockedWalkwaysCount} Walkways Blocked</span>
             )}
             <span style={pill(t.comfortBg, t.comfortFg)}>{greenCount} Clear</span>
           </div>
@@ -349,25 +361,25 @@ export default function WorkspaceScreen() {
           <div style={controlToolbar}>
             <span style={feedbackHint}>
               {infeasible ? (
-                <span style={{ color: t.attentionFg, fontWeight: 700 }}>⚠️ Collision: overlaps wall or other block</span>
+                <span style={{ color: t.attentionFg, fontWeight: 700 }}>Collision: overlaps wall or other block</span>
               ) : selectedItem ? (
-                <span>📍 Selected <strong>{selectedItem.label}</strong> inside <strong>{selectedRoomLabel}</strong></span>
+                <span>Selected {selectedItem.label} inside {selectedRoomLabel}</span>
               ) : (
-                '💡 Select a block to drag and rotate it'
+                'Select a block to drag and rotate it'
               )}
             </span>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 12 }}>
               <button style={actionBtn} onClick={handleRotate} disabled={!selectedItem}>
-                🔄 Rotate 90°
+                Rotate 90
               </button>
               <button style={secBtn} onClick={handleResetPosition} disabled={!selectedItem}>
-                ↩ Reset
+                Reset
               </button>
             </div>
           </div>
         </section>
 
-        {/* RIGHT COLUMN: SANDBOX ASSISTANT & DETAIL VIEW (25% WIDTH ON DESKTOP) */}
+        {/* RIGHT COLUMN: SANDBOX ASSISTANT & DETAIL VIEW (18% WIDTH ON DESKTOP) */}
         <section style={sideDrawer}>
           <div style={tabHeader}>
             {(['plan', 'issues', 'walkways', 'checklist'] as Tab[]).map((tab) => (
@@ -376,10 +388,10 @@ export default function WorkspaceScreen() {
                 style={tabBtn(activeTab === tab)}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab === 'plan' ? '📋 Items'
-                  : tab === 'issues' ? `⚠️ Issues (${issueCount})`
-                  : tab === 'walkways' ? `🚶 Walkways`
-                  : '✅ Checklist'}
+                {tab === 'plan' ? 'Items'
+                  : tab === 'issues' ? `Issues (${issueCount})`
+                  : tab === 'walkways' ? `Walkways`
+                  : 'Checklist'}
               </button>
             ))}
           </div>
@@ -425,7 +437,7 @@ export default function WorkspaceScreen() {
                 <h3 style={sectionHeading}>Clearance Issues</h3>
                 {issueCount === 0 ? (
                   <div style={successMessage}>
-                    🎉 No clearance issues in this layout!
+                    No clearance issues in this layout!
                   </div>
                 ) : (
                   analysis.violations.map((v) => (
@@ -470,7 +482,7 @@ export default function WorkspaceScreen() {
                       </p>
                     ) : (
                       <p style={{ margin: 0, fontSize: 12, color: t.comfortFg, fontWeight: 600 }}>
-                        ✅ {selectedItem.label} is fully clearance compliant.
+                        Clear: {selectedItem.label} is fully clearance compliant.
                       </p>
                     )}
                   </div>
@@ -520,10 +532,10 @@ export default function WorkspaceScreen() {
               <div style={scrollContainer}>
                 <h3 style={sectionHeading}>Room Clearance Checklist</h3>
                 {[
-                  { label: '🚶 Walking Paths', codes: ['L1', 'L3', 'L4'] },
-                  { label: '🏢 Wall Clearances', codes: ['D1', 'D2', 'D3'] },
-                  { label: '🍽️ Dining Areas', codes: ['D4', 'D5'] },
-                  { label: '📺 TV Clearances', codes: ['L2', 'L5'] },
+                  { label: 'Walking Paths', codes: ['L1', 'L3', 'L4'] },
+                  { label: 'Wall Clearances', codes: ['D1', 'D2', 'D3'] },
+                  { label: 'Dining Areas', codes: ['D4', 'D5'] },
+                  { label: 'TV Clearances', codes: ['L2', 'L5'] },
                 ].map(({ label, codes }) => {
                   const hasIssue = analysis.violations.some((v) => codes.includes(v.ruleCode));
                   return (
@@ -588,10 +600,10 @@ const finishBtn: CSSProperties = {
   background: t.brand,
   color: '#FFFFFF',
   border: 'none',
-  padding: '8px 16px',
+  padding: '10px 24px',
   borderRadius: radius.sm,
   fontWeight: 700,
-  fontSize: 13,
+  fontSize: 16,
   cursor: 'pointer',
 };
 
@@ -601,14 +613,14 @@ const workspaceLayout: CSSProperties = {
   flexDirection: 'row',
   height: 'calc(100vh - 60px)',
   overflow: 'hidden',
-  flexWrap: 'wrap', // wraps on mobile screens
+  flexWrap: 'wrap',
 };
 
 const planPanel: CSSProperties = {
-  flex: '3 1 500px', // takes 75% width on desktop
+  flex: '82% 1 600px', // takes 82% width on desktop
   display: 'flex',
   flexDirection: 'column',
-  padding: '16px 20px',
+  padding: '24px',
   overflow: 'hidden',
   height: '100%',
   position: 'relative',
@@ -625,15 +637,15 @@ const planContainer: CSSProperties = {
 
 const pillRow: CSSProperties = {
   display: 'flex',
-  gap: 8,
-  marginBottom: 12,
+  gap: 10,
+  marginBottom: 16,
   flexWrap: 'wrap',
 };
 
 const pill = (bg: string, fg: string): CSSProperties => ({
-  fontSize: 11,
+  fontSize: 14,
   fontWeight: 700,
-  padding: '4px 10px',
+  padding: '6px 14px',
   borderRadius: '20px',
   background: bg,
   color: fg,
@@ -646,9 +658,9 @@ const toastBanner: CSSProperties = {
   transform: 'translateX(-50%)',
   background: '#DC2626',
   color: '#FFFFFF',
-  padding: '8px 16px',
+  padding: '10px 20px',
   borderRadius: '20px',
-  fontSize: 12,
+  fontSize: 14,
   fontWeight: 700,
   boxShadow: '0 4px 15px rgba(220, 38, 38, 0.25)',
   animation: 'fadeIn 0.2s ease',
@@ -660,25 +672,26 @@ const controlToolbar: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  paddingTop: 12,
+  paddingTop: 16,
   borderTop: '1px solid #E2E8F0',
-  marginTop: 12,
+  marginTop: 16,
   flexShrink: 0,
 };
 
 const feedbackHint: CSSProperties = {
-  fontSize: 13,
+  fontSize: 16,
   color: t.inkSoft,
+  fontWeight: 500,
 };
 
 const actionBtn: CSSProperties = {
   background: '#FFFFFF',
   border: '1px solid #CBD5E1',
   color: t.brand,
-  padding: '8px 16px',
+  padding: '10px 20px',
   borderRadius: radius.sm,
-  fontWeight: 600,
-  fontSize: 13,
+  fontWeight: 700,
+  fontSize: 16,
   cursor: 'pointer',
 };
 
@@ -686,14 +699,14 @@ const secBtn: CSSProperties = {
   background: 'none',
   border: '1px solid transparent',
   color: t.inkSoft,
-  padding: '8px 12px',
-  fontSize: 13,
-  fontWeight: 500,
+  padding: '10px 16px',
+  fontSize: 16,
+  fontWeight: 600,
   cursor: 'pointer',
 };
 
 const sideDrawer: CSSProperties = {
-  flex: '1 1 300px', // takes 25% width on desktop
+  flex: '18% 1 250px', // takes 18% width on desktop
   background: '#FFFFFF',
   borderLeft: '1px solid #E2E8F0',
   boxShadow: '-2px 0 8px rgba(0,0,0,0.01)',
@@ -711,11 +724,11 @@ const tabHeader: CSSProperties = {
 
 const tabBtn = (active: boolean): CSSProperties => ({
   flex: 1,
-  padding: '12px 8px',
+  padding: '14px 10px',
   border: 'none',
   background: 'none',
   fontFamily: "'Inter', system-ui, sans-serif",
-  fontSize: 11,
+  fontSize: 14,
   fontWeight: 700,
   color: active ? t.brand : t.inkMute,
   borderBottom: active ? `3px solid ${t.brand}` : '3px solid transparent',
@@ -733,24 +746,24 @@ const scrollContainer: CSSProperties = {
   padding: '16px',
   display: 'flex',
   flexDirection: 'column',
-  gap: 10,
+  gap: 12,
   height: '100%',
 };
 
 const sectionHeading: CSSProperties = {
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 800,
   color: t.inkMute,
   textTransform: 'uppercase',
   letterSpacing: '0.05em',
-  margin: '0 0 4px',
+  margin: '0 0 6px',
 };
 
 const listItemStyle = (sel: boolean): CSSProperties => ({
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  padding: '10px 12px',
+  padding: '12px 14px',
   borderRadius: radius.sm,
   background: sel ? t.brandTint : '#F8FAFC',
   border: `1px solid ${sel ? t.brand : '#E2E8F0'}`,
@@ -760,15 +773,15 @@ const listItemStyle = (sel: boolean): CSSProperties => ({
 });
 
 const badgeStyle: CSSProperties = {
-  fontSize: 10,
+  fontSize: 12,
   fontWeight: 700,
-  padding: '3px 8px',
+  padding: '4px 10px',
   borderRadius: '20px',
   whiteSpace: 'nowrap',
 };
 
 const violationCard: CSSProperties = {
-  padding: '10px 12px',
+  padding: '12px 14px',
   borderRadius: radius.sm,
   background: '#F8FAFC',
   border: '1px solid #E2E8F0',
@@ -778,18 +791,19 @@ const violationCard: CSSProperties = {
 
 const metricsRow: CSSProperties = {
   display: 'flex',
-  gap: 12,
-  marginTop: 4,
-  fontSize: 11,
+  gap: 16,
+  marginTop: 6,
+  fontSize: 13,
   color: t.inkSoft,
 };
 
 const lookaheadCard: CSSProperties = {
-  marginTop: 8,
-  padding: '12px',
+  marginTop: 10,
+  padding: '14px',
   borderRadius: radius.sm,
   background: t.comfortBg,
   border: `1px solid ${t.comfortFg}`,
+  fontSize: 14,
 };
 
 const successMessage: CSSProperties = {
@@ -800,14 +814,16 @@ const successMessage: CSSProperties = {
   background: t.comfortBg,
   border: `1px solid ${t.comfortFg}`,
   borderRadius: radius.sm,
+  fontSize: 16,
 };
 
 const checkRow: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  padding: '10px 12px',
+  padding: '12px 14px',
   borderRadius: radius.sm,
   background: '#F8FAFC',
   border: '1px solid #E2E8F0',
+  fontSize: 16,
 };

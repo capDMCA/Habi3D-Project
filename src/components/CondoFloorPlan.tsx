@@ -143,7 +143,7 @@ export default function CondoFloorPlan({
               <text
                 x={room.x + room.width / 2}
                 y={room.y + room.height / 2}
-                fontSize={16}
+                fontSize={24}
                 fontWeight={800}
                 fill={room.textColor}
                 textAnchor="middle"
@@ -210,7 +210,7 @@ export default function CondoFloorPlan({
             <text
               x={r.xCm + r.wCm / 2}
               y={r.yCm + r.hCm / 2}
-              fontSize={11}
+              fontSize={16}
               fontWeight={700}
               fill={t.accent}
               textAnchor="middle"
@@ -281,7 +281,7 @@ export default function CondoFloorPlan({
               <text
                 x={r.xCm + r.wCm / 2}
                 y={r.yCm + r.hCm / 2}
-                fontSize={12}
+                fontSize={18}
                 fontWeight={700}
                 fill={t.ink}
                 textAnchor="middle"

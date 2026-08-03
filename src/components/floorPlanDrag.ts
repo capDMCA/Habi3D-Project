@@ -33,21 +33,33 @@ export function clampToRoom(item: FurnitureItem, room: RoomZone): { posX: number
   const halfL = effectiveLengthCm(item) / 200; // in metres
   const halfW = effectiveWidthCm(item) / 200; // in metres
 
-  const roomMinX = room.x / 100;
-  const roomMaxX = (room.x + room.width) / 100;
-  const roomMinZ = room.y / 100;
-  const roomMaxZ = (room.y + room.height) / 100;
+  let roomMinX = room.x / 100;
+  let roomMaxX = (room.x + room.width) / 100;
+  let roomMinZ = room.y / 100;
+  let roomMaxZ = (room.y + room.height) / 100;
+
+  let widthM = room.width / 100;
+  let heightM = room.height / 100;
+
+  if (item.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
+    roomMinX = 0;
+    roomMaxX = 2.60;
+    roomMinZ = 3.40;
+    roomMaxZ = 8.80;
+    widthM = 2.60;
+    heightM = 5.40;
+  }
 
   let posX = item.posX;
   let posZ = item.posZ;
 
-  if (room.width / 100 <= halfL * 2) {
+  if (widthM <= halfL * 2) {
     posX = (roomMinX + roomMaxX) / 2;
   } else {
     posX = Math.max(roomMinX + halfL, Math.min(roomMaxX - halfL, posX));
   }
 
-  if (room.height / 100 <= halfW * 2) {
+  if (heightM <= halfW * 2) {
     posZ = (roomMinZ + roomMaxZ) / 2;
   } else {
     posZ = Math.max(roomMinZ + halfW, Math.min(roomMaxZ - halfW, posZ));
@@ -68,10 +80,17 @@ export function snapTarget(
   const halfL = effectiveLengthCm(item) / 200;
   const halfW = effectiveWidthCm(item) / 200;
 
-  const roomMinX = room.x / 100;
-  const roomMaxX = (room.x + room.width) / 100;
-  const roomMinZ = room.y / 100;
-  const roomMaxZ = (room.y + room.height) / 100;
+  let roomMinX = room.x / 100;
+  let roomMaxX = (room.x + room.width) / 100;
+  let roomMinZ = room.y / 100;
+  let roomMaxZ = (room.y + room.height) / 100;
+
+  if (item.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
+    roomMinX = 0;
+    roomMaxX = 2.60;
+    roomMinZ = 3.40;
+    roomMaxZ = 8.80;
+  }
 
   // Snapping threshold (10cm)
   const SNAP_THRESHOLD = 0.10;
@@ -108,7 +127,13 @@ export function snapTarget(
     
     // Check if other item is in the same room
     const otherRoomId = other.roomId || getRoomForCategory(other.category, other.label);
-    if (otherRoomId !== room.id) continue;
+    const inLivingOrDining = (roomId: string) => roomId === 'living' || roomId === 'dining';
+    
+    if (item.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
+      if (!inLivingOrDining(otherRoomId)) continue;
+    } else {
+      if (otherRoomId !== room.id) continue;
+    }
 
     const b = toBounds(other);
     const itemMinX = finalX - halfL;
@@ -157,10 +182,17 @@ export function isFeasible(
     const room = CONDO_ROOMS.find((r) => r.id === roomId);
     if (!room) continue;
 
-    const roomMinX = room.x / 100;
-    const roomMaxX = (room.x + room.width) / 100;
-    const roomMinZ = room.y / 100;
-    const roomMaxZ = (room.y + room.height) / 100;
+    let roomMinX = room.x / 100;
+    let roomMaxX = (room.x + room.width) / 100;
+    let roomMinZ = room.y / 100;
+    let roomMaxZ = (room.y + room.height) / 100;
+
+    if (b.item.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
+      roomMinX = 0;
+      roomMaxX = 2.60;
+      roomMinZ = 3.40;
+      roomMaxZ = 8.80;
+    }
 
     if (
       b.minX < roomMinX - epsilon ||

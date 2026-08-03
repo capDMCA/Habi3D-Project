@@ -110,7 +110,7 @@ export function getRoomForCategory(category: FurnitureCategory, label: string = 
   const normLabel = label.toLowerCase();
   
   if (normLabel.includes('balcony')) return 'balcony';
-  if (normLabel.includes('storage')) return 'storage';
+  if (normLabel.includes('storage') && category !== 'cabinet') return 'storage';
   if (normLabel.includes('bath') || normLabel.includes('cr') || normLabel.includes('toilet')) return 'bathroom';
   if (normLabel.includes('kitchen') || normLabel.includes('cook') || normLabel.includes('sink')) return 'kitchen';
   if (normLabel.includes('dining')) return 'dining';

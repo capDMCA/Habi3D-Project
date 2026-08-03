@@ -8,6 +8,7 @@ import FurnitureInputScreen from './screens/FurnitureInputScreen';
 import DimensionVerificationScreen from './screens/DimensionVerificationScreen';
 import PositionMapScreen from './screens/PositionMapScreen';
 import WorkspaceScreen from './screens/WorkspaceScreen';
+import ReportScreen from './screens/ReportScreen';
 import PlaceholderScreen from './screens/PlaceholderScreen';
 import './App.css';
 
@@ -34,8 +35,9 @@ export default function App() {
     case 'analysis':
     case 'recommendations':
     case 'recommendation':
-    case 'report':
       return <WorkspaceScreen />;
+    case 'report':
+      return <ReportScreen />;
     default:
       return <PlaceholderScreen screenName={currentScreen} />;
   }
