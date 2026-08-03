@@ -20,8 +20,8 @@ export interface CondoFloorPlanInteraction {
   draggableItemId: string;
   infeasible: boolean;
   onDragStart: (itemId: string) => void;
-  onDragMove: (worldXMetres: number, worldZMetres: number) => void;
-  onDragEnd: () => void;
+  onDragMove: (itemId: string, worldXMetres: number, worldZMetres: number) => void;
+  onDragEnd: (itemId: string) => void;
 }
 
 export interface CondoFloorPlanProps {
@@ -39,11 +39,11 @@ const PAD_CM = 25;
 const WIDTH_CM = 510;
 const HEIGHT_CM = 880;
 
-function eventToWorldMetres(svg: SVGSVGElement, e: ReactPointerEvent): { xm: number; zm: number } {
+function eventToWorldMetresFromClient(svg: SVGSVGElement, clientX: number, clientY: number): { xm: number; zm: number } {
   const ctm = svg.getScreenCTM();
-  if (!ctm) throw new Error('CondoFloorPlan: SVG has no screen CTM; cannot map pointer to world.');
-  const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
-  return { xm: p.x / 100, zm: p.y / 100 }; // viewBox units are centimetres
+  if (!ctm) return { xm: 0, zm: 0 };
+  const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+  return { xm: p.x / 100, zm: p.y / 100 };
 }
 
 export default function CondoFloorPlan({
@@ -60,6 +60,13 @@ export default function CondoFloorPlan({
   const draggingRef = useRef(false);
   const draggedItemIdRef = useRef<string | null>(null);
   const [activeGuides, setActiveGuides] = useState<AlignmentGuide[]>([]);
+
+  // Keep fresh refs for window listeners to prevent stale closures
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  const interactiveRef = useRef(interactive);
+  interactiveRef.current = interactive;
 
   // Project furniture items
   const rects = useMemo(() => projectItems(items), [items]);
@@ -84,7 +91,7 @@ export default function CondoFloorPlan({
     if (!room) {
       return { x: -PAD_CM, y: -PAD_CM, w: WIDTH_CM + PAD_CM * 2, h: HEIGHT_CM + PAD_CM * 2 };
     }
-    const margin = 40; // cm padding around focused room
+    const margin = 35; // cm padding around focused room
     return {
       x: room.x - margin,
       y: room.y - margin,
@@ -98,7 +105,7 @@ export default function CondoFloorPlan({
   useEffect(() => {
     let start: number | null = null;
     const startVb = { ...vb };
-    const duration = 380; // ms transition
+    const duration = 350; // ms transition
 
     const animate = (timestamp: number) => {
       if (!start) start = timestamp;
@@ -122,53 +129,60 @@ export default function CondoFloorPlan({
     return () => cancelAnimationFrame(animFrame);
   }, [targetViewBox]);
 
-  // ─── Pointer Event Handlers ────────────────────────────────────────────────
-  function handlePointerDown(e: ReactPointerEvent<SVGRectElement>, itemId: string) {
+  // ─── Window-Level Drag Handler (Rock-solid, lag-free dragging) ─────────────
+  function handlePointerDown(e: ReactPointerEvent<SVGElement>, itemId: string) {
+    e.stopPropagation();
     if (onSelectItem) {
       onSelectItem(itemId);
     }
-    if (!interactive) return;
+    if (!interactiveRef.current) return;
 
-    e.currentTarget.setPointerCapture(e.pointerId);
     draggingRef.current = true;
     draggedItemIdRef.current = itemId;
-    interactive.onDragStart(itemId);
-  }
+    interactiveRef.current.onDragStart(itemId);
 
-  function handlePointerMove(e: ReactPointerEvent<SVGRectElement>) {
-    if (!interactive || !draggingRef.current || !svgRef.current || !draggedItemIdRef.current) return;
+    const onWindowPointerMove = (evt: PointerEvent) => {
+      if (!draggingRef.current || !svgRef.current || !draggedItemIdRef.current) return;
 
-    const itemId = draggedItemIdRef.current;
-    const item = items.find((it) => it.id === itemId);
-    if (!item) return;
+      const currentItem = itemsRef.current.find((it) => it.id === draggedItemIdRef.current);
+      if (!currentItem) return;
 
-    const { xm, zm } = eventToWorldMetres(svgRef.current, e);
-    const roomZoneId = item.roomId || getRoomForCategory(item.category, item.label);
-    const room = CONDO_ROOMS.find((r) => r.id === roomZoneId);
+      const { xm, zm } = eventToWorldMetresFromClient(svgRef.current, evt.clientX, evt.clientY);
+      const roomZoneId = currentItem.roomId || getRoomForCategory(currentItem.category, currentItem.label);
+      const room = CONDO_ROOMS.find((r) => r.id === roomZoneId);
 
-    if (!room) return;
+      if (!room) return;
 
-    // Apply smart snapping, then apply spring elastic boundary clamp
-    const targetSnap = snapTarget(xm, zm, item, items, null, room);
-    const softClamped = clampToRoomSoft({ ...item, posX: targetSnap.posX, posZ: targetSnap.posZ }, room);
+      // Apply smart snapping, then apply elastic spring bounds
+      const targetSnap = snapTarget(xm, zm, currentItem, itemsRef.current, null, room);
+      const softClamped = clampToRoomSoft({ ...currentItem, posX: targetSnap.posX, posZ: targetSnap.posZ }, room);
 
-    // Calculate smart guidelines based on the soft clamped coordinates
-    const itemForGuides = { ...item, posX: softClamped.posX, posZ: softClamped.posZ };
-    const guides = getAlignmentGuides(itemForGuides, items, room);
-    setActiveGuides(guides);
+      // Calculate smart guidelines
+      const itemForGuides = { ...currentItem, posX: softClamped.posX, posZ: softClamped.posZ };
+      const guides = getAlignmentGuides(itemForGuides, itemsRef.current, room);
+      setActiveGuides(guides);
 
-    interactive.onDragMove(softClamped.posX, softClamped.posZ);
-  }
+      interactiveRef.current?.onDragMove(draggedItemIdRef.current, softClamped.posX, softClamped.posZ);
+    };
 
-  function handlePointerUp(e: ReactPointerEvent<SVGRectElement>) {
-    if (!interactive || !draggingRef.current) return;
-    draggingRef.current = false;
-    draggedItemIdRef.current = null;
-    setActiveGuides([]);
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    interactive.onDragEnd();
+    const onWindowPointerUp = () => {
+      window.removeEventListener('pointermove', onWindowPointerMove);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+      window.removeEventListener('pointercancel', onWindowPointerUp);
+
+      if (!draggingRef.current) return;
+      const activeId = draggedItemIdRef.current;
+      draggingRef.current = false;
+      draggedItemIdRef.current = null;
+      setActiveGuides([]);
+      if (activeId) {
+        interactiveRef.current?.onDragEnd(activeId);
+      }
+    };
+
+    window.addEventListener('pointermove', onWindowPointerMove, { passive: true });
+    window.addEventListener('pointerup', onWindowPointerUp, { passive: true });
+    window.addEventListener('pointercancel', onWindowPointerUp, { passive: true });
   }
 
   return (
@@ -270,7 +284,7 @@ export default function CondoFloorPlan({
           );
         })}
 
-        {/* 3. FIGMA SMART GUIDES */}
+        {/* 3. FIGMA SMART ALIGNMENT GUIDES */}
         {activeGuides.map((g, idx) => {
           if (g.type === 'x') {
             return (
@@ -281,9 +295,9 @@ export default function CondoFloorPlan({
                 x2={g.coord * 100}
                 y2={HEIGHT_CM}
                 stroke="#3B82F6"
-                strokeWidth={1.5}
+                strokeWidth={2}
                 strokeDasharray="5 3"
-                opacity={0.8}
+                opacity={0.9}
                 style={pointerNone}
               />
             );
@@ -296,9 +310,9 @@ export default function CondoFloorPlan({
                 x2={WIDTH_CM}
                 y2={g.coord * 100}
                 stroke="#3B82F6"
-                strokeWidth={1.5}
+                strokeWidth={2}
                 strokeDasharray="5 3"
-                opacity={0.8}
+                opacity={0.9}
                 style={pointerNone}
               />
             );
@@ -344,9 +358,12 @@ export default function CondoFloorPlan({
           return (
             <g
               key={r.id}
-              style={{ opacity: isItemDimmed ? 0.15 : 1, transition: 'opacity 0.3s ease' }}
+              style={{
+                opacity: isItemDimmed ? 0.2 : 1,
+                transition: 'opacity 0.25s ease',
+              }}
             >
-              {/* Visual Outline & Block */}
+              {/* Visible Block Rectangle */}
               <rect
                 x={r.xCm}
                 y={r.yCm}
@@ -374,21 +391,19 @@ export default function CondoFloorPlan({
                 {r.label}
               </text>
 
-              {/* Invisible touch & grab area overlay - expanded by 24px for easy mobile manipulation */}
+              {/* Ultra-responsive Hit Target (rgba 0.001 fill ensures 100% painted hit testing in SVG) */}
               <rect
-                x={r.xCm - 20}
-                y={r.yCm - 20}
-                width={r.wCm + 40}
-                height={r.hCm + 40}
-                fill="transparent"
+                x={r.xCm - 16}
+                y={r.yCm - 16}
+                width={r.wCm + 32}
+                height={r.hCm + 32}
+                fill="rgba(0,0,0,0.001)"
                 style={{
-                  cursor: isDraggable ? 'grab' : 'pointer',
+                  cursor: 'grab',
                   touchAction: 'none',
+                  pointerEvents: 'all',
                 }}
                 onPointerDown={(e) => handlePointerDown(e, r.id)}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
               />
             </g>
           );

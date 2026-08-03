@@ -183,43 +183,42 @@ export default function WorkspaceScreen() {
   }, [preview]);
 
   // 60FPS Drag move - bypass heavy validation and analysis checks
-  const handleDragMove = useCallback((xm: number, zm: number) => {
-    if (!selectedItem) return;
-    const next = withMovedItem(preview, selectedItem.id, xm, zm);
-    setPreview(next);
-    previewRef.current = next;
-  }, [preview, selectedItem]);
+  const handleDragMove = useCallback((draggedId: string, xm: number, zm: number) => {
+    setPreview((prev) => {
+      const next = withMovedItem(prev, draggedId, xm, zm);
+      previewRef.current = next;
+      return next;
+    });
+  }, []);
 
   // Run overlap/clearance engine checks on release (PointerUp)
-  const handleDragEnd = useCallback(() => {
-    if (!selectedItem) return;
+  const handleDragEnd = useCallback((draggedId: string) => {
     const settled = previewRef.current;
+    const item = settled.find((it) => it.id === draggedId);
+    if (!item) return;
 
     // Run feasibility checks on release
     const ok = isFeasible(settled, roomWidthCm, roomLengthCm);
 
     if (!ok && lastOkRef.current) {
-      // Revert with spring animation to last feasible position if collision detected
-      const reverted = withMovedItem(settled, selectedItem.id, lastOkRef.current.x, lastOkRef.current.z);
+      // Revert to last feasible position if collision detected
+      const reverted = withMovedItem(settled, draggedId, lastOkRef.current.x, lastOkRef.current.z);
       previewRef.current = reverted;
       setPreview(reverted);
       setInfeasible(false);
       okRef.current = true;
-      showToast(`${selectedItem.label} overlaps with walls or other furniture.`);
+      showToast(`${item.label} overlaps with walls or other furniture.`);
     } else {
       // Commit the updated coordinates to store
-      const s = settled.find((it) => it.id === selectedItem.id);
-      if (s) {
-        lastOkRef.current = { x: s.posX, z: s.posZ };
-        updatePosition(s.id, s.posX, s.posZ, s.rotationY);
-        
-        // Re-run the clearance engine and recommendations immediately on release
-        const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
-        refreshViolations(fresh.violations);
-        setSpaceScoreAfter(fresh.spaceScoreBefore);
-      }
+      lastOkRef.current = { x: item.posX, z: item.posZ };
+      updatePosition(item.id, item.posX, item.posZ, item.rotationY);
+      
+      // Re-run the clearance engine and recommendations immediately on release
+      const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
+      refreshViolations(fresh.violations);
+      setSpaceScoreAfter(fresh.spaceScoreBefore);
     }
-  }, [selectedItem, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter, showToast]);
+  }, [roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter, showToast]);
 
   const handleRotate = useCallback(() => {
     if (!selectedItem) return;
