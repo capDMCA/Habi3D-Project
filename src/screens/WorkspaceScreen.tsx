@@ -4,47 +4,55 @@ import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { runClearanceAnalysis } from '../engine/clearance';
-import { stableViolationKey } from '../engine/violationKey';
 import { statusMeta } from '../components/statusVocabulary';
 import { color as t, radius } from '../components/designTokens';
-import FloorPlan2D from '../components/FloorPlan2D';
-import { isFeasible, snapCm, withMovedItem, withRotatedItem } from '../components/floorPlanDrag';
+import CondoFloorPlan from '../components/CondoFloorPlan';
+import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
+import { isFeasible, withMovedItem, withRotatedItem, clampToRoom } from '../components/floorPlanDrag';
+import { computeWalkways } from '../engine/walkways';
 import type { FurnitureItem, Violation } from '../types';
 
-// ─── Normalization ──────────────────────────────────────────────────────────
-function normalizeFurniturePositions(
-  items: FurnitureItem[],
-  roomWidthCm: number,
-  roomLengthCm: number,
-): FurnitureItem[] {
-  if (items.length === 0) return [];
-  const rW = roomWidthCm / 100;
-  const rL = roomLengthCm / 100;
-
-  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const it of items) {
-    const hL = (it.lengthCm / 100) / 2;
-    const hW = (it.widthCm / 100) / 2;
-    minX = Math.min(minX, it.posX - hL);
-    maxX = Math.max(maxX, it.posX + hL);
-    minZ = Math.min(minZ, it.posZ - hW);
-    maxZ = Math.max(maxZ, it.posZ + hW);
-  }
-
-  const dx = (rW / 2) - (minX + maxX) / 2;
-  const dz = (rL / 2) - (minZ + maxZ) / 2;
-  const pad = 0.05;
-
-  return items.map((it) => {
-    const hL = (it.lengthCm / 100) / 2;
-    const hW = (it.widthCm / 100) / 2;
-    const x = Math.max(hL + pad, Math.min(rW - hL - pad, it.posX + dx));
-    const z = Math.max(hW + pad, Math.min(rL - hW - pad, it.posZ + dz));
-    return { ...it, posX: x, posZ: z };
+// ─── Normalization & Initialization ─────────────────────────────────────────
+function initializeRoomAssignments(items: FurnitureItem[]): FurnitureItem[] {
+  return items.map((item) => {
+    if (!item.roomId) {
+      return { ...item, roomId: getRoomForCategory(item.category, item.label) };
+    }
+    return item;
   });
 }
 
-// ─── Ghost position helper ──────────────────────────────────────────────────
+function normalizeFurniturePositions(items: FurnitureItem[]): FurnitureItem[] {
+  return items.map((item) => {
+    const roomId = item.roomId || getRoomForCategory(item.category, item.label);
+    const room = CONDO_ROOMS.find((r) => r.id === roomId);
+    if (!room) return item;
+
+    // Check if item's center is within the room boundary (with a tolerance)
+    const minX = room.x / 100;
+    const maxX = (room.x + room.width) / 100;
+    const minZ = room.y / 100;
+    const maxZ = (room.y + room.height) / 100;
+
+    const insideX = item.posX >= minX && item.posX <= maxX;
+    const insideZ = item.posZ >= minZ && item.posZ <= maxZ;
+
+    if (insideX && insideZ) {
+      // Already inside, just clamp to be safe
+      const clamped = clampToRoom(item, room);
+      return { ...item, posX: clamped.posX, posZ: clamped.posZ };
+    }
+
+    // Otherwise, place it in the center of its assigned room
+    return {
+      ...item,
+      posX: (room.x + room.width / 2) / 100,
+      posZ: (room.y + room.height / 2) / 100,
+    };
+  });
+}
+
+// ─── Ghost Position Generator ───────────────────────────────────────────────
 function getGhostItem(item: FurnitureItem, v: Violation | undefined): FurnitureItem | null {
   if (!v || v.resolved) return null;
   const dir = v.fixDirectionLabel.toLowerCase();
@@ -54,99 +62,97 @@ function getGhostItem(item: FurnitureItem, v: Violation | undefined): FurnitureI
   else if (dir.includes('east')) dx = d;
   else if (dir.includes('north')) dz = -d;
   else if (dir.includes('south')) dz = d;
-  return { ...item, posX: item.posX + dx, posZ: item.posZ + dz };
-}
 
-// ─── Lookahead validation ───────────────────────────────────────────────────
-function getLookaheadWarnings(
-  items: FurnitureItem[],
-  itemId: string,
-  ghost: FurnitureItem,
-  roomWidthCm: number,
-  roomLengthCm: number,
-): string[] {
-  const candidate = withMovedItem(items, itemId, ghost.posX, ghost.posZ);
-  if (!isFeasible(candidate, roomWidthCm, roomLengthCm)) return ['Overlaps other furniture or walls.'];
-
-  const before = runClearanceAnalysis(items, roomWidthCm, roomLengthCm);
-  const after = runClearanceAnalysis(candidate, roomWidthCm, roomLengthCm);
-  const baseKeys = new Set(before.violations.map(stableViolationKey));
-  const warnings: string[] = [];
-
-  for (const v of after.violations) {
-    if (!baseKeys.has(stableViolationKey(v))) {
-      warnings.push(`New issue: ${v.ruleLabel} near ${v.furnitureLabel}`);
-    }
+  const ghost = { ...item, posX: item.posX + dx, posZ: item.posZ + dz };
+  
+  // Make sure ghost doesn't escape the room boundary
+  const roomId = item.roomId || getRoomForCategory(item.category, item.label);
+  const room = CONDO_ROOMS.find((r) => r.id === roomId);
+  if (room) {
+    const clamped = clampToRoom(ghost, room);
+    return { ...ghost, posX: clamped.posX, posZ: clamped.posZ };
   }
-  return warnings;
+  return ghost;
 }
 
 // ─── Tab enum ───────────────────────────────────────────────────────────────
-type Tab = 'plan' | 'issues' | 'checklist';
+type Tab = 'plan' | 'issues' | 'walkways' | 'checklist';
 
-// ─── Main Component ─────────────────────────────────────────────────────────
 export default function WorkspaceScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
-  const roomDimensions = useSessionStore((s) => s.roomDimensions);
   const items = useFurnitureStore((s) => s.items);
+  const updateItem = useFurnitureStore((s) => s.updateItem);
   const updatePosition = useFurnitureStore((s) => s.updatePosition);
   const refreshViolations = useViolationStore((s) => s.refreshViolations);
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
   const setSpaceScoreAfter = useViolationStore((s) => s.setSpaceScoreAfter);
   const recommendations = useViolationStore((s) => s.recommendations);
 
-  const roomWidthCm = useMemo(() => {
-    if (!roomDimensions) return 360;
-    return Math.max(roomDimensions.livingWidthCm, roomDimensions.diningWidthCm);
-  }, [roomDimensions]);
-
-  const roomLengthCm = useMemo(() => {
-    if (!roomDimensions) return 520;
-    return roomDimensions.livingDepthCm + roomDimensions.diningDepthCm;
-  }, [roomDimensions]);
-
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [infeasible, setInfeasible] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('plan');
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
 
   const [preview, setPreview] = useState<FurnitureItem[]>(items);
   const previewRef = useRef<FurnitureItem[]>(items);
   const lastOkRef = useRef<{ x: number; z: number } | null>(null);
   const okRef = useRef(true);
 
-  // ── Normalize once on mount ───────────────────────────────────────────────
+  // Width/height from store/constants
+  const roomWidthCm = 510;
+  const roomLengthCm = 880;
+
+  // ── Normalize & Assign rooms once on mount ────────────────────────────────
   useEffect(() => {
     if (items.length > 0 && !loaded) {
-      const outOfBounds = items.some((it) => {
-        const hL = it.lengthCm / 200;
-        const hW = it.widthCm / 200;
-        return it.posX - hL < 0 || it.posZ - hW < 0
-          || it.posX + hL > roomWidthCm / 100 || it.posZ + hW > roomLengthCm / 100;
+      // First ensure all items have roomIds
+      const withRooms = initializeRoomAssignments(items);
+      withRooms.forEach((it) => {
+        if (it.roomId !== items.find((orig) => orig.id === it.id)?.roomId) {
+          updateItem(it.id, { roomId: it.roomId });
+        }
       });
-      if (outOfBounds) {
-        const norm = normalizeFurniturePositions(items, roomWidthCm, roomLengthCm);
-        norm.forEach((it) => updatePosition(it.id, it.posX, it.posZ, it.rotationY));
-        setPreview(norm);
-        previewRef.current = norm;
-      } else {
-        setPreview(items);
-        previewRef.current = items;
-      }
+
+      // Now normalize inside their room boundaries
+      const normalized = normalizeFurniturePositions(withRooms);
+      normalized.forEach((it) => {
+        updatePosition(it.id, it.posX, it.posZ, it.rotationY);
+      });
+
+      setPreview(normalized);
+      previewRef.current = normalized;
       setLoaded(true);
     }
-  }, [items, roomWidthCm, roomLengthCm, updatePosition, loaded]);
+  }, [items, updateItem, updatePosition, loaded]);
 
   // ── Keep preview in sync with store ───────────────────────────────────────
   useEffect(() => {
-    if (loaded) { setPreview(items); previewRef.current = items; }
+    if (loaded) {
+      setPreview(items);
+      previewRef.current = items;
+    }
   }, [items, loaded]);
 
-  // ── Analysis ──────────────────────────────────────────────────────────────
+  // ── Toast warning ────────────────────────────────────────────────────────
+  const showToast = useCallback((msg: string) => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
+    setToast(msg);
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToast(null);
+    }, 2500);
+  }, []);
+
+  // ── Analysis & Walkways ───────────────────────────────────────────────────
   const analysis = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
-    [items, roomWidthCm, roomLengthCm],
+    [items],
   );
+
+  const walkwayStatuses = useMemo(() => computeWalkways(preview), [preview]);
 
   useEffect(() => {
     if (analysis.violations.length > 0 && recommendations.length === 0) {
@@ -171,14 +177,15 @@ export default function WorkspaceScreen() {
   }, [selectedItem, analysis.violations]);
 
   const ghostItem = useMemo(
-    () => selectedItem ? getGhostItem(selectedItem, activeViolation) : null,
+    () => (selectedItem ? getGhostItem(selectedItem, activeViolation) : null),
     [selectedItem, activeViolation],
   );
 
-  const lookaheadWarnings = useMemo(() => {
-    if (!selectedItem || !ghostItem) return [];
-    return getLookaheadWarnings(preview, selectedItem.id, ghostItem, roomWidthCm, roomLengthCm);
-  }, [selectedItem, ghostItem, preview, roomWidthCm, roomLengthCm]);
+  const selectedRoomLabel = useMemo(() => {
+    if (!selectedItem) return '';
+    const roomId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
+    return CONDO_ROOMS.find((r) => r.id === roomId)?.label ?? 'Living Room';
+  }, [selectedItem]);
 
   // ── Status map ────────────────────────────────────────────────────────────
   const itemStatuses = useMemo(() => {
@@ -203,22 +210,37 @@ export default function WorkspaceScreen() {
 
   const handleDragMove = useCallback((xm: number, zm: number) => {
     if (!selectedItem) return;
-    const sx = snapCm(xm * 100) / 100;
-    const sz = snapCm(zm * 100) / 100;
-    const next = withMovedItem(preview, selectedItem.id, sx, sz);
+    const next = withMovedItem(preview, selectedItem.id, xm, zm);
     const ok = isFeasible(next, roomWidthCm, roomLengthCm);
+
+    // If candidate goes completely out of the room, clamp coordinates.
+    // The CondoFloorPlan will feed clamped coordinates already, but we also enforce it here.
+    const roomZoneId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
+    const room = CONDO_ROOMS.find((r) => r.id === roomZoneId);
+
+    if (room) {
+      const halfL = (selectedItem.lengthCm / 100) / 2;
+      const halfW = (selectedItem.widthCm / 100) / 2;
+      const exceedsX = xm - halfL <= room.x / 100 || xm + halfL >= (room.x + room.width) / 100;
+      const exceedsZ = zm - halfW <= room.y / 100 || zm + halfW >= (room.y + room.height) / 100;
+
+      if (exceedsX || exceedsZ) {
+        showToast(`${selectedItem.label} belongs inside the ${selectedRoomLabel}.`);
+      }
+    }
+
     setPreview(next);
     previewRef.current = next;
     setInfeasible(!ok);
     okRef.current = ok;
-    if (ok) lastOkRef.current = { x: sx, z: sz };
-  }, [preview, selectedItem, roomWidthCm, roomLengthCm]);
+    if (ok) lastOkRef.current = { x: xm, z: zm };
+  }, [preview, selectedItem, roomWidthCm, roomLengthCm, selectedRoomLabel, showToast]);
 
   const handleDragEnd = useCallback(() => {
     if (!selectedItem) return;
     let settled = previewRef.current;
 
-    // Snap back to last feasible if current is infeasible
+    // Snap back if infeasible
     if (!okRef.current && lastOkRef.current) {
       settled = withMovedItem(settled, selectedItem.id, lastOkRef.current.x, lastOkRef.current.z);
       previewRef.current = settled;
@@ -227,17 +249,7 @@ export default function WorkspaceScreen() {
       okRef.current = true;
     }
 
-    // Auto-snap within 5cm of ghost
-    const fin = settled.find((it) => it.id === selectedItem.id);
-    if (fin && ghostItem) {
-      if (Math.abs(fin.posX - ghostItem.posX) <= 0.05 && Math.abs(fin.posZ - ghostItem.posZ) <= 0.05) {
-        settled = withMovedItem(settled, selectedItem.id, ghostItem.posX, ghostItem.posZ);
-        setPreview(settled);
-        previewRef.current = settled;
-      }
-    }
-
-    // Commit to store
+    // Update state store
     const s = settled.find((it) => it.id === selectedItem.id);
     if (s) {
       updatePosition(s.id, s.posX, s.posZ, s.rotationY);
@@ -245,7 +257,7 @@ export default function WorkspaceScreen() {
       refreshViolations(fresh.violations);
       setSpaceScoreAfter(fresh.spaceScoreBefore);
     }
-  }, [selectedItem, ghostItem, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter]);
+  }, [selectedItem, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter]);
 
   const handleRotate = useCallback(() => {
     if (!selectedItem) return;
@@ -260,11 +272,24 @@ export default function WorkspaceScreen() {
     }
   }, [selectedItem, preview, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const handleResetPosition = useCallback(() => {
+    if (!selectedItem) return;
+    const roomId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
+    const room = CONDO_ROOMS.find((r) => r.id === roomId);
+    if (room) {
+      const rx = (room.x + room.width / 2) / 100;
+      const rz = (room.y + room.height / 2) / 100;
+      updatePosition(selectedItem.id, rx, rz, 0);
+      setPreview(useFurnitureStore.getState().items);
+    }
+  }, [selectedItem, updatePosition]);
+
+  // Counts for pills
   const issueCount = analysis.violations.length;
   const redCount = analysis.violations.filter((v) => v.classification === 'RED').length;
   const yellowCount = analysis.violations.filter((v) => v.classification === 'YELLOW').length;
   const greenCount = preview.length - redCount - yellowCount;
+  const blockedWalkwaysCount = walkwayStatuses.filter((w) => w.status === 'RED').length;
 
   return (
     <div style={shell}>
@@ -272,217 +297,265 @@ export default function WorkspaceScreen() {
       <header style={header}>
         <button style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
         <div style={{ flex: 1 }}>
-          <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: t.ink }}>Layout Workspace</h1>
+          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: t.ink }}>Mulberry Place Digital Twin</h1>
           <p style={{ margin: 0, fontSize: 12, color: t.inkSoft }}>
-            {issueCount === 0
-              ? '✅ All clearances passed'
-              : `${issueCount} clearance issue${issueCount > 1 ? 's' : ''} found`}
+            {issueCount === 0 && blockedWalkwaysCount === 0
+              ? '✅ All rooms and walkways clear'
+              : `${issueCount} clearance issues · ${blockedWalkwaysCount} blocked walkways`}
           </p>
         </div>
         <button style={finishBtn} onClick={() => navigateTo('report')}>Done</button>
       </header>
 
-      {/* ── STATUS PILLS ───────────────────────────────────────────────────── */}
-      <div style={pillRow}>
-        {redCount > 0 && <span style={pill(t.attentionBg, t.attentionFg)}>{redCount} Critical</span>}
-        {yellowCount > 0 && <span style={pill(t.tightBg, t.tightFg)}>{yellowCount} Tight</span>}
-        <span style={pill(t.comfortBg, t.comfortFg)}>{greenCount} Good</span>
-      </div>
+      {/* ── SPLIT WORKSPACE ────────────────────────────────────────────────── */}
+      <div style={workspaceLayout}>
+        {/* LEFT COLUMN: INTERACTIVE DIGITAL TWIN FLOOR PLAN (75% WIDTH ON DESKTOP) */}
+        <section style={planPanel}>
+          <div style={pillRow}>
+            {redCount > 0 && <span style={pill(t.attentionBg, t.attentionFg)}>{redCount} Issues</span>}
+            {yellowCount > 0 && <span style={pill(t.tightBg, t.tightFg)}>{yellowCount} Warnings</span>}
+            {blockedWalkwaysCount > 0 && (
+              <span style={pill(t.attentionBg, t.attentionFg)}>🚨 {blockedWalkwaysCount} Walkways Blocked</span>
+            )}
+            <span style={pill(t.comfortBg, t.comfortFg)}>{greenCount} Clear</span>
+          </div>
 
-      {/* ── INTERACTIVE FLOOR PLAN ─────────────────────────────────────────── */}
-      <section style={planSection}>
-        <FloorPlan2D
-          items={preview}
-          roomWidthCm={roomWidthCm}
-          roomLengthCm={roomLengthCm}
-          highlightItemId={selectedItem?.id}
-          itemStatuses={itemStatuses}
-          ghostItem={ghostItem}
-          onSelectItem={setSelectedId}
-          interactive={
-            selectedItem
-              ? {
-                  draggableItemId: selectedItem.id,
-                  infeasible,
-                  onDragStart: handleDragStart,
-                  onDragMove: handleDragMove,
-                  onDragEnd: handleDragEnd,
-                }
-              : undefined
-          }
-        />
+          <div style={planContainer}>
+            <CondoFloorPlan
+              items={preview}
+              highlightItemId={selectedItem?.id}
+              itemStatuses={itemStatuses}
+              ghostItem={ghostItem}
+              onSelectItem={setSelectedId}
+              walkwayStatuses={walkwayStatuses}
+              interactive={
+                selectedItem
+                  ? {
+                      draggableItemId: selectedItem.id,
+                      infeasible,
+                      onDragStart: handleDragStart,
+                      onDragMove: handleDragMove,
+                      onDragEnd: handleDragEnd,
+                    }
+                  : undefined
+              }
+            />
+          </div>
 
-        {/* Inline feedback */}
-        <p style={feedbackText}>
-          {infeasible
-            ? <span style={{ color: t.attentionFg, fontWeight: 700 }}>❌ Can't place here — overlaps furniture or wall</span>
-            : selectedItem
-              ? <span>👆 Drag <strong>{selectedItem.label}</strong> to move it</span>
-              : <span>👆 Tap a block to select it</span>
-          }
-        </p>
+          {/* Toast Warning */}
+          {toast && <div style={toastBanner}>{toast}</div>}
 
-        {/* Action buttons */}
-        <div style={actionRow}>
-          <button style={actionBtn} onClick={handleRotate} disabled={!selectedItem}>
-            🔄 Rotate 90°
-          </button>
-        </div>
-      </section>
-
-      {/* ── BOTTOM DRAWER ──────────────────────────────────────────────────── */}
-      <section style={drawer}>
-        {/* Tab bar */}
-        <div style={tabBar}>
-          {(['plan', 'issues', 'checklist'] as Tab[]).map((tab) => (
-            <button
-              key={tab}
-              style={tabBtn(activeTab === tab)}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab === 'plan' ? `📋 Items (${preview.length})`
-                : tab === 'issues' ? `⚠️ Issues (${issueCount})`
-                : '✅ Checklist'}
-            </button>
-          ))}
-        </div>
-
-        <div style={tabContent}>
-          {/* TAB: Items list */}
-          {activeTab === 'plan' && (
-            <div style={scrollList}>
-              {preview.map((item) => {
-                const status = itemStatuses[item.id] ?? 'GREEN';
-                const sel = selectedItem?.id === item.id;
-                const meta = statusMeta(
-                  status === 'RED' ? 'needs-attention'
-                    : status === 'YELLOW' ? 'tight'
-                    : 'comfortable',
-                );
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => setSelectedId(item.id)}
-                    style={{
-                      ...listItem(sel),
-                      borderLeftColor: meta.color,
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, color: sel ? t.brand : t.ink, fontSize: 14 }}>
-                      {item.label}
-                    </span>
-                    <span style={{ ...badge, background: meta.bg, color: meta.color }}>
-                      {status === 'RED' ? 'Needs Attention'
-                        : status === 'YELLOW' ? 'Tight'
-                        : 'Good'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* TAB: Violation details */}
-          {activeTab === 'issues' && (
-            <div style={scrollList}>
-              {issueCount === 0 ? (
-                <p style={{ textAlign: 'center', color: t.comfortFg, fontWeight: 600, padding: 24 }}>
-                  🎉 No clearance issues — great layout!
-                </p>
+          {/* Interactive controls under the plan */}
+          <div style={controlToolbar}>
+            <span style={feedbackHint}>
+              {infeasible ? (
+                <span style={{ color: t.attentionFg, fontWeight: 700 }}>⚠️ Collision: overlaps wall or other block</span>
+              ) : selectedItem ? (
+                <span>📍 Selected <strong>{selectedItem.label}</strong> inside <strong>{selectedRoomLabel}</strong></span>
               ) : (
-                analysis.violations.map((v) => (
-                  <div
-                    key={v.id}
-                    style={{
-                      ...violationCard,
-                      borderLeftColor: v.classification === 'RED' ? t.attentionFg : t.tightFg,
-                    }}
-                    onClick={() => setSelectedId(v.furnitureId)}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, color: t.ink, fontSize: 14 }}>{v.furnitureLabel}</span>
-                      <span style={{
-                        ...badge,
-                        background: v.classification === 'RED' ? t.attentionBg : t.tightBg,
-                        color: v.classification === 'RED' ? t.attentionFg : t.tightFg,
-                      }}>
-                        {v.ruleCode}
+                '💡 Select a block to drag and rotate it'
+              )}
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={actionBtn} onClick={handleRotate} disabled={!selectedItem}>
+                🔄 Rotate 90°
+              </button>
+              <button style={secBtn} onClick={handleResetPosition} disabled={!selectedItem}>
+                ↩ Reset
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* RIGHT COLUMN: SANDBOX ASSISTANT & DETAIL VIEW (25% WIDTH ON DESKTOP) */}
+        <section style={sideDrawer}>
+          <div style={tabHeader}>
+            {(['plan', 'issues', 'walkways', 'checklist'] as Tab[]).map((tab) => (
+              <button
+                key={tab}
+                style={tabBtn(activeTab === tab)}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab === 'plan' ? '📋 Items'
+                  : tab === 'issues' ? `⚠️ Issues (${issueCount})`
+                  : tab === 'walkways' ? `🚶 Walkways`
+                  : '✅ Checklist'}
+              </button>
+            ))}
+          </div>
+
+          <div style={drawerBody}>
+            {/* TAB: Items list */}
+            {activeTab === 'plan' && (
+              <div style={scrollContainer}>
+                <h3 style={sectionHeading}>Furniture List</h3>
+                {preview.map((item) => {
+                  const status = itemStatuses[item.id] ?? 'GREEN';
+                  const sel = selectedItem?.id === item.id;
+                  const meta = statusMeta(
+                    status === 'RED' ? 'needs-attention' : status === 'YELLOW' ? 'tight' : 'comfortable',
+                  );
+                  const roomName = CONDO_ROOMS.find((r) => r.id === (item.roomId || getRoomForCategory(item.category, item.label)))?.label ?? '';
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelectedId(item.id)}
+                      style={{
+                        ...listItemStyle(sel),
+                        borderLeftColor: meta.color,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, color: t.ink, fontSize: 14 }}>{item.label}</div>
+                        <div style={{ fontSize: 11, color: t.inkSoft, marginTop: 2 }}>{roomName}</div>
+                      </div>
+                      <span style={{ ...badgeStyle, background: meta.bg, color: meta.color }}>
+                        {status === 'RED' ? 'Needs Attention' : status === 'YELLOW' ? 'Tight' : 'Good'}
                       </span>
                     </div>
-                    <p style={{ margin: '4px 0 0', fontSize: 13, color: t.inkSoft }}>{v.ruleLabel}</p>
-                    <div style={metricsRow}>
-                      <span>Gap: <strong>{v.measuredCm}cm</strong></span>
-                      <span>Need: <strong>{v.requiredCm}cm</strong></span>
-                      <span style={{ color: t.attentionFg }}>Short: <strong>{v.shortfallCm}cm</strong></span>
-                    </div>
-                  </div>
-                ))
-              )}
+                  );
+                })}
+              </div>
+            )}
 
-              {/* Lookahead validation for selected item */}
-              {selectedItem && ghostItem && (
-                <div style={lookaheadCard(lookaheadWarnings.length > 0)}>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: t.brand, marginBottom: 4 }}>
-                    RECOMMENDATION VALIDATION
-                  </p>
-                  {lookaheadWarnings.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: 13, color: t.comfortFg, fontWeight: 600 }}>
-                      ✅ Suggested move is safe — no new issues created
-                    </p>
-                  ) : (
-                    <>
-                      <p style={{ margin: '0 0 4px', fontSize: 13, color: t.attentionFg, fontWeight: 600 }}>
-                        ⚠️ Suggested move creates new issues:
+            {/* TAB: Issues list */}
+            {activeTab === 'issues' && (
+              <div style={scrollContainer}>
+                <h3 style={sectionHeading}>Clearance Issues</h3>
+                {issueCount === 0 ? (
+                  <div style={successMessage}>
+                    🎉 No clearance issues in this layout!
+                  </div>
+                ) : (
+                  analysis.violations.map((v) => (
+                    <div
+                      key={v.id}
+                      style={{
+                        ...violationCard,
+                        borderLeftColor: v.classification === 'RED' ? t.attentionFg : t.tightFg,
+                      }}
+                      onClick={() => setSelectedId(v.furnitureId)}
+                    >
+                      <div style={{ display: 'flex', justifySelf: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 700, color: t.ink, fontSize: 13 }}>{v.furnitureLabel}</span>
+                        <span style={{
+                          ...badgeStyle,
+                          background: v.classification === 'RED' ? t.attentionBg : t.tightBg,
+                          color: v.classification === 'RED' ? t.attentionFg : t.tightFg,
+                        }}>
+                          {v.ruleCode}
+                        </span>
+                      </div>
+                      <p style={{ margin: '4px 0', fontSize: 12, color: t.inkSoft }}>
+                        {v.ruleLabel}
                       </p>
-                      {lookaheadWarnings.map((w, i) => (
-                        <p key={i} style={{ margin: '2px 0', fontSize: 12, color: t.attentionFg }}>• {w}</p>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                      <div style={metricsRow}>
+                        <span>Gap: <strong>{v.measuredCm}cm</strong></span>
+                        <span>Required: <strong>{v.requiredCm}cm</strong></span>
+                      </div>
+                    </div>
+                  ))
+                )}
 
-          {/* TAB: Room quality checklist */}
-          {activeTab === 'checklist' && (
-            <div style={scrollList}>
-              {[
-                { label: '🚶 Walking Paths', codes: ['L1', 'L3', 'L4'] },
-                { label: '🏢 Wall Clearance', codes: ['D1', 'D2', 'D3'] },
-                { label: '🍽️ Dining Space', codes: ['D4', 'D5'] },
-                { label: '📺 TV Distance', codes: ['L2', 'L5'] },
-              ].map(({ label, codes }) => {
-                const hasIssue = analysis.violations.some((v) => codes.includes(v.ruleCode));
-                return (
-                  <div key={label} style={checkRow}>
-                    <span style={{ fontSize: 14, color: t.ink }}>{label}</span>
-                    <span style={{
-                      ...badge,
-                      background: hasIssue ? t.tightBg : t.comfortBg,
-                      color: hasIssue ? t.tightFg : t.comfortFg,
-                    }}>
-                      {hasIssue ? 'Needs Work' : 'Good'}
-                    </span>
+                {/* Live Lookahead Simulation */}
+                {selectedItem && ghostItem && (
+                  <div style={lookaheadCard}>
+                    <div style={{ fontWeight: 700, fontSize: 11, color: t.brand, marginBottom: 4 }}>
+                      WHOLE-ROOM VALIDATION
+                    </div>
+                    {activeViolation ? (
+                      <p style={{ margin: 0, fontSize: 12, color: t.inkSoft }}>
+                        Moving {selectedItem.label} to its recommended position improves wall clearance. Checking room boundaries...
+                      </p>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: 12, color: t.comfortFg, fontWeight: 600 }}>
+                        ✅ {selectedItem.label} is fully clearance compliant.
+                      </p>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
+                )}
+              </div>
+            )}
+
+            {/* TAB: Walkways circulation */}
+            {activeTab === 'walkways' && (
+              <div style={scrollContainer}>
+                <h3 style={sectionHeading}>Circulation Walkways</h3>
+                <p style={{ fontSize: 12, color: t.inkSoft, margin: '0 0 12px' }}>
+                  Walkways connect room zones and must remain clear for safety and accessibility.
+                </p>
+                {walkwayStatuses.map((w) => {
+                  const isRed = w.status === 'RED';
+                  const isYellow = w.status === 'YELLOW';
+                  return (
+                    <div
+                      key={w.id}
+                      style={{
+                        ...listItemStyle(false),
+                        borderLeftColor: isRed ? t.attentionFg : isYellow ? t.tightFg : t.comfortFg,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: t.ink }}>{w.label}</div>
+                        <div style={{ fontSize: 11, color: t.inkSoft, marginTop: 2 }}>
+                          Clearance: <strong>{w.clearanceCm} cm</strong> (Target: ≥91cm)
+                        </div>
+                      </div>
+                      <span style={{
+                        ...badgeStyle,
+                        background: isRed ? t.attentionBg : isYellow ? t.tightBg : t.comfortBg,
+                        color: isRed ? t.attentionFg : isYellow ? t.tightFg : t.comfortFg,
+                      }}>
+                        {isRed ? 'Blocked' : isYellow ? 'Tight' : 'Clear'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* TAB: Checklist */}
+            {activeTab === 'checklist' && (
+              <div style={scrollContainer}>
+                <h3 style={sectionHeading}>Room Clearance Checklist</h3>
+                {[
+                  { label: '🚶 Walking Paths', codes: ['L1', 'L3', 'L4'] },
+                  { label: '🏢 Wall Clearances', codes: ['D1', 'D2', 'D3'] },
+                  { label: '🍽️ Dining Areas', codes: ['D4', 'D5'] },
+                  { label: '📺 TV Clearances', codes: ['L2', 'L5'] },
+                ].map(({ label, codes }) => {
+                  const hasIssue = analysis.violations.some((v) => codes.includes(v.ruleCode));
+                  return (
+                    <div key={label} style={checkRow}>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: t.ink }}>{label}</span>
+                      <span style={{
+                        ...badgeStyle,
+                        background: hasIssue ? t.tightBg : t.comfortBg,
+                        color: hasIssue ? t.tightFg : t.comfortFg,
+                      }}>
+                        {hasIssue ? 'Needs Work' : 'Good'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
 
-// ─── STYLES — MOBILE-FIRST ──────────────────────────────────────────────────
+// ─── STYLES — DIGITAL TWIN RESPONSIVE ───────────────────────────────────────
 
 const shell: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   height: '100dvh',
   width: '100%',
-  background: t.ground,
+  background: '#F8FAFC',
   fontFamily: "'Inter', system-ui, sans-serif",
   overflow: 'hidden',
 };
@@ -490,10 +563,11 @@ const shell: CSSProperties = {
 const header: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 10,
-  padding: '12px 16px',
-  background: t.surface,
-  borderBottom: `1px solid ${t.line}`,
+  gap: 12,
+  padding: '12px 20px',
+  background: '#FFFFFF',
+  borderBottom: '1px solid #E2E8F0',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
   flexShrink: 0,
 };
 
@@ -504,9 +578,7 @@ const backBtn: CSSProperties = {
   fontSize: 18,
   fontWeight: 700,
   cursor: 'pointer',
-  padding: '4px 8px',
-  minWidth: 36,
-  minHeight: 36,
+  padding: '6px 10px',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -514,7 +586,7 @@ const backBtn: CSSProperties = {
 
 const finishBtn: CSSProperties = {
   background: t.brand,
-  color: '#fff',
+  color: '#FFFFFF',
   border: 'none',
   padding: '8px 16px',
   borderRadius: radius.sm,
@@ -523,52 +595,85 @@ const finishBtn: CSSProperties = {
   cursor: 'pointer',
 };
 
+const workspaceLayout: CSSProperties = {
+  display: 'flex',
+  flex: 1,
+  flexDirection: 'row',
+  height: 'calc(100vh - 60px)',
+  overflow: 'hidden',
+  flexWrap: 'wrap', // wraps on mobile screens
+};
+
+const planPanel: CSSProperties = {
+  flex: '3 1 500px', // takes 75% width on desktop
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '16px 20px',
+  overflow: 'hidden',
+  height: '100%',
+  position: 'relative',
+};
+
+const planContainer: CSSProperties = {
+  flex: 1,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minHeight: 0,
+  position: 'relative',
+};
+
 const pillRow: CSSProperties = {
   display: 'flex',
   gap: 8,
-  padding: '8px 16px',
-  background: t.surface,
-  flexShrink: 0,
-  overflowX: 'auto',
+  marginBottom: 12,
+  flexWrap: 'wrap',
 };
 
 const pill = (bg: string, fg: string): CSSProperties => ({
   fontSize: 11,
   fontWeight: 700,
   padding: '4px 10px',
-  borderRadius: 20,
+  borderRadius: '20px',
   background: bg,
   color: fg,
-  whiteSpace: 'nowrap',
 });
 
-const planSection: CSSProperties = {
-  flex: 1,
-  minHeight: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '12px 16px 0',
-  overflow: 'hidden',
+const toastBanner: CSSProperties = {
+  position: 'absolute',
+  top: 50,
+  left: '50%',
+  transform: 'translateX(-50%)',
+  background: '#DC2626',
+  color: '#FFFFFF',
+  padding: '8px 16px',
+  borderRadius: '20px',
+  fontSize: 12,
+  fontWeight: 700,
+  boxShadow: '0 4px 15px rgba(220, 38, 38, 0.25)',
+  animation: 'fadeIn 0.2s ease',
+  pointerEvents: 'none',
+  zIndex: 10,
 };
 
-const feedbackText: CSSProperties = {
-  margin: '8px 0 0',
+const controlToolbar: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  paddingTop: 12,
+  borderTop: '1px solid #E2E8F0',
+  marginTop: 12,
+  flexShrink: 0,
+};
+
+const feedbackHint: CSSProperties = {
   fontSize: 13,
   color: t.inkSoft,
-  textAlign: 'center',
-};
-
-const actionRow: CSSProperties = {
-  display: 'flex',
-  gap: 8,
-  padding: '8px 0 4px',
 };
 
 const actionBtn: CSSProperties = {
-  background: t.surface,
-  border: `1px solid ${t.line}`,
+  background: '#FFFFFF',
+  border: '1px solid #CBD5E1',
   color: t.brand,
   padding: '8px 16px',
   borderRadius: radius.sm,
@@ -577,85 +682,124 @@ const actionBtn: CSSProperties = {
   cursor: 'pointer',
 };
 
-const drawer: CSSProperties = {
-  background: t.surface,
-  borderTop: `1px solid ${t.line}`,
-  borderRadius: '16px 16px 0 0',
-  boxShadow: '0 -2px 12px rgba(0,0,0,0.06)',
-  display: 'flex',
-  flexDirection: 'column',
-  maxHeight: '40vh',
-  flexShrink: 0,
+const secBtn: CSSProperties = {
+  background: 'none',
+  border: '1px solid transparent',
+  color: t.inkSoft,
+  padding: '8px 12px',
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: 'pointer',
 };
 
-const tabBar: CSSProperties = {
+const sideDrawer: CSSProperties = {
+  flex: '1 1 300px', // takes 25% width on desktop
+  background: '#FFFFFF',
+  borderLeft: '1px solid #E2E8F0',
+  boxShadow: '-2px 0 8px rgba(0,0,0,0.01)',
   display: 'flex',
-  borderBottom: `1px solid ${t.line}`,
+  flexDirection: 'column',
+  height: '100%',
+};
+
+const tabHeader: CSSProperties = {
+  display: 'flex',
+  borderBottom: '1px solid #E2E8F0',
   flexShrink: 0,
+  overflowX: 'auto',
 };
 
 const tabBtn = (active: boolean): CSSProperties => ({
   flex: 1,
-  padding: '10px 0',
+  padding: '12px 8px',
   border: 'none',
   background: 'none',
   fontFamily: "'Inter', system-ui, sans-serif",
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 700,
   color: active ? t.brand : t.inkMute,
-  borderBottom: active ? `2px solid ${t.brand}` : '2px solid transparent',
+  borderBottom: active ? `3px solid ${t.brand}` : '3px solid transparent',
   cursor: 'pointer',
+  whiteSpace: 'nowrap',
 });
 
-const tabContent: CSSProperties = {
+const drawerBody: CSSProperties = {
   flex: 1,
   overflow: 'hidden',
 };
 
-const scrollList: CSSProperties = {
+const scrollContainer: CSSProperties = {
   overflowY: 'auto',
-  padding: '8px 16px 16px',
+  padding: '16px',
   display: 'flex',
   flexDirection: 'column',
-  gap: 8,
-  maxHeight: 'calc(40vh - 48px)',
+  gap: 10,
+  height: '100%',
 };
 
-const listItem = (sel: boolean): CSSProperties => ({
+const sectionHeading: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 800,
+  color: t.inkMute,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  margin: '0 0 4px',
+};
+
+const listItemStyle = (sel: boolean): CSSProperties => ({
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
   padding: '10px 12px',
   borderRadius: radius.sm,
-  background: sel ? t.brandTint : t.ground,
-  border: `1px solid ${sel ? t.brand : t.line}`,
+  background: sel ? t.brandTint : '#F8FAFC',
+  border: `1px solid ${sel ? t.brand : '#E2E8F0'}`,
   borderLeft: '4px solid',
   cursor: 'pointer',
   transition: 'all 0.15s ease',
 });
 
-const badge: CSSProperties = {
-  fontSize: 11,
+const badgeStyle: CSSProperties = {
+  fontSize: 10,
   fontWeight: 700,
   padding: '3px 8px',
-  borderRadius: 20,
+  borderRadius: '20px',
+  whiteSpace: 'nowrap',
 };
 
 const violationCard: CSSProperties = {
   padding: '10px 12px',
   borderRadius: radius.sm,
-  background: t.ground,
-  border: `1px solid ${t.line}`,
+  background: '#F8FAFC',
+  border: '1px solid #E2E8F0',
   borderLeft: '4px solid',
   cursor: 'pointer',
 };
 
 const metricsRow: CSSProperties = {
   display: 'flex',
-  gap: 16,
-  marginTop: 6,
-  fontSize: 12,
+  gap: 12,
+  marginTop: 4,
+  fontSize: 11,
   color: t.inkSoft,
+};
+
+const lookaheadCard: CSSProperties = {
+  marginTop: 8,
+  padding: '12px',
+  borderRadius: radius.sm,
+  background: t.comfortBg,
+  border: `1px solid ${t.comfortFg}`,
+};
+
+const successMessage: CSSProperties = {
+  textAlign: 'center',
+  color: t.comfortFg,
+  fontWeight: 600,
+  padding: '24px 12px',
+  background: t.comfortBg,
+  border: `1px solid ${t.comfortFg}`,
+  borderRadius: radius.sm,
 };
 
 const checkRow: CSSProperties = {
@@ -664,14 +808,6 @@ const checkRow: CSSProperties = {
   alignItems: 'center',
   padding: '10px 12px',
   borderRadius: radius.sm,
-  background: t.ground,
-  border: `1px solid ${t.line}`,
+  background: '#F8FAFC',
+  border: '1px solid #E2E8F0',
 };
-
-const lookaheadCard = (warn: boolean): CSSProperties => ({
-  marginTop: 4,
-  padding: '10px 12px',
-  borderRadius: radius.sm,
-  background: warn ? t.attentionBg : t.comfortBg,
-  border: `1px solid ${warn ? t.attentionFg : t.comfortFg}`,
-});

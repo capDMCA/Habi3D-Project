@@ -1,4 +1,5 @@
 import type { FurnitureItem, Violation } from '../types';
+import { getRoomForCategory, CONDO_ROOMS } from '../data/condoLayout';
 
 /**
  * Plain-language description of a clearance finding, for a StatusRow. Names
@@ -7,11 +8,17 @@ import type { FurnitureItem, Violation } from '../types';
  */
 export function describeFinding(v: Violation, items: FurnitureItem[]): string {
   const a = v.furnitureLabel;
+  const item = items.find((it) => it.id === v.furnitureId);
+  const roomZoneId = item?.roomId || (item ? getRoomForCategory(item.category, item.label) : 'living');
+  const roomLabel = CONDO_ROOMS.find((r) => r.id === roomZoneId)?.label ?? 'Living Room';
+
   if (!v.itemBId || v.itemBId === 'wall') {
-    return v.wallSide ? `Between your ${a} and the ${v.wallSide} wall` : `Around your ${a}`;
+    return v.wallSide 
+      ? `Between your ${a} and the ${v.wallSide} wall in the ${roomLabel}` 
+      : `Around your ${a} in the ${roomLabel}`;
   }
   const b = items.find((it) => it.id === v.itemBId)?.label ?? 'another piece';
-  return `Between your ${a} and ${b}`;
+  return `Between your ${a} and ${b} in the ${roomLabel}`;
 }
 
 /**
@@ -44,12 +51,16 @@ const RULE_CONSEQUENCE: Record<string, string> = {
  */
 export function findingReason(v: Violation, items: FurnitureItem[]): string {
   const a = v.furnitureLabel;
+  const item = items.find((it) => it.id === v.furnitureId);
+  const roomZoneId = item?.roomId || (item ? getRoomForCategory(item.category, item.label) : 'living');
+  const roomLabel = CONDO_ROOMS.find((r) => r.id === roomZoneId)?.label ?? 'Living Room';
+
   const where =
     !v.itemBId || v.itemBId === 'wall'
       ? v.wallSide
-        ? `between your ${a} and the ${v.wallSide} wall`
-        : `around your ${a}`
-      : `between your ${a} and ${items.find((it) => it.id === v.itemBId)?.label ?? 'another piece'}`;
+        ? `between your ${a} and the ${v.wallSide} wall in the ${roomLabel}`
+        : `around your ${a} in the ${roomLabel}`
+      : `between your ${a} and ${items.find((it) => it.id === v.itemBId)?.label ?? 'another piece'} in the ${roomLabel}`;
   const consequence = RULE_CONSEQUENCE[v.ruleCode] ?? 'is tighter than recommended';
-  return `The space ${where} ${consequence}.`;
+  return `Improve circulation inside the ${roomLabel}. The space ${where} ${consequence}.`;
 }
