@@ -59,11 +59,9 @@ export default function CondoFloorPlan({
     return selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
   }, [selectedItem]);
 
+  const draggedItemIdRef = useRef<string | null>(null);
+
   // Handlers for pointer gestures.
-  // NOTE: onSelectItem(itemId) triggers a parent state update, so `interactive`
-  // still reflects the PREVIOUS render's props for the rest of this call — we
-  // must not gate drag-start on interactive.draggableItemId matching itemId,
-  // or the first click on any newly-selected block would never start a drag.
   function handlePointerDown(e: ReactPointerEvent<SVGRectElement>, itemId: string) {
     if (onSelectItem) {
       onSelectItem(itemId);
@@ -72,21 +70,26 @@ export default function CondoFloorPlan({
 
     e.currentTarget.setPointerCapture(e.pointerId);
     draggingRef.current = true;
+    draggedItemIdRef.current = itemId;
     interactive.onDragStart(itemId);
   }
 
   function handlePointerMove(e: ReactPointerEvent<SVGRectElement>) {
-    if (!interactive || !draggingRef.current || !svgRef.current || !selectedItem) return;
+    if (!interactive || !draggingRef.current || !svgRef.current || !draggedItemIdRef.current) return;
+
+    const itemId = draggedItemIdRef.current;
+    const item = items.find((it) => it.id === itemId);
+    if (!item) return;
 
     const { xm, zm } = eventToWorldMetres(svgRef.current, e);
-    const roomZoneId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
+    const roomZoneId = item.roomId || getRoomForCategory(item.category, item.label);
     const room = CONDO_ROOMS.find((r) => r.id === roomZoneId);
 
     if (!room) return;
 
-    // Apply smart snapping first, then clamp fully inside the room zone
-    const targetSnap = snapTarget(xm, zm, selectedItem, items, null, room);
-    const clamped = clampToRoom({ ...selectedItem, posX: targetSnap.posX, posZ: targetSnap.posZ }, room);
+    // Apply smart snapping first, then clamp fully inside the room zone (no ghost box snapping)
+    const targetSnap = snapTarget(xm, zm, item, items, null, room);
+    const clamped = clampToRoom({ ...item, posX: targetSnap.posX, posZ: targetSnap.posZ }, room);
 
     interactive.onDragMove(clamped.posX, clamped.posZ);
   }
@@ -94,6 +97,7 @@ export default function CondoFloorPlan({
   function handlePointerUp(e: ReactPointerEvent<SVGRectElement>) {
     if (!interactive || !draggingRef.current) return;
     draggingRef.current = false;
+    draggedItemIdRef.current = null;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -192,7 +196,7 @@ export default function CondoFloorPlan({
           );
         })}
 
-        {/* 3. FURNITURE ITEMS */}
+        {/* 4. FURNITURE ITEMS */}
         {rects.map((r) => {
           const isSelected = highlightItemId === r.id;
           const isDraggable = interactive?.draggableItemId === r.id;
@@ -248,9 +252,9 @@ export default function CondoFloorPlan({
                   transition: 'stroke-width 0.15s ease, fill 0.15s ease, stroke 0.15s ease, filter 0.15s ease',
                 }}
                 onPointerDown={(e) => handlePointerDown(e, r.id)}
-                onPointerMove={isDraggable ? handlePointerMove : undefined}
-                onPointerUp={isDraggable ? handlePointerUp : undefined}
-                onPointerCancel={isDraggable ? handlePointerUp : undefined}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
               />
               <text
                 x={r.xCm + r.wCm / 2}

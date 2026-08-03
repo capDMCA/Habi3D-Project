@@ -10,7 +10,7 @@ import CondoFloorPlan from '../components/CondoFloorPlan';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import { isFeasible, withMovedItem, withRotatedItem, clampToRoom } from '../components/floorPlanDrag';
 import { computeWalkways } from '../engine/walkways';
-import type { FurnitureItem, Violation } from '../types';
+import type { FurnitureItem } from '../types';
 
 // ─── Normalization & Initialization ─────────────────────────────────────────
 function initializeRoomAssignments(items: FurnitureItem[]): FurnitureItem[] {
@@ -52,31 +52,10 @@ function normalizeFurniturePositions(items: FurnitureItem[]): FurnitureItem[] {
   });
 }
 
-// ─── Ghost Position Generator ───────────────────────────────────────────────
-function getGhostItem(item: FurnitureItem, v: Violation | undefined): FurnitureItem | null {
-  if (!v || v.resolved) return null;
-  const dir = v.fixDirectionLabel.toLowerCase();
-  const d = v.fixDirectionCm / 100;
-  let dx = 0, dz = 0;
-  if (dir.includes('west')) dx = -d;
-  else if (dir.includes('east')) dx = d;
-  else if (dir.includes('north')) dz = -d;
-  else if (dir.includes('south')) dz = d;
 
-  const ghost = { ...item, posX: item.posX + dx, posZ: item.posZ + dz };
-  
-  // Make sure ghost doesn't escape the room boundary
-  const roomId = item.roomId || getRoomForCategory(item.category, item.label);
-  const room = CONDO_ROOMS.find((r) => r.id === roomId);
-  if (room) {
-    const clamped = clampToRoom(ghost, room);
-    return { ...ghost, posX: clamped.posX, posZ: clamped.posZ };
-  }
-  return ghost;
-}
 
 // ─── Tab enum ───────────────────────────────────────────────────────────────
-type Tab = 'plan' | 'issues' | 'walkways' | 'checklist';
+type Tab = 'items' | 'recommendations';
 
 export default function WorkspaceScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
@@ -91,7 +70,7 @@ export default function WorkspaceScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [infeasible, setInfeasible] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('plan');
+  const [activeTab, setActiveTab] = useState<Tab>('items');
   const [toast, setToast] = useState<string | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
 
@@ -171,15 +150,7 @@ export default function WorkspaceScreen() {
     setSelectedId(selectedItem.id);
   }
 
-  const activeViolation = useMemo(() => {
-    if (!selectedItem) return undefined;
-    return analysis.violations.find((v) => v.furnitureId === selectedItem.id);
-  }, [selectedItem, analysis.violations]);
 
-  const ghostItem = useMemo(
-    () => (selectedItem ? getGhostItem(selectedItem, activeViolation) : null),
-    [selectedItem, activeViolation],
-  );
 
   const selectedRoomLabel = useMemo(() => {
     if (!selectedItem) return '';
@@ -391,24 +362,25 @@ export default function WorkspaceScreen() {
         {/* RIGHT COLUMN: SANDBOX ASSISTANT & DETAIL VIEW (18% WIDTH ON DESKTOP) */}
         <section style={sideDrawer}>
           <div style={tabHeader}>
-            {(['plan', 'issues', 'walkways', 'checklist'] as Tab[]).map((tab) => (
-              <button
-                key={tab}
-                className="wksp-tab-btn"
-                style={tabBtn(activeTab === tab)}
-                onClick={() => setActiveTab(tab)}
-              >
-                {tab === 'plan' ? 'Items'
-                  : tab === 'issues' ? `Issues (${issueCount})`
-                  : tab === 'walkways' ? `Walkways`
-                  : 'Checklist'}
-              </button>
-            ))}
+            <button
+              className="wksp-tab-btn"
+              style={tabBtn(activeTab === 'items')}
+              onClick={() => setActiveTab('items')}
+            >
+              Items
+            </button>
+            <button
+              className="wksp-tab-btn"
+              style={tabBtn(activeTab === 'recommendations')}
+              onClick={() => setActiveTab('recommendations')}
+            >
+              Recommendations
+            </button>
           </div>
 
           <div style={drawerBody}>
             {/* TAB: Items list */}
-            {activeTab === 'plan' && (
+            {activeTab === 'items' && (
               <div style={scrollContainer}>
                 <h3 style={sectionHeading}>Furniture List</h3>
                 {preview.map((item) => {
@@ -442,13 +414,14 @@ export default function WorkspaceScreen() {
               </div>
             )}
 
-            {/* TAB: Issues list */}
-            {activeTab === 'issues' && (
+            {/* TAB: Recommendations list (All in one: Actions, Walkways, Checklist) */}
+            {activeTab === 'recommendations' && (
               <div style={scrollContainer}>
-                <h3 style={sectionHeading}>Clearance Issues</h3>
+                {/* 1. Clearance Recommendations */}
+                <h3 style={sectionHeading}>Suggested Actions</h3>
                 {issueCount === 0 ? (
                   <div style={successMessage}>
-                    No clearance issues in this layout!
+                    All clearances passed!
                   </div>
                 ) : (
                   analysis.violations.map((v) => (
@@ -471,98 +444,73 @@ export default function WorkspaceScreen() {
                           {v.ruleCode}
                         </span>
                       </div>
-                      <p style={{ margin: '4px 0', fontSize: 12, color: t.inkSoft }}>
-                        {v.ruleLabel}
+                      <p style={{ margin: '4px 0', fontSize: 13, color: t.attentionFg, fontWeight: 700 }}>
+                        Move {v.furnitureLabel} {v.fixDirectionLabel} by {v.fixDirectionCm}cm
                       </p>
-                      <div style={metricsRow}>
-                        <span>Gap: <strong>{v.measuredCm}cm</strong></span>
-                        <span>Required: <strong>{v.requiredCm}cm</strong></span>
-                      </div>
+                      <p style={{ margin: '2px 0 0', fontSize: 11, color: t.inkSoft }}>
+                        {v.ruleLabel} ({v.measuredCm}cm measured, required: {v.requiredCm}cm)
+                      </p>
                     </div>
                   ))
                 )}
 
-                {/* Live Lookahead Simulation */}
-                {selectedItem && ghostItem && (
-                  <div style={lookaheadCard}>
-                    <div style={{ fontWeight: 700, fontSize: 11, color: t.brand, marginBottom: 4 }}>
-                      WHOLE-ROOM VALIDATION
-                    </div>
-                    {activeViolation ? (
-                      <p style={{ margin: 0, fontSize: 12, color: t.inkSoft }}>
-                        Moving {selectedItem.label} to its recommended position improves wall clearance. Checking room boundaries...
-                      </p>
-                    ) : (
-                      <p style={{ margin: 0, fontSize: 12, color: t.comfortFg, fontWeight: 600 }}>
-                        Clear: {selectedItem.label} is fully clearance compliant.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB: Walkways circulation */}
-            {activeTab === 'walkways' && (
-              <div style={scrollContainer}>
-                <h3 style={sectionHeading}>Circulation Walkways</h3>
-                <p style={{ fontSize: 12, color: t.inkSoft, margin: '0 0 12px' }}>
-                  Walkways connect room zones and must remain clear for safety and accessibility.
-                </p>
-                {walkwayStatuses.map((w) => {
-                  const isRed = w.status === 'RED';
-                  const isYellow = w.status === 'YELLOW';
-                  return (
-                    <div
-                      key={w.id}
-                      style={{
-                        ...listItemStyle(false),
-                        borderLeftColor: isRed ? t.attentionFg : isYellow ? t.tightFg : t.comfortFg,
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 13, color: t.ink }}>{w.label}</div>
-                        <div style={{ fontSize: 11, color: t.inkSoft, marginTop: 2 }}>
-                          Clearance: <strong>{w.clearanceCm} cm</strong> (Target: ≥91cm)
+                {/* 2. Walkways access */}
+                <h3 style={{ ...sectionHeading, marginTop: 20 }}>Walkway Access</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                  {walkwayStatuses.map((w) => {
+                    const isRed = w.status === 'RED';
+                    const isYellow = w.status === 'YELLOW';
+                    return (
+                      <div
+                        key={w.id}
+                        style={{
+                          ...checkRow,
+                          padding: '10px 12px',
+                          borderLeft: `4px solid ${isRed ? t.attentionFg : isYellow ? t.tightFg : t.comfortFg}`,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: t.ink }}>{w.label}</div>
+                          <div style={{ fontSize: 11, color: t.inkSoft, marginTop: 2 }}>
+                            {w.clearanceCm} cm (Target: ≥91cm)
+                          </div>
                         </div>
+                        <span style={{
+                          ...badgeStyle,
+                          background: isRed ? t.attentionBg : isYellow ? t.tightBg : t.comfortBg,
+                          color: isRed ? t.attentionFg : isYellow ? t.tightFg : t.comfortFg,
+                        }}>
+                          {isRed ? 'Blocked' : isYellow ? 'Tight' : 'Clear'}
+                        </span>
                       </div>
-                      <span style={{
-                        ...badgeStyle,
-                        background: isRed ? t.attentionBg : isYellow ? t.tightBg : t.comfortBg,
-                        color: isRed ? t.attentionFg : isYellow ? t.tightFg : t.comfortFg,
-                      }}>
-                        {isRed ? 'Blocked' : isYellow ? 'Tight' : 'Clear'}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
 
-            {/* TAB: Checklist */}
-            {activeTab === 'checklist' && (
-              <div style={scrollContainer}>
-                <h3 style={sectionHeading}>Room Clearance Checklist</h3>
-                {[
-                  { label: 'Walking Paths', codes: ['L1', 'L3', 'L4'] },
-                  { label: 'Wall Clearances', codes: ['D1', 'D2', 'D3'] },
-                  { label: 'Dining Areas', codes: ['D4', 'D5'] },
-                  { label: 'TV Clearances', codes: ['L2', 'L5'] },
-                ].map(({ label, codes }) => {
-                  const hasIssue = analysis.violations.some((v) => codes.includes(v.ruleCode));
-                  return (
-                    <div key={label} style={checkRow}>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: t.ink }}>{label}</span>
-                      <span style={{
-                        ...badgeStyle,
-                        background: hasIssue ? t.tightBg : t.comfortBg,
-                        color: hasIssue ? t.tightFg : t.comfortFg,
-                      }}>
-                        {hasIssue ? 'Needs Work' : 'Good'}
-                      </span>
-                    </div>
-                  );
-                })}
+                {/* 3. Room quality checklist */}
+                <h3 style={{ ...sectionHeading, marginTop: 20 }}>Room Checklist</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {[
+                    { label: 'Walking Paths', codes: ['L1', 'L3', 'L4'] },
+                    { label: 'Wall Clearances', codes: ['D1', 'D2', 'D3'] },
+                    { label: 'Dining Areas', codes: ['D4', 'D5'] },
+                    { label: 'TV Clearances', codes: ['L2', 'L5'] },
+                  ].map(({ label, codes }) => {
+                    const hasIssue = analysis.violations.some((v) => codes.includes(v.ruleCode));
+                    return (
+                      <div key={label} style={checkRow}>
+                        <span style={{ fontSize: 13, fontWeight: 500, color: t.ink }}>{label}</span>
+                        <span style={{
+                          ...badgeStyle,
+                          background: hasIssue ? t.tightBg : t.comfortBg,
+                          color: hasIssue ? t.tightFg : t.comfortFg,
+                        }}>
+                          {hasIssue ? 'Needs Work' : 'Good'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -805,22 +753,7 @@ const violationCard: CSSProperties = {
   cursor: 'pointer',
 };
 
-const metricsRow: CSSProperties = {
-  display: 'flex',
-  gap: 16,
-  marginTop: 6,
-  fontSize: 13,
-  color: t.inkSoft,
-};
 
-const lookaheadCard: CSSProperties = {
-  marginTop: 10,
-  padding: '14px',
-  borderRadius: radius.sm,
-  background: t.comfortBg,
-  border: `1px solid ${t.comfortFg}`,
-  fontSize: 14,
-};
 
 const successMessage: CSSProperties = {
   textAlign: 'center',
