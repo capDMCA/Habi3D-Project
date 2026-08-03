@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import CondoFloorPlan from '../components/CondoFloorPlan';
+import { color as t, radius } from '../components/designTokens';
+import { runClearanceAnalysis } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
-import { runClearanceAnalysis } from '../engine/clearance';
-import { statusMeta } from '../components/statusVocabulary';
-import { color as t, radius } from '../components/designTokens';
-import CondoFloorPlan from '../components/CondoFloorPlan';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
-import { isFeasible, withMovedItem, withRotatedItem, clampToRoom } from '../components/floorPlanDrag';
+import { isFeasible, withMovedItem, withRotatedItem } from '../components/floorPlanDrag';
 import { computeWalkways } from '../engine/walkways';
 import type { FurnitureItem } from '../types';
 
 // ─── Normalization & Initialization ─────────────────────────────────────────
 function initializeRoomAssignments(items: FurnitureItem[]): FurnitureItem[] {
   return items.map((item) => {
-    if (!item.roomId) {
-      return { ...item, roomId: getRoomForCategory(item.category, item.label) };
-    }
-    return item;
+    if (item.roomId) return item;
+    return {
+      ...item,
+      roomId: getRoomForCategory(item.category, item.label),
+    };
   });
 }
 
@@ -28,20 +28,14 @@ function normalizeFurniturePositions(items: FurnitureItem[]): FurnitureItem[] {
     const room = CONDO_ROOMS.find((r) => r.id === roomId);
     if (!room) return item;
 
-    // Check if item's center is within the room boundary (with a tolerance)
-    const minX = room.x / 100;
-    const maxX = (room.x + room.width) / 100;
-    const minZ = room.y / 100;
-    const maxZ = (room.y + room.height) / 100;
+    // Check if the current position is already inside the room
+    const rxCm = item.posX * 100;
+    const rzCm = item.posZ * 100;
+    const padding = 15; // padding in cm
+    const inX = rxCm >= room.x + padding && rxCm <= room.x + room.width - padding;
+    const inZ = rzCm >= room.y + padding && rzCm <= room.y + room.height - padding;
 
-    const insideX = item.posX >= minX && item.posX <= maxX;
-    const insideZ = item.posZ >= minZ && item.posZ <= maxZ;
-
-    if (insideX && insideZ) {
-      // Already inside, just clamp to be safe
-      const clamped = clampToRoom(item, room);
-      return { ...item, posX: clamped.posX, posZ: clamped.posZ };
-    }
+    if (inX && inZ) return item;
 
     // Otherwise, place it in the center of its assigned room
     return {
@@ -51,8 +45,6 @@ function normalizeFurniturePositions(items: FurnitureItem[]): FurnitureItem[] {
     };
   });
 }
-
-
 
 // ─── Tab enum ───────────────────────────────────────────────────────────────
 type Tab = 'items' | 'recommendations';
@@ -73,6 +65,9 @@ export default function WorkspaceScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('items');
   const [toast, setToast] = useState<string | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
+
+  // Room Zoom Focus State
+  const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
 
   const [preview, setPreview] = useState<FurnitureItem[]>(items);
   const previewRef = useRef<FurnitureItem[]>(items);
@@ -150,13 +145,21 @@ export default function WorkspaceScreen() {
     setSelectedId(selectedItem.id);
   }
 
-
-
   const selectedRoomLabel = useMemo(() => {
     if (!selectedItem) return '';
     const roomId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
     return CONDO_ROOMS.find((r) => r.id === roomId)?.label ?? 'Living Room';
   }, [selectedItem]);
+
+  // Select Item and Automatically zoom to its Room Zone
+  const handleSelectItem = useCallback((id: string) => {
+    setSelectedId(id);
+    const item = preview.find((it) => it.id === id);
+    if (item) {
+      const roomId = item.roomId || getRoomForCategory(item.category, item.label);
+      setFocusedRoomId(roomId);
+    }
+  }, [preview]);
 
   // ── Status map ────────────────────────────────────────────────────────────
   const itemStatuses = useMemo(() => {
@@ -179,68 +182,44 @@ export default function WorkspaceScreen() {
     setInfeasible(false);
   }, [preview]);
 
+  // 60FPS Drag move - bypass heavy validation and analysis checks
   const handleDragMove = useCallback((xm: number, zm: number) => {
     if (!selectedItem) return;
     const next = withMovedItem(preview, selectedItem.id, xm, zm);
-    const ok = isFeasible(next, roomWidthCm, roomLengthCm);
-
-    const roomZoneId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
-    const room = CONDO_ROOMS.find((r) => r.id === roomZoneId);
-
-    if (room) {
-      const halfL = (selectedItem.lengthCm / 100) / 2;
-      const halfW = (selectedItem.widthCm / 100) / 2;
-
-      let roomMinX = room.x / 100;
-      let roomMaxX = (room.x + room.width) / 100;
-      let roomMinZ = room.y / 100;
-      let roomMaxZ = (room.y + room.height) / 100;
-
-      if (selectedItem.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
-        roomMinX = 0;
-        roomMaxX = 2.60;
-        roomMinZ = 3.40;
-        roomMaxZ = 8.80;
-      }
-
-      const exceedsX = xm - halfL <= roomMinX || xm + halfL >= roomMaxX;
-      const exceedsZ = zm - halfW <= roomMinZ || zm + halfW >= roomMaxZ;
-
-      if (exceedsX || exceedsZ) {
-        const roomName = selectedItem.category === 'cabinet' ? 'Living Room or Dining Area' : selectedRoomLabel;
-        showToast(`${selectedItem.label} belongs inside the ${roomName}.`);
-      }
-    }
-
     setPreview(next);
     previewRef.current = next;
-    setInfeasible(!ok);
-    okRef.current = ok;
-    if (ok) lastOkRef.current = { x: xm, z: zm };
-  }, [preview, selectedItem, roomWidthCm, roomLengthCm, selectedRoomLabel, showToast]);
+  }, [preview, selectedItem]);
 
+  // Run overlap/clearance engine checks on release (PointerUp)
   const handleDragEnd = useCallback(() => {
     if (!selectedItem) return;
-    let settled = previewRef.current;
+    const settled = previewRef.current;
 
-    // Snap back if infeasible
-    if (!okRef.current && lastOkRef.current) {
-      settled = withMovedItem(settled, selectedItem.id, lastOkRef.current.x, lastOkRef.current.z);
-      previewRef.current = settled;
-      setPreview(settled);
+    // Run feasibility checks on release
+    const ok = isFeasible(settled, roomWidthCm, roomLengthCm);
+
+    if (!ok && lastOkRef.current) {
+      // Revert with spring animation to last feasible position if collision detected
+      const reverted = withMovedItem(settled, selectedItem.id, lastOkRef.current.x, lastOkRef.current.z);
+      previewRef.current = reverted;
+      setPreview(reverted);
       setInfeasible(false);
       okRef.current = true;
+      showToast(`${selectedItem.label} overlaps with walls or other furniture.`);
+    } else {
+      // Commit the updated coordinates to store
+      const s = settled.find((it) => it.id === selectedItem.id);
+      if (s) {
+        lastOkRef.current = { x: s.posX, z: s.posZ };
+        updatePosition(s.id, s.posX, s.posZ, s.rotationY);
+        
+        // Re-run the clearance engine and recommendations immediately on release
+        const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
+        refreshViolations(fresh.violations);
+        setSpaceScoreAfter(fresh.spaceScoreBefore);
+      }
     }
-
-    // Update state store
-    const s = settled.find((it) => it.id === selectedItem.id);
-    if (s) {
-      updatePosition(s.id, s.posX, s.posZ, s.rotationY);
-      const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
-      refreshViolations(fresh.violations);
-      setSpaceScoreAfter(fresh.spaceScoreBefore);
-    }
-  }, [selectedItem, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter]);
+  }, [selectedItem, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter, showToast]);
 
   const handleRotate = useCallback(() => {
     if (!selectedItem) return;
@@ -249,11 +228,14 @@ export default function WorkspaceScreen() {
       setPreview(next);
       previewRef.current = next;
       updatePosition(selectedItem.id, selectedItem.posX, selectedItem.posZ, selectedItem.rotationY + Math.PI / 2);
+      
       const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
       refreshViolations(fresh.violations);
       setSpaceScoreAfter(fresh.spaceScoreBefore);
+    } else {
+      showToast(`${selectedItem.label} cannot rotate there (insufficient space).`);
     }
-  }, [selectedItem, preview, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter]);
+  }, [selectedItem, preview, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter, showToast]);
 
   const handleResetPosition = useCallback(() => {
     if (!selectedItem) return;
@@ -274,13 +256,31 @@ export default function WorkspaceScreen() {
   const greenCount = preview.length - redCount - yellowCount;
   const blockedWalkwaysCount = walkwayStatuses.filter((w) => w.status === 'RED').length;
 
+  const focusedRoom = useMemo(() => {
+    if (!focusedRoomId) return null;
+    return CONDO_ROOMS.find((r) => r.id === focusedRoomId) ?? null;
+  }, [focusedRoomId]);
+
   return (
     <div style={shell}>
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <header style={header}>
         <button className="wksp-icon-btn" style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
         <div style={{ flex: 1 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: t.ink }}>Mulberry Place Digital Twin</h1>
+          {focusedRoom ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 18 }}>
+              <span
+                style={{ cursor: 'pointer', color: t.brand, fontWeight: 700 }}
+                onClick={() => setFocusedRoomId(null)}
+              >
+                Mulberry Place
+              </span>
+              <span style={{ color: t.inkMute, fontWeight: 500 }}>&gt;</span>
+              <span style={{ color: t.ink, fontWeight: 850 }}>{focusedRoom.label}</span>
+            </div>
+          ) : (
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: t.ink }}>Mulberry Place Digital Twin</h1>
+          )}
           <p style={{ margin: 0, fontSize: 14, color: t.inkSoft, fontWeight: 500 }}>
             {issueCount === 0 && blockedWalkwaysCount === 0
               ? 'All rooms and walkways clear'
@@ -308,8 +308,10 @@ export default function WorkspaceScreen() {
               items={preview}
               highlightItemId={selectedItem?.id}
               itemStatuses={itemStatuses}
-              onSelectItem={setSelectedId}
+              onSelectItem={handleSelectItem}
               walkwayStatuses={walkwayStatuses}
+              focusedRoomId={focusedRoomId}
+              onFocusRoom={setFocusedRoomId}
               interactive={
                 selectedItem
                   ? {
@@ -341,7 +343,7 @@ export default function WorkspaceScreen() {
             <div style={{ display: 'flex', gap: 12 }}>
               <button
                 className="wksp-outline-btn"
-                style={actionBtn(!selectedItem)}
+                style={actionBtn}
                 onClick={handleRotate}
                 disabled={!selectedItem}
               >
@@ -349,7 +351,7 @@ export default function WorkspaceScreen() {
               </button>
               <button
                 className="wksp-outline-btn"
-                style={secBtn(!selectedItem)}
+                style={secBtn}
                 onClick={handleResetPosition}
                 disabled={!selectedItem}
               >
@@ -395,7 +397,7 @@ export default function WorkspaceScreen() {
                     <div
                       key={item.id}
                       className="wksp-list-row"
-                      onClick={() => setSelectedId(item.id)}
+                      onClick={() => handleSelectItem(item.id)}
                       style={{
                         ...listItemStyle(sel),
                         borderLeftColor: meta.color,
@@ -432,7 +434,7 @@ export default function WorkspaceScreen() {
                         ...violationCard,
                         borderLeftColor: v.classification === 'RED' ? t.attentionFg : t.tightFg,
                       }}
-                      onClick={() => setSelectedId(v.furnitureId)}
+                      onClick={() => handleSelectItem(v.furnitureId)}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: 700, color: t.ink, fontSize: 13 }}>{v.furnitureLabel}</span>
@@ -448,7 +450,7 @@ export default function WorkspaceScreen() {
                         Move {v.furnitureLabel} {v.fixDirectionLabel} by {v.fixDirectionCm}cm
                       </p>
                       <p style={{ margin: '2px 0 0', fontSize: 11, color: t.inkSoft }}>
-                        {v.ruleLabel} ({v.measuredCm}cm measured, required: {v.requiredCm}cm)
+                        Goal: resolve {v.ruleLabel} clearance issue ({v.measuredCm}cm measured, required: {v.requiredCm}cm)
                       </p>
                     </div>
                   ))
@@ -535,18 +537,16 @@ const shell: CSSProperties = {
 const header: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 12,
-  padding: '12px 20px',
+  padding: '12px 24px',
   background: '#FFFFFF',
   borderBottom: '1px solid #E2E8F0',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+  gap: 16,
   flexShrink: 0,
 };
 
 const backBtn: CSSProperties = {
   background: 'none',
   border: 'none',
-  color: t.brand,
   fontSize: 18,
   fontWeight: 700,
   cursor: 'pointer',
@@ -644,30 +644,26 @@ const feedbackHint: CSSProperties = {
   fontWeight: 500,
 };
 
-const actionBtn = (disabled: boolean): CSSProperties => ({
-  background: disabled ? '#F1F5F9' : '#FFFFFF',
-  border: `1px solid ${disabled ? '#E2E8F0' : '#CBD5E1'}`,
-  color: disabled ? t.inkMute : t.brand,
+const actionBtn: CSSProperties = {
+  background: '#FFFFFF',
+  border: '1px solid #CBD5E1',
+  color: t.brand,
   padding: '10px 20px',
   borderRadius: radius.sm,
   fontWeight: 700,
   fontSize: 16,
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  opacity: disabled ? 0.6 : 1,
-  transition: 'all 0.15s ease',
-});
+  cursor: 'pointer',
+};
 
-const secBtn = (disabled: boolean): CSSProperties => ({
+const secBtn: CSSProperties = {
   background: 'none',
   border: '1px solid transparent',
-  color: disabled ? t.inkMute : t.inkSoft,
+  color: t.inkSoft,
   padding: '10px 16px',
   fontSize: 16,
   fontWeight: 600,
-  cursor: disabled ? 'not-allowed' : 'pointer',
-  opacity: disabled ? 0.6 : 1,
-  transition: 'all 0.15s ease',
-});
+  cursor: 'pointer',
+};
 
 const sideDrawer: CSSProperties = {
   flex: '18% 1 250px', // takes 18% width on desktop
@@ -753,8 +749,6 @@ const violationCard: CSSProperties = {
   cursor: 'pointer',
 };
 
-
-
 const successMessage: CSSProperties = {
   textAlign: 'center',
   color: t.comfortFg,
@@ -776,3 +770,18 @@ const checkRow: CSSProperties = {
   border: '1px solid #E2E8F0',
   fontSize: 16,
 };
+
+// ─── Status meta helper ─────────────────────────────────────────────────────
+interface StatusMeta {
+  bg: string;
+  color: string;
+}
+
+function statusMeta(type: 'needs-attention' | 'tight' | 'comfortable'): StatusMeta {
+  if (type === 'needs-attention') {
+    return { bg: t.attentionBg, color: t.attentionFg };
+  } else if (type === 'tight') {
+    return { bg: t.tightBg, color: t.tightFg };
+  }
+  return { bg: t.comfortBg, color: t.comfortFg };
+}

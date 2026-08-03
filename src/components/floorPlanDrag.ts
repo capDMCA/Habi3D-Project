@@ -219,3 +219,151 @@ export function isFeasible(
 
   return true;
 }
+
+export interface AlignmentGuide {
+  type: 'x' | 'z';
+  coord: number;
+  originId: string;
+}
+
+/** Soft clamps coordinates to room bounds with spring-like elastic pushback. */
+export function clampToRoomSoft(item: FurnitureItem, room: RoomZone): { posX: number; posZ: number } {
+  const halfL = effectiveLengthCm(item) / 200;
+  const halfW = effectiveWidthCm(item) / 200;
+
+  let roomMinX = room.x / 100;
+  let roomMaxX = (room.x + room.width) / 100;
+  let roomMinZ = room.y / 100;
+  let roomMaxZ = (room.y + room.height) / 100;
+
+  if (item.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
+    roomMinX = 0;
+    roomMaxX = 2.60;
+    roomMinZ = 3.40;
+    roomMaxZ = 8.80;
+  }
+
+  let posX = item.posX;
+  let posZ = item.posZ;
+
+  const minAllowedX = roomMinX + halfL;
+  const maxAllowedX = roomMaxX - halfL;
+  if (posX < minAllowedX) {
+    const overflow = minAllowedX - posX;
+    posX = minAllowedX - (overflow / (1 + overflow * 8.0));
+  } else if (posX > maxAllowedX) {
+    const overflow = posX - maxAllowedX;
+    posX = maxAllowedX + (overflow / (1 + overflow * 8.0));
+  }
+
+  const minAllowedZ = roomMinZ + halfW;
+  const maxAllowedZ = roomMaxZ - halfW;
+  if (posZ < minAllowedZ) {
+    const overflow = minAllowedZ - posZ;
+    posZ = minAllowedZ - (overflow / (1 + overflow * 8.0));
+  } else if (posZ > maxAllowedZ) {
+    const overflow = posZ - maxAllowedZ;
+    posZ = maxAllowedZ + (overflow / (1 + overflow * 8.0));
+  }
+
+  return { posX, posZ };
+}
+
+/** Calculates alignment guides for a dragged item against walls and other room items. */
+export function getAlignmentGuides(
+  item: FurnitureItem,
+  items: FurnitureItem[],
+  room: RoomZone,
+): AlignmentGuide[] {
+  const halfL = effectiveLengthCm(item) / 200;
+  const halfW = effectiveWidthCm(item) / 200;
+
+  let roomMinX = room.x / 100;
+  let roomMaxX = (room.x + room.width) / 100;
+  let roomMinZ = room.y / 100;
+  let roomMaxZ = (room.y + room.height) / 100;
+
+  if (item.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
+    roomMinX = 0;
+    roomMaxX = 2.60;
+    roomMinZ = 3.40;
+    roomMaxZ = 8.80;
+  }
+
+  const guides: AlignmentGuide[] = [];
+  const epsilon = 0.02; // 2cm snap-alignment tolerance
+
+  const minX = item.posX - halfL;
+  const maxX = item.posX + halfL;
+  const minZ = item.posZ - halfW;
+  const maxZ = item.posZ + halfW;
+
+  // 1. Wall alignments
+  if (Math.abs(minX - roomMinX) < epsilon) {
+    guides.push({ type: 'x', coord: roomMinX, originId: 'room' });
+  }
+  if (Math.abs(maxX - roomMaxX) < epsilon) {
+    guides.push({ type: 'x', coord: roomMaxX, originId: 'room' });
+  }
+  if (Math.abs(minZ - roomMinZ) < epsilon) {
+    guides.push({ type: 'z', coord: roomMinZ, originId: 'room' });
+  }
+  if (Math.abs(maxZ - roomMaxZ) < epsilon) {
+    guides.push({ type: 'z', coord: roomMaxZ, originId: 'room' });
+  }
+
+  // 2. Alignments with other items in same room zone
+  for (const other of items) {
+    if (other.id === item.id) continue;
+
+    const otherRoomId = other.roomId || getRoomForCategory(other.category, other.label);
+    const inLivingOrDining = (roomId: string) => roomId === 'living' || roomId === 'dining';
+    if (item.category === 'cabinet' && (room.id === 'living' || room.id === 'dining')) {
+      if (!inLivingOrDining(otherRoomId)) continue;
+    } else {
+      if (otherRoomId !== room.id) continue;
+    }
+
+    const b = toBounds(other);
+    const otherHalfL = (b.maxX - b.minX) / 2;
+    const otherHalfW = (b.maxZ - b.minZ) / 2;
+    const otherCenterX = b.minX + otherHalfL;
+    const otherCenterZ = b.minZ + otherHalfW;
+
+    // X alignments
+    if (Math.abs(item.posX - otherCenterX) < epsilon) {
+      guides.push({ type: 'x', coord: otherCenterX, originId: other.id });
+    }
+    if (Math.abs(minX - b.minX) < epsilon) {
+      guides.push({ type: 'x', coord: b.minX, originId: other.id });
+    }
+    if (Math.abs(minX - b.maxX) < epsilon) {
+      guides.push({ type: 'x', coord: b.maxX, originId: other.id });
+    }
+    if (Math.abs(maxX - b.minX) < epsilon) {
+      guides.push({ type: 'x', coord: b.minX, originId: other.id });
+    }
+    if (Math.abs(maxX - b.maxX) < epsilon) {
+      guides.push({ type: 'x', coord: b.maxX, originId: other.id });
+    }
+
+    // Z alignments
+    if (Math.abs(item.posZ - otherCenterZ) < epsilon) {
+      guides.push({ type: 'z', coord: otherCenterZ, originId: other.id });
+    }
+    if (Math.abs(minZ - b.minZ) < epsilon) {
+      guides.push({ type: 'z', coord: b.minZ, originId: other.id });
+    }
+    if (Math.abs(minZ - b.maxZ) < epsilon) {
+      guides.push({ type: 'z', coord: b.maxZ, originId: other.id });
+    }
+    if (Math.abs(maxZ - b.minZ) < epsilon) {
+      guides.push({ type: 'z', coord: b.minZ, originId: other.id });
+    }
+    if (Math.abs(maxZ - b.maxZ) < epsilon) {
+      guides.push({ type: 'z', coord: b.maxZ, originId: other.id });
+    }
+  }
+
+  return guides;
+}
