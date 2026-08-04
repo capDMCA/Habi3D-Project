@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import CondoFloorPlan from '../components/CondoFloorPlan';
+import ClearanceMeter, { BandGlyph } from '../components/ClearanceMeter';
 import { color as t, radius } from '../components/designTokens';
 import { runClearanceAnalysis } from '../engine/clearance';
+import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
-import { isFeasible, withMovedItem, withRotatedItem } from '../components/floorPlanDrag';
+import {
+  canPlace,
+  clampToUnit,
+  overlappingItemIds,
+  packItemsIntoRoom,
+  roomIdForItem,
+  withMovedItem,
+} from '../components/floorPlanDrag';
 import { computeWalkways } from '../engine/walkways';
 import type { FurnitureItem } from '../types';
 
@@ -22,32 +31,59 @@ function initializeRoomAssignments(items: FurnitureItem[]): FurnitureItem[] {
   });
 }
 
+/**
+ * Give every piece a sane opening position. Pieces already sitting inside their
+ * room are left alone; the rest are packed into that room side by side.
+ *
+ * The previous version dropped each stray piece on its room's exact centre, so
+ * a room with three pieces opened with all three occupying the same point —
+ * a permanent overlap that made every later placement look invalid.
+ */
 function normalizeFurniturePositions(items: FurnitureItem[]): FurnitureItem[] {
-  return items.map((item) => {
+  const settled: FurnitureItem[] = [];
+  const needsPlacing = new Map<string, FurnitureItem[]>();
+
+  items.forEach((item) => {
     const roomId = item.roomId || getRoomForCategory(item.category, item.label);
     const room = CONDO_ROOMS.find((r) => r.id === roomId);
-    if (!room) return item;
+    if (!room) {
+      settled.push(item);
+      return;
+    }
 
-    // Check if the current position is already inside the room
     const rxCm = item.posX * 100;
     const rzCm = item.posZ * 100;
-    const padding = 15; // padding in cm
+    const padding = 15;
     const inX = rxCm >= room.x + padding && rxCm <= room.x + room.width - padding;
     const inZ = rzCm >= room.y + padding && rzCm <= room.y + room.height - padding;
 
-    if (inX && inZ) return item;
+    // Already placed sensibly and not sitting on top of something else.
+    if (inX && inZ && overlappingItemIds(item, items).length === 0) {
+      settled.push(item);
+      return;
+    }
 
-    // Otherwise, place it in the center of its assigned room
-    return {
-      ...item,
-      posX: (room.x + room.width / 2) / 100,
-      posZ: (room.y + room.height / 2) / 100,
-    };
+    const bucket = needsPlacing.get(roomId) ?? [];
+    bucket.push(item);
+    needsPlacing.set(roomId, bucket);
   });
+
+  const placed = new Map<string, FurnitureItem>();
+  needsPlacing.forEach((bucket, roomId) => {
+    const room = CONDO_ROOMS.find((r) => r.id === roomId);
+    if (!room) {
+      bucket.forEach((it) => placed.set(it.id, it));
+      return;
+    }
+    packItemsIntoRoom(bucket, room).forEach((it) => placed.set(it.id, it));
+  });
+
+  // Preserve the caller's ordering.
+  return items.map((item) => placed.get(item.id) ?? settled.find((s) => s.id === item.id) ?? item);
 }
 
 // ─── Tab enum ───────────────────────────────────────────────────────────────
-type Tab = 'items' | 'recommendations';
+type Tab = 'items' | 'recommendations' | 'rules';
 
 export default function WorkspaceScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
@@ -73,6 +109,8 @@ export default function WorkspaceScreen() {
   const previewRef = useRef<FurnitureItem[]>(items);
   const lastOkRef = useRef<{ x: number; z: number } | null>(null);
   const okRef = useRef(true);
+  // Layout snapshots taken before each committed change, for undo.
+  const historyRef = useRef<FurnitureItem[][]>([]);
 
   // Width/height from store/constants
   const roomWidthCm = 510;
@@ -151,15 +189,13 @@ export default function WorkspaceScreen() {
     return CONDO_ROOMS.find((r) => r.id === roomId)?.label ?? 'Living Room';
   }, [selectedItem]);
 
-  // Select Item and Automatically zoom to its Room Zone
+  // Selecting a piece must NOT re-frame the camera: selection happens on
+  // pointerdown, and zooming while the user is starting a drag pulls the plan
+  // out from under their cursor. Room focus stays a deliberate action (click a
+  // room's empty area, or the minimap).
   const handleSelectItem = useCallback((id: string) => {
     setSelectedId(id);
-    const item = preview.find((it) => it.id === id);
-    if (item) {
-      const roomId = item.roomId || getRoomForCategory(item.category, item.label);
-      setFocusedRoomId(roomId);
-    }
-  }, [preview]);
+  }, []);
 
   // ── Status map ────────────────────────────────────────────────────────────
   const itemStatuses = useMemo(() => {
@@ -173,80 +209,244 @@ export default function WorkspaceScreen() {
     return s;
   }, [preview, analysis.violations]);
 
+  // ── Commit a settled layout to the store and re-run the engine ────────────
+  const commitLayout = useCallback(
+    (layout: FurnitureItem[], changed: FurnitureItem) => {
+      previewRef.current = layout;
+      setPreview(layout);
+      updateItem(changed.id, { roomId: changed.roomId });
+      updatePosition(changed.id, changed.posX, changed.posZ, changed.rotationY);
+
+      const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
+      refreshViolations(fresh.violations);
+      setSpaceScoreAfter(fresh.spaceScoreBefore);
+    },
+    [roomWidthCm, roomLengthCm, updateItem, updatePosition, refreshViolations, setSpaceScoreAfter],
+  );
+
   // ── Drag handlers ─────────────────────────────────────────────────────────
   const handleDragStart = useCallback((id: string) => {
-    const it = preview.find((p) => p.id === id);
+    const it = previewRef.current.find((p) => p.id === id);
     if (!it) return;
+    // Remember where it came from, so an impossible drop can fall back to a
+    // spot the user actually dragged through rather than the origin.
+    historyRef.current.push(previewRef.current);
+    if (historyRef.current.length > 50) historyRef.current.shift();
     lastOkRef.current = { x: it.posX, z: it.posZ };
     okRef.current = true;
     setInfeasible(false);
-  }, [preview]);
+  }, []);
 
-  // 60FPS Drag move - bypass heavy validation and analysis checks
+  // Runs every pointermove — keep it cheap. Only the dragged piece is checked;
+  // the full clearance engine waits until release.
   const handleDragMove = useCallback((draggedId: string, xm: number, zm: number) => {
     setPreview((prev) => {
       const next = withMovedItem(prev, draggedId, xm, zm);
       previewRef.current = next;
+
+      const moved = next.find((it) => it.id === draggedId);
+      if (moved) {
+        const clear = overlappingItemIds(moved, next).length === 0;
+        okRef.current = clear;
+        setInfeasible(!clear);
+        if (clear) lastOkRef.current = { x: xm, z: zm };
+      }
       return next;
     });
   }, []);
 
-  // Run overlap/clearance engine checks on release (PointerUp)
-  const handleDragEnd = useCallback((draggedId: string) => {
-    const settled = previewRef.current;
-    const item = settled.find((it) => it.id === draggedId);
-    if (!item) return;
+  // On release: re-home the piece into whichever room it was dropped in, and
+  // run the clearance engine against the committed layout.
+  const handleDragEnd = useCallback(
+    (draggedId: string) => {
+      const settled = previewRef.current;
+      const item = settled.find((it) => it.id === draggedId);
+      if (!item) return;
 
-    // Run feasibility checks on release
-    const ok = isFeasible(settled, roomWidthCm, roomLengthCm);
-
-    if (!ok && lastOkRef.current) {
-      // Revert to last feasible position if collision detected
-      const reverted = withMovedItem(settled, draggedId, lastOkRef.current.x, lastOkRef.current.z);
-      previewRef.current = reverted;
-      setPreview(reverted);
       setInfeasible(false);
-      okRef.current = true;
-      showToast(`${item.label} overlaps with walls or other furniture.`);
-    } else {
-      // Commit the updated coordinates to store
+
+      // Only the dragged piece gates the drop. Overlaps elsewhere in the layout
+      // are the user's business, not a reason to reject this move.
+      if (overlappingItemIds(item, settled).length > 0) {
+        const fallback = lastOkRef.current;
+        if (fallback) {
+          const reverted = withMovedItem(settled, draggedId, fallback.x, fallback.z);
+          const revertedItem = reverted.find((it) => it.id === draggedId)!;
+          const rehomed = { ...revertedItem, roomId: roomIdForItem(revertedItem) };
+          commitLayout(
+            reverted.map((it) => (it.id === draggedId ? rehomed : it)),
+            rehomed,
+          );
+          showToast(`${item.label} would overlap another piece — moved to the last clear spot.`);
+          return;
+        }
+      }
+
+      const newRoomId = roomIdForItem(item);
+      const rehomed = { ...item, roomId: newRoomId };
+      const layout = settled.map((it) => (it.id === draggedId ? rehomed : it));
+
+      if (newRoomId !== (item.roomId ?? null)) {
+        const roomLabel = CONDO_ROOMS.find((r) => r.id === newRoomId)?.label;
+        if (roomLabel) showToast(`${item.label} moved to ${roomLabel}.`);
+      }
+
       lastOkRef.current = { x: item.posX, z: item.posZ };
-      updatePosition(item.id, item.posX, item.posZ, item.rotationY);
-      
-      // Re-run the clearance engine and recommendations immediately on release
-      const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
-      refreshViolations(fresh.violations);
-      setSpaceScoreAfter(fresh.spaceScoreBefore);
-    }
-  }, [roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter, showToast]);
+      commitLayout(layout, rehomed);
+    },
+    [commitLayout, showToast],
+  );
+
+  // ── Nudge / rotate / undo ─────────────────────────────────────────────────
+  const nudgeSelected = useCallback(
+    (dxCm: number, dzCm: number) => {
+      const current = previewRef.current.find((it) => it.id === selectedId);
+      if (!current) return;
+
+      const target = { ...current, posX: current.posX + dxCm / 100, posZ: current.posZ + dzCm / 100 };
+      const placed = clampToUnit(target, target.posX, target.posZ);
+      const moved = { ...current, posX: placed.posX, posZ: placed.posZ };
+
+      if (overlappingItemIds(moved, previewRef.current).length > 0) {
+        showToast(`${current.label} is blocked in that direction.`);
+        return;
+      }
+
+      historyRef.current.push(previewRef.current);
+      if (historyRef.current.length > 50) historyRef.current.shift();
+
+      const rehomed = { ...moved, roomId: roomIdForItem(moved) };
+      commitLayout(
+        previewRef.current.map((it) => (it.id === rehomed.id ? rehomed : it)),
+        rehomed,
+      );
+    },
+    [selectedId, commitLayout, showToast],
+  );
 
   const handleRotate = useCallback(() => {
     if (!selectedItem) return;
-    const next = withRotatedItem(preview, selectedItem.id, selectedItem.rotationY + Math.PI / 2);
-    if (isFeasible(next, roomWidthCm, roomLengthCm)) {
-      setPreview(next);
-      previewRef.current = next;
-      updatePosition(selectedItem.id, selectedItem.posX, selectedItem.posZ, selectedItem.rotationY + Math.PI / 2);
-      
-      const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
-      refreshViolations(fresh.violations);
-      setSpaceScoreAfter(fresh.spaceScoreBefore);
-    } else {
-      showToast(`${selectedItem.label} cannot rotate there (insufficient space).`);
-    }
-  }, [selectedItem, preview, roomWidthCm, roomLengthCm, updatePosition, refreshViolations, setSpaceScoreAfter, showToast]);
+    const rotation = selectedItem.rotationY + Math.PI / 2;
+    const rotated = { ...selectedItem, rotationY: rotation };
 
+    // Keep the turned footprint inside the unit before judging it.
+    const placed = clampToUnit(rotated, rotated.posX, rotated.posZ);
+    const candidate = { ...rotated, posX: placed.posX, posZ: placed.posZ };
+
+    if (!canPlace(candidate, preview)) {
+      showToast(`${selectedItem.label} cannot rotate there — not enough room.`);
+      return;
+    }
+
+    historyRef.current.push(previewRef.current);
+    if (historyRef.current.length > 50) historyRef.current.shift();
+
+    const rehomed = { ...candidate, roomId: roomIdForItem(candidate) };
+    commitLayout(
+      preview.map((it) => (it.id === rehomed.id ? rehomed : it)),
+      rehomed,
+    );
+  }, [selectedItem, preview, commitLayout, showToast]);
+
+  const handleUndo = useCallback(() => {
+    const previous = historyRef.current.pop();
+    if (!previous) {
+      showToast('Nothing to undo.');
+      return;
+    }
+    previewRef.current = previous;
+    setPreview(previous);
+    previous.forEach((it) => {
+      updateItem(it.id, { roomId: it.roomId });
+      updatePosition(it.id, it.posX, it.posZ, it.rotationY);
+    });
+    const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
+    refreshViolations(fresh.violations);
+    setSpaceScoreAfter(fresh.spaceScoreBefore);
+  }, [roomWidthCm, roomLengthCm, updateItem, updatePosition, refreshViolations, setSpaceScoreAfter, showToast]);
+
+  // Send a piece back to its category's home room, into the first free slot
+  // there rather than onto whatever already occupies the centre.
   const handleResetPosition = useCallback(() => {
     if (!selectedItem) return;
-    const roomId = selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
-    const room = CONDO_ROOMS.find((r) => r.id === roomId);
-    if (room) {
-      const rx = (room.x + room.width / 2) / 100;
-      const rz = (room.y + room.height / 2) / 100;
-      updatePosition(selectedItem.id, rx, rz, 0);
-      setPreview(useFurnitureStore.getState().items);
+    const homeRoomId = getRoomForCategory(selectedItem.category, selectedItem.label);
+    const room = CONDO_ROOMS.find((r) => r.id === homeRoomId);
+    if (!room) return;
+
+    const others = previewRef.current.filter((it) => it.id !== selectedItem.id);
+    const upright = { ...selectedItem, rotationY: 0 };
+    const [packed] = packItemsIntoRoom([upright], room);
+
+    // Walk the room on a coarse lattice until the piece lands somewhere clear.
+    let target = packed;
+    if (overlappingItemIds(packed, others).length > 0) {
+      const step = 0.2;
+      search: for (let z = room.y / 100; z < (room.y + room.height) / 100; z += step) {
+        for (let x = room.x / 100; x < (room.x + room.width) / 100; x += step) {
+          const placed = clampToUnit(upright, x, z);
+          const trial = { ...upright, posX: placed.posX, posZ: placed.posZ };
+          if (overlappingItemIds(trial, others).length === 0) {
+            target = trial;
+            break search;
+          }
+        }
+      }
     }
-  }, [selectedItem, updatePosition]);
+
+    historyRef.current.push(previewRef.current);
+    if (historyRef.current.length > 50) historyRef.current.shift();
+
+    const rehomed = { ...target, roomId: roomIdForItem(target) };
+    commitLayout(
+      previewRef.current.map((it) => (it.id === rehomed.id ? rehomed : it)),
+      rehomed,
+    );
+  }, [selectedItem, commitLayout]);
+
+  // ── Keyboard: arrow nudge, R rotate, Ctrl/Cmd+Z undo ──────────────────────
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+      if (!selectedId) return;
+
+      const step = e.shiftKey ? 10 : 1;
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          nudgeSelected(-step, 0);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          nudgeSelected(step, 0);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          nudgeSelected(0, -step);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          nudgeSelected(0, step);
+          break;
+        case 'r':
+        case 'R':
+          e.preventDefault();
+          handleRotate();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedId, nudgeSelected, handleRotate, handleUndo]);
 
   // Counts for pills
   const issueCount = analysis.violations.length;
@@ -332,11 +532,18 @@ export default function WorkspaceScreen() {
           <div style={controlToolbar}>
             <span style={feedbackHint}>
               {infeasible ? (
-                <span style={{ color: t.attentionFg, fontWeight: 700 }}>Collision: overlaps wall or other block</span>
+                <span style={{ color: t.attentionFg, fontWeight: 700 }}>
+                  Overlapping another piece — release to snap back to the last clear spot
+                </span>
               ) : selectedItem ? (
-                <span>Selected {selectedItem.label} inside {selectedRoomLabel}</span>
+                <span>
+                  {selectedItem.label} in {selectedRoomLabel}
+                  <span style={{ color: t.inkMute, fontWeight: 500 }}>
+                    {' · '}drag anywhere · arrows nudge · R rotates · Ctrl+Z undo
+                  </span>
+                </span>
               ) : (
-                'Select a block to drag and rotate it'
+                'Drag any piece to move it — it can go into any room'
               )}
             </span>
             <div style={{ display: 'flex', gap: 12 }}>
@@ -347,6 +554,13 @@ export default function WorkspaceScreen() {
                 disabled={!selectedItem}
               >
                 Rotate 90
+              </button>
+              <button
+                className="wksp-outline-btn"
+                style={secBtn}
+                onClick={handleUndo}
+              >
+                Undo
               </button>
               <button
                 className="wksp-outline-btn"
@@ -375,7 +589,14 @@ export default function WorkspaceScreen() {
               style={tabBtn(activeTab === 'recommendations')}
               onClick={() => setActiveTab('recommendations')}
             >
-              Recommendations
+              Fixes{issueCount > 0 ? ` (${issueCount})` : ''}
+            </button>
+            <button
+              className="wksp-tab-btn"
+              style={tabBtn(activeTab === 'rules')}
+              onClick={() => setActiveTab('rules')}
+            >
+              Rules
             </button>
           </div>
 
@@ -419,40 +640,76 @@ export default function WorkspaceScreen() {
             {activeTab === 'recommendations' && (
               <div style={scrollContainer}>
                 {/* 1. Clearance Recommendations */}
-                <h3 style={sectionHeading}>Suggested Actions</h3>
+                <h3 style={sectionHeading}>What to fix</h3>
                 {issueCount === 0 ? (
                   <div style={successMessage}>
-                    All clearances passed!
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                      <BandGlyph band="GREEN" size={12} />
+                      Every clearance rule passes
+                    </span>
                   </div>
                 ) : (
-                  analysis.violations.map((v) => (
-                    <div
-                      key={v.id}
-                      className="wksp-list-row"
-                      style={{
-                        ...violationCard,
-                        borderLeftColor: v.classification === 'RED' ? t.attentionFg : t.tightFg,
-                      }}
-                      onClick={() => handleSelectItem(v.furnitureId)}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 700, color: t.ink, fontSize: 13 }}>{v.furnitureLabel}</span>
-                        <span style={{
-                          ...badgeStyle,
-                          background: v.classification === 'RED' ? t.attentionBg : t.tightBg,
-                          color: v.classification === 'RED' ? t.attentionFg : t.tightFg,
-                        }}>
-                          {v.ruleCode}
-                        </span>
+                  analysis.violations.map((v, idx) => {
+                    const g = ruleGuidance(v.ruleCode);
+                    const isRed = v.classification === 'RED';
+                    const bandColor = isRed ? t.attentionFg : t.tightFg;
+                    const isFocused = selectedItem?.id === v.furnitureId;
+
+                    return (
+                      <div
+                        key={v.id}
+                        className="wksp-rec-card"
+                        style={{
+                          ...violationCard,
+                          borderLeftColor: bandColor,
+                          borderColor: isFocused ? bandColor : '#E2E8F0',
+                          background: isFocused ? '#FFFFFF' : '#F8FAFC',
+                          animationDelay: `${Math.min(idx, 8) * 40}ms`,
+                        }}
+                        onClick={() => handleSelectItem(v.furnitureId)}
+                      >
+                        {/* Status + which piece */}
+                        <div style={recHeaderRow}>
+                          <span style={{ fontWeight: 700, color: t.ink, fontSize: 14 }}>{v.furnitureLabel}</span>
+                          <span
+                            style={{
+                              ...badgeStyle,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              background: isRed ? t.attentionBg : t.tightBg,
+                              color: bandColor,
+                            }}
+                          >
+                            <BandGlyph band={isRed ? 'RED' : 'YELLOW'} size={9} />
+                            {isRed ? 'Too tight' : 'Tight'}
+                          </span>
+                        </div>
+
+                        {/* The rule, in words before codes */}
+                        <p style={recRuleTitle}>{g?.title ?? v.ruleLabel}</p>
+                        <p style={recRequirement}>{g?.requirement ?? v.ruleLabel}</p>
+
+                        {/* Where this measurement sits across the rule's bands */}
+                        {g && <ClearanceMeter guidance={g} measuredCm={v.measuredCm} />}
+
+                        {/* The move that resolves it */}
+                        <div style={{ ...recActionRow, borderColor: bandColor }}>
+                          <span style={{ color: t.inkSoft, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em' }}>
+                            DO THIS
+                          </span>
+                          <span style={{ color: t.ink, fontSize: 13, fontWeight: 700 }}>
+                            Move {v.fixDirectionLabel.toLowerCase()} by {v.fixDirectionCm} cm
+                          </span>
+                          <span style={{ color: t.inkSoft, fontSize: 12 }}>
+                            Otherwise {g?.consequence ?? 'the gap stays tighter than recommended'}.
+                          </span>
+                        </div>
+
+                        <span style={recRuleRef}>Rule {v.ruleCode} · {v.ruleLabel}</span>
                       </div>
-                      <p style={{ margin: '4px 0', fontSize: 13, color: t.attentionFg, fontWeight: 700 }}>
-                        Move {v.furnitureLabel} {v.fixDirectionLabel} by {v.fixDirectionCm}cm
-                      </p>
-                      <p style={{ margin: '2px 0 0', fontSize: 11, color: t.inkSoft }}>
-                        Goal: resolve {v.ruleLabel} clearance issue ({v.measuredCm}cm measured, required: {v.requiredCm}cm)
-                      </p>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
 
                 {/* 2. Walkways access */}
@@ -512,6 +769,96 @@ export default function WorkspaceScreen() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* TAB: The 10 clearance rules, with each rule's own bands */}
+            {activeTab === 'rules' && (
+              <div style={scrollContainer}>
+                <h3 style={sectionHeading}>Clearance rules</h3>
+                <p style={{ margin: '0 0 4px', fontSize: 12, color: t.inkSoft, lineHeight: 1.5 }}>
+                  Every gap in your layout is measured against these. A rule passes once its
+                  gap reaches the comfortable range.
+                </p>
+
+                {/* Colour-independent key, stated once for the whole list */}
+                <div style={legendRow}>
+                  {(['RED', 'YELLOW', 'GREEN'] as const).map((band) => (
+                    <span key={band} style={legendItem}>
+                      <BandGlyph band={band} size={9} />
+                      <span style={{ color: t.inkSoft }}>
+                        {band === 'RED' ? 'Too tight' : band === 'YELLOW' ? 'Tight' : 'Comfortable'}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+
+                {(['Living area', 'Dining area'] as const).map((area) => (
+                  <div key={area} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <h4 style={ruleGroupHeading}>{area}</h4>
+                    {ALL_RULE_GUIDANCE.filter((g) => g.area === area).map((g) => {
+                      const breached = analysis.violations.filter((v) => v.ruleCode === g.code);
+                      const worst = breached.some((v) => v.classification === 'RED')
+                        ? 'RED'
+                        : breached.length > 0
+                          ? 'YELLOW'
+                          : 'GREEN';
+
+                      return (
+                        <div
+                          key={g.code}
+                          style={{
+                            ...ruleRefCard,
+                            borderLeft: `4px solid ${
+                              worst === 'RED' ? t.attentionFg : worst === 'YELLOW' ? t.tightFg : t.comfortFg
+                            }`,
+                          }}
+                        >
+                          <div style={recHeaderRow}>
+                            <span style={{ fontWeight: 700, fontSize: 13, color: t.ink }}>{g.title}</span>
+                            <span
+                              style={{
+                                ...badgeStyle,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                background:
+                                  worst === 'RED' ? t.attentionBg : worst === 'YELLOW' ? t.tightBg : t.comfortBg,
+                                color: worst === 'RED' ? t.attentionFg : worst === 'YELLOW' ? t.tightFg : t.comfortFg,
+                              }}
+                            >
+                              <BandGlyph band={worst} size={9} />
+                              {breached.length > 0
+                                ? `${breached.length} to fix`
+                                : 'Passing'}
+                            </span>
+                          </div>
+                          <p style={recRequirement}>{g.requirement}</p>
+                          <div style={ruleBandRow}>
+                            <span style={ruleBandChip}>
+                              <BandGlyph band="RED" size={8} />
+                              under {g.violationThresholdCm} cm
+                            </span>
+                            <span style={ruleBandChip}>
+                              <BandGlyph band="YELLOW" size={8} />
+                              {g.violationThresholdCm}–{g.warningThresholdCm} cm
+                            </span>
+                            <span style={ruleBandChip}>
+                              <BandGlyph band="GREEN" size={8} />
+                              {g.warningThresholdCm} cm and over
+                            </span>
+                          </div>
+                          <span style={recRuleRef}>Rule {g.code}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: t.inkMute, lineHeight: 1.5 }}>
+                  Thresholds from Time-Saver Standards for Interior Design and Space Planning
+                  (DeChiara, Panero &amp; Zelnik, 2001), Tables 3–4.
+                </p>
               </div>
             )}
           </div>
@@ -665,7 +1012,10 @@ const secBtn: CSSProperties = {
 };
 
 const sideDrawer: CSSProperties = {
-  flex: '18% 1 250px', // takes 18% width on desktop
+  // Wider than the old 18%: the recommendation cards now carry a rule name, a
+  // banded meter and an action, which crush below ~300px.
+  flex: '0 1 340px',
+  minWidth: 300,
   background: '#FFFFFF',
   borderLeft: '1px solid #E2E8F0',
   boxShadow: '-2px 0 8px rgba(0,0,0,0.01)',
@@ -740,12 +1090,109 @@ const badgeStyle: CSSProperties = {
 };
 
 const violationCard: CSSProperties = {
-  padding: '12px 14px',
-  borderRadius: radius.sm,
+  padding: '14px 16px',
+  borderRadius: radius.md,
   background: '#F8FAFC',
   border: '1px solid #E2E8F0',
   borderLeft: '4px solid',
   cursor: 'pointer',
+  transition: 'background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease',
+};
+
+const recHeaderRow: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 8,
+  marginBottom: 8,
+};
+
+const recRuleTitle: CSSProperties = {
+  margin: 0,
+  fontSize: 14,
+  fontWeight: 700,
+  color: t.ink,
+  lineHeight: 1.3,
+};
+
+const recRequirement: CSSProperties = {
+  margin: '4px 0 0',
+  fontSize: 12,
+  color: t.inkSoft,
+  lineHeight: 1.45,
+};
+
+const recActionRow: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 3,
+  marginTop: 12,
+  padding: '10px 12px',
+  borderRadius: radius.sm,
+  background: t.surface,
+  border: '1px solid',
+  borderLeftWidth: 3,
+};
+
+const recRuleRef: CSSProperties = {
+  display: 'block',
+  marginTop: 10,
+  fontSize: 10.5,
+  fontWeight: 600,
+  color: t.inkMute,
+  letterSpacing: '0.03em',
+};
+
+const ruleRefCard: CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: radius.sm,
+  background: '#F8FAFC',
+  border: '1px solid #E2E8F0',
+};
+
+const ruleGroupHeading: CSSProperties = {
+  margin: '10px 0 0',
+  fontSize: 12,
+  fontWeight: 800,
+  color: t.inkMute,
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+};
+
+const ruleBandRow: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '4px 10px',
+  marginTop: 10,
+  fontSize: 11,
+  fontWeight: 600,
+};
+
+const ruleBandChip: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  color: t.inkSoft,
+  whiteSpace: 'nowrap',
+};
+
+const legendRow: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '6px 14px',
+  padding: '10px 12px',
+  borderRadius: radius.sm,
+  background: t.surface,
+  border: `1px solid ${t.line}`,
+  fontSize: 11,
+  fontWeight: 700,
+};
+
+const legendItem: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  whiteSpace: 'nowrap',
 };
 
 const successMessage: CSSProperties = {

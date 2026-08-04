@@ -4,7 +4,16 @@ import { projectItems } from './floorPlanGeometry';
 import { color as t } from './designTokens';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import { WALKWAY_PATHS, type WalkwayStatus } from '../engine/walkways';
-import { clampToRoomSoft, snapTarget, getAlignmentGuides, type AlignmentGuide } from './floorPlanDrag';
+import {
+  clampToUnit,
+  snapFree,
+  edgeGaps,
+  overlappingItemIds,
+  roomIdForItem,
+  UNIT_WIDTH_CM,
+  UNIT_HEIGHT_CM,
+  type AlignmentGuide,
+} from './floorPlanDrag';
 import type { FurnitureItem } from '../types';
 
 function walkwayBelongsToRoom(pathId: string, roomId: string): boolean {
@@ -36,14 +45,23 @@ export interface CondoFloorPlanProps {
 }
 
 const PAD_CM = 25;
-const WIDTH_CM = 510;
-const HEIGHT_CM = 880;
+const WIDTH_CM = UNIT_WIDTH_CM;
+const HEIGHT_CM = UNIT_HEIGHT_CM;
 
-function eventToWorldMetresFromClient(svg: SVGSVGElement, clientX: number, clientY: number): { xm: number; zm: number } {
-  const ctm = svg.getScreenCTM();
-  if (!ctm) return { xm: 0, zm: 0 };
-  const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
-  return { xm: p.x / 100, zm: p.y / 100 };
+/**
+ * Live state of a grab. Screen-to-world conversion uses the scale captured when
+ * the drag began, so the piece tracks the cursor 1:1 even if the camera is
+ * mid-zoom — reading getScreenCTM() every move made blocks fly across the plan.
+ */
+interface DragSession {
+  itemId: string;
+  startClientX: number;
+  startClientY: number;
+  startPosX: number;
+  startPosZ: number;
+  pxPerCmX: number;
+  pxPerCmY: number;
+  moved: boolean;
 }
 
 export default function CondoFloorPlan({
@@ -57,24 +75,31 @@ export default function CondoFloorPlan({
   onFocusRoom,
 }: CondoFloorPlanProps) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const draggingRef = useRef(false);
-  const draggedItemIdRef = useRef<string | null>(null);
+  const dragRef = useRef<DragSession | null>(null);
+
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [activeGuides, setActiveGuides] = useState<AlignmentGuide[]>([]);
+  const [collidingIds, setCollidingIds] = useState<string[]>([]);
+  const [dropRoomId, setDropRoomId] = useState<string | null>(null);
 
-  // Keep fresh refs for window listeners to prevent stale closures
+  // Fresh refs for window listeners, which outlive any single render.
   const itemsRef = useRef(items);
-  itemsRef.current = items;
-
   const interactiveRef = useRef(interactive);
-  interactiveRef.current = interactive;
 
-  // Project furniture items
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    interactiveRef.current = interactive;
+  }, [interactive]);
+
   const rects = useMemo(() => projectItems(items), [items]);
 
-  // Find the selected furniture and its corresponding room zone
-  const selectedItem = useMemo(() => {
-    return items.find((it) => it.id === highlightItemId) ?? null;
-  }, [items, highlightItemId]);
+  const selectedItem = useMemo(
+    () => items.find((it) => it.id === highlightItemId) ?? null,
+    [items, highlightItemId],
+  );
 
   const activeRoomId = useMemo(() => {
     if (focusedRoomId) return focusedRoomId;
@@ -82,108 +107,145 @@ export default function CondoFloorPlan({
     return selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
   }, [selectedItem, focusedRoomId]);
 
-  // ─── viewBox Smooth Zoom Interpolation ─────────────────────────────────────
+  // Live gap readouts for the piece being dragged.
+  const draggedItem = useMemo(
+    () => (draggingId ? items.find((it) => it.id === draggingId) ?? null : null),
+    [draggingId, items],
+  );
+  const draggedGaps = useMemo(
+    () => (draggedItem ? edgeGaps(draggedItem, items) : null),
+    [draggedItem, items],
+  );
+
+  // ─── viewBox smooth zoom ────────────────────────────────────────────────────
   const targetViewBox = useMemo(() => {
-    if (!focusedRoomId) {
-      return { x: -PAD_CM, y: -PAD_CM, w: WIDTH_CM + PAD_CM * 2, h: HEIGHT_CM + PAD_CM * 2 };
-    }
+    const full = { x: -PAD_CM, y: -PAD_CM, w: WIDTH_CM + PAD_CM * 2, h: HEIGHT_CM + PAD_CM * 2 };
+    if (!focusedRoomId) return full;
     const room = CONDO_ROOMS.find((r) => r.id === focusedRoomId);
-    if (!room) {
-      return { x: -PAD_CM, y: -PAD_CM, w: WIDTH_CM + PAD_CM * 2, h: HEIGHT_CM + PAD_CM * 2 };
-    }
-    const margin = 35; // cm padding around focused room
-    return {
-      x: room.x - margin,
-      y: room.y - margin,
-      w: room.width + margin * 2,
-      h: room.height + margin * 2,
-    };
+    if (!room) return full;
+    const margin = 35;
+    return { x: room.x - margin, y: room.y - margin, w: room.width + margin * 2, h: room.height + margin * 2 };
   }, [focusedRoomId]);
 
   const [vb, setVb] = useState(targetViewBox);
+  const vbRef = useRef(vb);
 
   useEffect(() => {
+    vbRef.current = vb;
+  }, [vb]);
+
+  useEffect(() => {
+    // Never re-frame mid-grab: the drag maps screen pixels to world units using
+    // the scale captured at pointerdown, and animating the camera under the
+    // cursor would fight the user's hand.
+    if (dragRef.current) {
+      setVb(targetViewBox);
+      return;
+    }
+
+    let raf = 0;
     let start: number | null = null;
-    const startVb = { ...vb };
-    const duration = 350; // ms transition
+    const from = { ...vbRef.current };
+    const duration = 350;
 
     const animate = (timestamp: number) => {
-      if (!start) start = timestamp;
-      const progress = timestamp - start;
-      const tProgress = Math.min(progress / duration, 1);
-      const ease = 1 - Math.pow(1 - tProgress, 3); // cubic ease out
+      if (start === null) start = timestamp;
+      const progress = Math.min((timestamp - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
 
       setVb({
-        x: startVb.x + (targetViewBox.x - startVb.x) * ease,
-        y: startVb.y + (targetViewBox.y - startVb.y) * ease,
-        w: startVb.w + (targetViewBox.w - startVb.w) * ease,
-        h: startVb.h + (targetViewBox.h - startVb.h) * ease,
+        x: from.x + (targetViewBox.x - from.x) * ease,
+        y: from.y + (targetViewBox.y - from.y) * ease,
+        w: from.w + (targetViewBox.w - from.w) * ease,
+        h: from.h + (targetViewBox.h - from.h) * ease,
       });
 
-      if (progress < duration) {
-        requestAnimationFrame(animate);
-      }
+      if (progress < 1) raf = requestAnimationFrame(animate);
     };
 
-    const animFrame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animFrame);
+    raf = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf);
   }, [targetViewBox]);
 
-  // ─── Window-Level Drag Handler (Rock-solid, lag-free dragging) ─────────────
+  // ─── Dragging ───────────────────────────────────────────────────────────────
   function handlePointerDown(e: ReactPointerEvent<SVGElement>, itemId: string) {
     e.stopPropagation();
-    if (onSelectItem) {
-      onSelectItem(itemId);
-    }
-    if (!interactiveRef.current) return;
+    e.preventDefault();
 
-    draggingRef.current = true;
-    draggedItemIdRef.current = itemId;
+    onSelectItem?.(itemId);
+
+    const svg = svgRef.current;
+    const item = itemsRef.current.find((it) => it.id === itemId);
+    if (!svg || !item || !interactiveRef.current) return;
+
+    const ctm = svg.getScreenCTM();
+    if (!ctm || ctm.a === 0 || ctm.d === 0) return;
+
+    dragRef.current = {
+      itemId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startPosX: item.posX,
+      startPosZ: item.posZ,
+      pxPerCmX: ctm.a,
+      pxPerCmY: ctm.d,
+      moved: false,
+    };
+
+    setDraggingId(itemId);
     interactiveRef.current.onDragStart(itemId);
 
-    const onWindowPointerMove = (evt: PointerEvent) => {
-      if (!draggingRef.current || !svgRef.current || !draggedItemIdRef.current) return;
+    const onMove = (evt: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
 
-      const currentItem = itemsRef.current.find((it) => it.id === draggedItemIdRef.current);
-      if (!currentItem) return;
+      const current = itemsRef.current.find((it) => it.id === drag.itemId);
+      if (!current) return;
 
-      const { xm, zm } = eventToWorldMetresFromClient(svgRef.current, evt.clientX, evt.clientY);
-      const roomZoneId = currentItem.roomId || getRoomForCategory(currentItem.category, currentItem.label);
-      const room = CONDO_ROOMS.find((r) => r.id === roomZoneId);
+      // Screen delta → world delta, using the scale from drag start.
+      const dxM = (evt.clientX - drag.startClientX) / drag.pxPerCmX / 100;
+      const dzM = (evt.clientY - drag.startClientY) / drag.pxPerCmY / 100;
 
-      if (!room) return;
-
-      // Apply smart snapping, then apply elastic spring bounds
-      const targetSnap = snapTarget(xm, zm, currentItem, itemsRef.current, null, room);
-      const softClamped = clampToRoomSoft({ ...currentItem, posX: targetSnap.posX, posZ: targetSnap.posZ }, room);
-
-      // Calculate smart guidelines
-      const itemForGuides = { ...currentItem, posX: softClamped.posX, posZ: softClamped.posZ };
-      const guides = getAlignmentGuides(itemForGuides, itemsRef.current, room);
-      setActiveGuides(guides);
-
-      interactiveRef.current?.onDragMove(draggedItemIdRef.current, softClamped.posX, softClamped.posZ);
-    };
-
-    const onWindowPointerUp = () => {
-      window.removeEventListener('pointermove', onWindowPointerMove);
-      window.removeEventListener('pointerup', onWindowPointerUp);
-      window.removeEventListener('pointercancel', onWindowPointerUp);
-
-      if (!draggingRef.current) return;
-      const activeId = draggedItemIdRef.current;
-      draggingRef.current = false;
-      draggedItemIdRef.current = null;
-      setActiveGuides([]);
-      if (activeId) {
-        interactiveRef.current?.onDragEnd(activeId);
+      if (!drag.moved && Math.hypot(evt.clientX - drag.startClientX, evt.clientY - drag.startClientY) > 2) {
+        drag.moved = true;
       }
+
+      const rawX = drag.startPosX + dxM;
+      const rawZ = drag.startPosZ + dzM;
+
+      // Snap freely against walls, room edges and neighbours — then keep the
+      // piece inside the unit. No room caging: it may go anywhere it fits.
+      const snapped = snapFree(rawX, rawZ, current, itemsRef.current);
+      const placed = clampToUnit(current, snapped.posX, snapped.posZ);
+
+      const preview = { ...current, posX: placed.posX, posZ: placed.posZ };
+      setActiveGuides(snapped.guides);
+      setCollidingIds(overlappingItemIds(preview, itemsRef.current));
+      setDropRoomId(roomIdForItem(preview));
+
+      interactiveRef.current?.onDragMove(drag.itemId, placed.posX, placed.posZ);
     };
 
-    window.addEventListener('pointermove', onWindowPointerMove, { passive: true });
-    window.addEventListener('pointerup', onWindowPointerUp, { passive: true });
-    window.addEventListener('pointercancel', onWindowPointerUp, { passive: true });
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+
+      const drag = dragRef.current;
+      dragRef.current = null;
+      setDraggingId(null);
+      setActiveGuides([]);
+      setCollidingIds([]);
+      setDropRoomId(null);
+      if (drag) interactiveRef.current?.onDragEnd(drag.itemId);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   }
+
+  const gapLabel = (cm: number) => (cm < 0 ? '0' : String(cm));
 
   return (
     <div style={containerStyle}>
@@ -194,22 +256,14 @@ export default function CondoFloorPlan({
         role="img"
         aria-label="Mulberry Place Condo Digital Twin Floor Plan"
       >
-        {/* Outer unit boundary/walls */}
-        <rect
-          x={0}
-          y={0}
-          width={WIDTH_CM}
-          height={HEIGHT_CM}
-          fill="none"
-          stroke={t.roomStroke}
-          strokeWidth={6}
-          rx={8}
-        />
+        {/* Outer unit boundary */}
+        <rect x={0} y={0} width={WIDTH_CM} height={HEIGHT_CM} fill="none" stroke={t.roomStroke} strokeWidth={6} rx={8} />
 
         {/* 1. ROOM ZONES */}
         {CONDO_ROOMS.map((room) => {
           const isRoomActive = !activeRoomId || activeRoomId === room.id;
           const isHighlighted = activeRoomId === room.id;
+          const isDropTarget = dropRoomId === room.id;
           const isDimmed = focusedRoomId && focusedRoomId !== room.id;
 
           return (
@@ -220,14 +274,15 @@ export default function CondoFloorPlan({
                 width={room.width}
                 height={room.height}
                 fill={room.bgColor}
-                fillOpacity={0.08}
-                stroke={isHighlighted ? t.accent : t.roomStroke}
-                strokeWidth={isHighlighted ? 3 : 1.5}
-                style={{ cursor: focusedRoomId ? 'default' : 'pointer' }}
-                onClick={() => !focusedRoomId && onFocusRoom && onFocusRoom(room.id)}
+                fillOpacity={isDropTarget ? 0.22 : 0.08}
+                stroke={isDropTarget ? t.accent : isHighlighted ? t.accent : t.roomStroke}
+                strokeWidth={isDropTarget ? 4 : isHighlighted ? 3 : 1.5}
+                style={{
+                  cursor: focusedRoomId ? 'default' : 'pointer',
+                  transition: 'fill-opacity 0.15s ease, stroke 0.15s ease',
+                }}
+                onClick={() => !focusedRoomId && onFocusRoom?.(room.id)}
               />
-
-              {/* Room Label */}
               <text
                 x={room.x + room.width / 2}
                 y={room.y + room.height / 2}
@@ -247,9 +302,7 @@ export default function CondoFloorPlan({
 
         {/* 2. WALKWAY CORRIDORS */}
         {WALKWAY_PATHS.map((path) => {
-          const statusObj = walkwayStatuses.find((s) => s.id === path.id);
-          const status = statusObj?.status ?? 'GREEN';
-          
+          const status = walkwayStatuses.find((s) => s.id === path.id)?.status ?? 'GREEN';
           const isWalkwayDimmed = activeRoomId && !walkwayBelongsToRoom(path.id, activeRoomId);
 
           let walkwayColor: string = t.comfortFg;
@@ -261,8 +314,6 @@ export default function CondoFloorPlan({
             walkwayColor = t.tightFg;
             fillOpacity = 0.12;
           }
-
-          const strokeOpacity = isWalkwayDimmed ? 0.15 : 0.6;
 
           return (
             <g key={path.id} style={{ transition: 'opacity 0.25s ease' }} opacity={isWalkwayDimmed ? 0.15 : 1}>
@@ -276,7 +327,7 @@ export default function CondoFloorPlan({
                 stroke={walkwayColor}
                 strokeWidth={1.5}
                 strokeDasharray="4 3"
-                strokeOpacity={strokeOpacity}
+                strokeOpacity={isWalkwayDimmed ? 0.15 : 0.6}
                 rx={2}
                 style={pointerNone}
               />
@@ -284,56 +335,54 @@ export default function CondoFloorPlan({
           );
         })}
 
-        {/* 3. FIGMA SMART ALIGNMENT GUIDES */}
-        {activeGuides.map((g, idx) => {
-          if (g.type === 'x') {
-            return (
-              <line
-                key={`guide-x-${idx}`}
-                x1={g.coord * 100}
-                y1={0}
-                x2={g.coord * 100}
-                y2={HEIGHT_CM}
-                stroke="#3B82F6"
-                strokeWidth={2}
-                strokeDasharray="5 3"
-                opacity={0.9}
-                style={pointerNone}
-              />
-            );
-          } else {
-            return (
-              <line
-                key={`guide-z-${idx}`}
-                x1={0}
-                y1={g.coord * 100}
-                x2={WIDTH_CM}
-                y2={g.coord * 100}
-                stroke="#3B82F6"
-                strokeWidth={2}
-                strokeDasharray="5 3"
-                opacity={0.9}
-                style={pointerNone}
-              />
-            );
-          }
-        })}
+        {/* 3. ALIGNMENT GUIDES */}
+        {activeGuides.map((g, idx) =>
+          g.type === 'x' ? (
+            <line
+              key={`guide-x-${idx}`}
+              x1={g.coord * 100}
+              y1={0}
+              x2={g.coord * 100}
+              y2={HEIGHT_CM}
+              stroke={t.accent}
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              opacity={0.9}
+              style={pointerNone}
+            />
+          ) : (
+            <line
+              key={`guide-z-${idx}`}
+              x1={0}
+              y1={g.coord * 100}
+              x2={WIDTH_CM}
+              y2={g.coord * 100}
+              stroke={t.accent}
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              opacity={0.9}
+              style={pointerNone}
+            />
+          ),
+        )}
 
         {/* 4. FURNITURE ITEMS */}
         {rects.map((r) => {
           const isSelected = highlightItemId === r.id;
-          const isDraggable = interactive?.draggableItemId === r.id;
-          const isBad = isDraggable && interactive!.infeasible;
+          const isDragging = draggingId === r.id;
+          const isColliding = collidingIds.includes(r.id) || (isDragging && collidingIds.length > 0);
 
           const item = items.find((it) => it.id === r.id);
           if (!item) return null;
           const itemRoomId = item.roomId || getRoomForCategory(item.category, item.label);
-          const isItemDimmed = activeRoomId && activeRoomId !== itemRoomId;
+
+          // While dragging, keep every piece legible — dimming hides collisions.
+          const isItemDimmed = !draggingId && activeRoomId && activeRoomId !== itemRoomId;
 
           let fill: string;
           let stroke: string;
 
-          if (isBad) {
+          if (isColliding) {
             fill = t.attentionBg;
             stroke = t.attentionFg;
           } else if (isSelected) {
@@ -353,17 +402,29 @@ export default function CondoFloorPlan({
             }
           }
 
-          const strokeWidth = isSelected ? 4 : 2;
-
           return (
             <g
               key={r.id}
               style={{
-                opacity: isItemDimmed ? 0.2 : 1,
+                opacity: isItemDimmed ? 0.25 : 1,
                 transition: 'opacity 0.25s ease',
               }}
             >
-              {/* Visible Block Rectangle */}
+              {isDragging && (
+                <rect
+                  x={r.xCm - 3}
+                  y={r.yCm - 3}
+                  width={r.wCm + 6}
+                  height={r.hCm + 6}
+                  fill="none"
+                  stroke={isColliding ? t.attentionFg : t.accent}
+                  strokeWidth={2}
+                  strokeOpacity={0.35}
+                  rx={7}
+                  style={pointerNone}
+                />
+              )}
+
               <rect
                 x={r.xCm}
                 y={r.yCm}
@@ -371,13 +432,14 @@ export default function CondoFloorPlan({
                 height={r.hCm}
                 fill={fill}
                 stroke={stroke}
-                strokeWidth={strokeWidth}
+                strokeWidth={isSelected || isDragging ? 4 : 2}
                 rx={4}
                 style={{
-                  transition: 'fill 0.15s ease, stroke 0.15s ease',
+                  transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
                   pointerEvents: 'none',
                 }}
               />
+
               <text
                 x={r.xCm + r.wCm / 2}
                 y={r.yCm + r.hCm / 2}
@@ -391,15 +453,16 @@ export default function CondoFloorPlan({
                 {r.label}
               </text>
 
-              {/* Ultra-responsive Hit Target (rgba 0.001 fill ensures 100% painted hit testing in SVG) */}
+              {/* Oversized transparent hit target — a near-zero alpha fill still
+                  receives pointer events and makes small pieces easy to grab. */}
               <rect
-                x={r.xCm - 16}
-                y={r.yCm - 16}
-                width={r.wCm + 32}
-                height={r.hCm + 32}
+                x={r.xCm - 12}
+                y={r.yCm - 12}
+                width={r.wCm + 24}
+                height={r.hCm + 24}
                 fill="rgba(0,0,0,0.001)"
                 style={{
-                  cursor: 'grab',
+                  cursor: isDragging ? 'grabbing' : 'grab',
                   touchAction: 'none',
                   pointerEvents: 'all',
                 }}
@@ -408,48 +471,69 @@ export default function CondoFloorPlan({
             </g>
           );
         })}
+
+        {/* 5. LIVE GAP READOUTS on the dragged piece */}
+        {draggedItem && draggedGaps && (() => {
+          const dr = rects.find((r) => r.id === draggedItem.id);
+          if (!dr) return null;
+          const cx = dr.xCm + dr.wCm / 2;
+          const cy = dr.yCm + dr.hCm / 2;
+          const badge = (key: string, x: number, y: number, cm: number) => (
+            <g key={key} style={pointerNone}>
+              <rect
+                x={x - 26}
+                y={y - 12}
+                width={52}
+                height={24}
+                rx={12}
+                fill={cm < 60 ? t.attentionFg : cm < 91 ? t.tightFg : t.comfortFg}
+                opacity={0.95}
+              />
+              <text
+                x={x}
+                y={y}
+                fontSize={14}
+                fontWeight={800}
+                fill="#FFFFFF"
+                textAnchor="middle"
+                dominantBaseline="middle"
+              >
+                {gapLabel(cm)}
+              </text>
+            </g>
+          );
+          return (
+            <>
+              {badge('gap-w', Math.max(dr.xCm - 34, 30), cy, draggedGaps.west)}
+              {badge('gap-e', Math.min(dr.xCm + dr.wCm + 34, WIDTH_CM - 30), cy, draggedGaps.east)}
+              {badge('gap-n', cx, Math.max(dr.yCm - 22, 16), draggedGaps.north)}
+              {badge('gap-s', cx, Math.min(dr.yCm + dr.hCm + 22, HEIGHT_CM - 16), draggedGaps.south)}
+            </>
+          );
+        })()}
       </svg>
 
-      {/* 5. CORNER CONDO MINIMAP */}
+      {/* 6. CORNER CONDO MINIMAP */}
       {focusedRoomId && (
         <div style={minimapContainerStyle}>
-          <svg
-            viewBox={`-5 -5 ${WIDTH_CM + 10} ${HEIGHT_CM + 10}`}
-            style={{ width: '100%', height: '100%' }}
-          >
-            <rect
-              x={0}
-              y={0}
-              width={WIDTH_CM}
-              height={HEIGHT_CM}
-              fill="none"
-              stroke="#CBD5E1"
-              strokeWidth={3}
-              rx={4}
-            />
-            {CONDO_ROOMS.map((room) => {
-              const isActive = focusedRoomId === room.id;
-              return (
-                <rect
-                  key={`mini-${room.id}`}
-                  x={room.x}
-                  y={room.y}
-                  width={room.width}
-                  height={room.height}
-                  fill={isActive ? t.accent : '#E2E8F0'}
-                  stroke="#94A3B8"
-                  strokeWidth={1}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onFocusRoom && onFocusRoom(room.id)}
-                />
-              );
-            })}
+          <svg viewBox={`-5 -5 ${WIDTH_CM + 10} ${HEIGHT_CM + 10}`} style={{ width: '100%', height: '100%' }}>
+            <rect x={0} y={0} width={WIDTH_CM} height={HEIGHT_CM} fill="none" stroke="#CBD5E1" strokeWidth={3} rx={4} />
+            {CONDO_ROOMS.map((room) => (
+              <rect
+                key={`mini-${room.id}`}
+                x={room.x}
+                y={room.y}
+                width={room.width}
+                height={room.height}
+                fill={focusedRoomId === room.id ? t.accent : '#E2E8F0'}
+                stroke="#94A3B8"
+                strokeWidth={1}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onFocusRoom?.(room.id)}
+              />
+            ))}
           </svg>
-          <button
-            style={minimapExitBtn}
-            onClick={() => onFocusRoom && onFocusRoom(null)}
-            aria-label="Zoom out to condo"
-          >
+          <button style={minimapExitBtn} onClick={() => onFocusRoom?.(null)} aria-label="Zoom out to condo">
             Zoom Out
           </button>
         </div>
@@ -478,6 +562,7 @@ const svgStyle: CSSProperties = {
   borderRadius: '16px',
   background: '#FCFDFE',
   border: `1px solid ${t.line}`,
+  touchAction: 'none',
 };
 
 const pointerNone: CSSProperties = {
