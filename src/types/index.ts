@@ -1,12 +1,8 @@
 export type ScreenName =
-  | 'auth'
-  | 'admin'
+  | 'sessionStart'
   | 'entry'
   | 'arDemo'
-  | 'unitSetup'
   | 'furnitureInput'
-  | 'dimensionVerification'
-  | 'roomScan'
   | 'positionMap'
   | 'analysis'
   | 'recommendations'

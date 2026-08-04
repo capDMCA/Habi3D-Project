@@ -25,7 +25,7 @@ export default function EntryScreen() {
         <button
           id="begin-session-btn"
           className="btn btn-primary"
-          onClick={() => navigateTo('unitSetup')}
+          onClick={() => navigateTo('sessionStart')}
         >
           Begin Session
         </button>

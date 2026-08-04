@@ -10,7 +10,6 @@ import { runClearanceAnalysis } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
-import { hasSupabaseConfig, supabase } from '../supabase';
 import type { FurnitureItem, RoomDimensions, Violation } from '../types';
 
 const xrAnalysisStore = createXRStore({
@@ -185,13 +184,11 @@ function ViolationCard({ violation, rank }: { violation: Violation; rank: number
 
 export default function AnalysisScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
-  const participantId = useSessionStore((s) => s.participantId);
   const roomDimensions = useSessionStore((s) => s.roomDimensions);
   const items = useFurnitureStore((s) => s.items);
   const setViolations = useViolationStore((s) => s.setViolations);
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
 
-  const scoreSaveAttemptedRef = useRef(false);
   const [arError, setArError] = useState('');
   const [arActive, setArActive] = useState(false);
   const [calibrationOffset, setCalibrationOffset] = useState<{ x: number; z: number } | null>(null);
@@ -224,16 +221,6 @@ export default function AnalysisScreen() {
     setViolations(result.violations);
     setSpaceScoreBefore(result.spaceScoreBefore);
   }, [result.violations, result.spaceScoreBefore, setSpaceScoreBefore, setViolations]);
-
-  // Save space score to Supabase (once per session)
-  useEffect(() => {
-    if (!participantId || !hasSupabaseConfig || scoreSaveAttemptedRef.current) return;
-    scoreSaveAttemptedRef.current = true;
-    supabase
-      .from('space_utilization_scores')
-      .insert({ participant_id: participantId, score_before: result.spaceScoreBefore, score_after: 0, improvement_points: 0 })
-      .then(({ error }) => { if (error) console.warn(error.message); });
-  }, [participantId, result.spaceScoreBefore]);
 
   async function openArOverlay() {
     setArError('');

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
@@ -10,13 +10,14 @@ import PlanSandbox from '../components/PlanSandbox';
 import { commitLines } from '../components/previewMove';
 import type { PreviewMove } from '../components/previewMove';
 import { findingReason } from '../components/findingText';
+import { downloadRoomAssessmentPdf } from '../components/pdfReport';
 import { color as t, type as typeScale } from '../components/designTokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import type { WallSide } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
-import type { FurnitureItem, RoomDimensions, Violation } from '../types';
+import type { FurnitureItem, GapClassificationLevel, RoomDimensions, Violation } from '../types';
 
 const xrRecommendationStore = createXRStore({
   offerSession: false,
@@ -25,6 +26,11 @@ const xrRecommendationStore = createXRStore({
   planeDetection: true,
   domOverlay: true,
 });
+
+// How long a fully-comfortable settle waits before the app moves on by
+// itself. Long enough to register as a deliberate pause, short enough that
+// it never feels like the resident is stuck waiting on the app.
+const AUTO_ADVANCE_MS = 1500;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -161,6 +167,58 @@ function FurnitureMesh({ item }: { item: FurnitureItem }) {
   );
 }
 
+/** The "Download my report" action — its own small state machine so a failed
+ *  generation shows a plain inline retry, never a modal or toast. */
+function DownloadReportButton({
+  items,
+  violations,
+  roomWidthCm,
+  roomLengthCm,
+}: {
+  items: FurnitureItem[];
+  violations: Violation[];
+  roomWidthCm: number;
+  roomLengthCm: number;
+}) {
+  const [state, setState] = useState<'idle' | 'working' | 'error'>('idle');
+
+  async function handleDownload() {
+    setState('working');
+    try {
+      await downloadRoomAssessmentPdf({ items, violations, roomWidthCm, roomLengthCm });
+      setState('idle');
+    } catch {
+      setState('error');
+    }
+  }
+
+  return (
+    <div>
+      <button
+        className="btn btn-secondary"
+        type="button"
+        onClick={handleDownload}
+        disabled={state === 'working'}
+        style={{ marginTop: 10 }}
+      >
+        {state === 'working' ? 'Preparing your report…' : 'Download my report'}
+      </button>
+      {state === 'error' && (
+        <p style={{ margin: '8px 0 0', fontSize: 13, color: t.attentionFg }}>
+          Couldn&rsquo;t build the report just now.{' '}
+          <button
+            type="button"
+            onClick={handleDownload}
+            style={{ background: 'none', border: 'none', padding: 0, color: t.attentionFg, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+          >
+            Try again
+          </button>
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function RecommendationScreen() {
@@ -168,6 +226,7 @@ export default function RecommendationScreen() {
   const roomDimensions      = useSessionStore((s) => s.roomDimensions);
   const items               = useFurnitureStore((s) => s.items);
   const recommendations     = useViolationStore((s) => s.recommendations);
+  const violations          = useViolationStore((s) => s.violations);
   const refreshViolations   = useViolationStore((s) => s.refreshViolations);
   const resolveViolations   = useViolationStore((s) => s.resolveViolations);
   const setSpaceScoreAfter  = useViolationStore((s) => s.setSpaceScoreAfter);
@@ -180,8 +239,10 @@ export default function RecommendationScreen() {
     item: FurnitureItem | null;
     isMoved: boolean;
     isDragging: boolean;
-  }>({ item: null, isMoved: false, isDragging: false });
+    pieceWorstClassification: GapClassificationLevel | null;
+  }>({ item: null, isMoved: false, isDragging: false, pieceWorstClassification: null });
   const [settledForFurnitureId, setSettledForFurnitureId] = useState<string | undefined>(undefined);
+  const autoAdvanceTimerRef = useRef<number | undefined>(undefined);
 
   const result = useMemo(
     () => runClearanceAnalysis(items, roomWidthCm, roomLengthCm),
@@ -218,28 +279,20 @@ export default function RecommendationScreen() {
 
   if (currentGroup?.furnitureId !== settledForFurnitureId) {
     setSettledForFurnitureId(currentGroup?.furnitureId);
-    setSettledState({ item: null, isMoved: false, isDragging: false });
+    setSettledState({ item: null, isMoved: false, isDragging: false, pieceWorstClassification: null });
   }
 
   const handleSettledChange = useCallback(
-    (settledItem: FurnitureItem | null, isMoved: boolean, isDragging: boolean) => {
-      setSettledState({ item: settledItem, isMoved, isDragging });
+    (
+      settledItem: FurnitureItem | null,
+      isMoved: boolean,
+      isDragging: boolean,
+      pieceWorstClassification: GapClassificationLevel | null,
+    ) => {
+      setSettledState({ item: settledItem, isMoved, isDragging, pieceWorstClassification });
     },
     [],
   );
-
-  async function launchAR() {
-    setArError('');
-    try {
-      await xrRecommendationStore.enterAR();
-    } catch (err) {
-      setArError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  function exitAR() {
-    xrRecommendationStore.getState().session?.end();
-  }
 
   function handleConfirm() {
     if (!currentGroup || !settledState.item || !settledState.isMoved) return;
@@ -265,16 +318,49 @@ export default function RecommendationScreen() {
     setSpaceScoreAfter(fresh.spaceScoreBefore);
 
     // Reset local settled state for next item
-    setSettledState({ item: null, isMoved: false, isDragging: false });
+    setSettledState({ item: null, isMoved: false, isDragging: false, pieceWorstClassification: null });
   }
+
+  // Fully comfortable settle → the app moves on by itself after a short
+  // pause. This is feedback the resident got it right, not a hoop to jump
+  // through — a tap would work too, but nothing here waits on one.
+  useEffect(() => {
+    const ready =
+      settledState.isMoved &&
+      !settledState.isDragging &&
+      settledState.item !== null &&
+      settledState.pieceWorstClassification === null;
+
+    window.clearTimeout(autoAdvanceTimerRef.current);
+    if (ready) {
+      autoAdvanceTimerRef.current = window.setTimeout(() => {
+        handleConfirm();
+      }, AUTO_ADVANCE_MS);
+    }
+    return () => window.clearTimeout(autoAdvanceTimerRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settledState.isMoved, settledState.isDragging, settledState.item, settledState.pieceWorstClassification]);
 
   function handleSkip() {
     if (!currentGroup) return;
     setSkippedIds((prev) => new Set([...prev, currentGroup.furnitureId]));
-    setSettledState({ item: null, isMoved: false, isDragging: false });
+    setSettledState({ item: null, isMoved: false, isDragging: false, pieceWorstClassification: null });
   }
 
-  // ── Empty state ─────────────────────────────────────────────────────────────
+  async function launchAR() {
+    setArError('');
+    try {
+      await xrRecommendationStore.enterAR();
+    } catch (err) {
+      setArError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function exitAR() {
+    xrRecommendationStore.getState().session?.end();
+  }
+
+  // ── Empty state — nothing was ever tight ────────────────────────────────────
   if (!currentGroup && recommendations.length === 0) {
     return (
       <div className="screen" style={{ maxWidth: 640 }}>
@@ -282,22 +368,24 @@ export default function RecommendationScreen() {
           <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
           <div className="screen-header-info">
             <span className="step-label">Your room</span>
-            <h2>Make room</h2>
+            <h2>Try your layout</h2>
           </div>
         </div>
         <div className="card" style={{ borderLeft: `5px solid ${t.comfortFg}`, background: t.comfortBg, padding: 'var(--space-xl)' }}>
-          <p style={{ ...typeScale.display, margin: 0, color: t.ink }}>Everything has room</p>
+          <p style={{ ...typeScale.display, margin: 0, color: t.ink }}>Everything has room to breathe</p>
           <p style={{ ...typeScale.body, margin: '8px 0 0', color: t.inkSoft }}>
-            None of your furniture is crowding a wall or another piece. There&rsquo;s nothing to move.
+            None of your furniture is crowding a wall or another piece. There&rsquo;s nothing that needs a second look.
           </p>
           <button className="btn btn-primary" style={{ marginTop: 'var(--space-lg)' }} onClick={() => navigateTo('report')}>
             See the summary
           </button>
+          <DownloadReportButton items={items} violations={violations} roomWidthCm={roomWidthCm} roomLengthCm={roomLengthCm} />
         </div>
       </div>
     );
   }
 
+  // ── Completion state — been through every piece ─────────────────────────────
   if (!currentGroup) {
     const stillTight = result.violations.filter((v) => v.classification === 'YELLOW').length;
     const stillAttention = result.violations.filter((v) => v.classification === 'RED').length;
@@ -305,7 +393,7 @@ export default function RecommendationScreen() {
     const headBg = stillAttention > 0 ? t.attentionBg : stillTight > 0 ? t.tightBg : t.comfortBg;
     const body =
       stillAttention > 0
-        ? `${stillAttention} spot${stillAttention === 1 ? '' : 's'} could still use more room — you can go back and adjust, or see the summary.`
+        ? `${stillAttention} spot${stillAttention === 1 ? '' : 's'} could still use more room — you can go back and try again, or see the summary.`
         : stillTight > 0
           ? `${stillTight} spot${stillTight === 1 ? ' is' : 's are'} still a little tight, but nothing needs urgent room. You can leave ${stillTight === 1 ? 'it' : 'them'} as is or come back later.`
           : 'Every piece now has comfortable clearance.';
@@ -315,7 +403,7 @@ export default function RecommendationScreen() {
           <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
           <div className="screen-header-info">
             <span className="step-label">Your room</span>
-            <h2>Make room</h2>
+            <h2>Try your layout</h2>
           </div>
         </div>
         <div className="card" style={{ borderLeft: `5px solid ${headColor}`, background: headBg, padding: 'var(--space-xl)' }}>
@@ -328,6 +416,7 @@ export default function RecommendationScreen() {
           >
             See the summary
           </button>
+          <DownloadReportButton items={items} violations={violations} roomWidthCm={roomWidthCm} roomLengthCm={roomLengthCm} />
         </div>
       </div>
     );
@@ -335,6 +424,14 @@ export default function RecommendationScreen() {
 
   const instructionLines = engineMoveLines(currentGroup);
   const reasonViolation = currentGroup.directionGroups[0]?.violations[0] ?? currentGroup.allViolations[0];
+
+  // Confirm button copy — honest about the trade-off, never a hoop. A fully
+  // comfortable settle doesn't need this button at all (it auto-advances);
+  // this only renders once something has actually settled short of that.
+  const showConfirm = settledState.isMoved && !settledState.isDragging && settledState.item !== null;
+  const isAutoAdvancing = showConfirm && settledState.pieceWorstClassification === null;
+  const confirmLabel =
+    settledState.pieceWorstClassification === 'RED' ? 'Keep it here anyway' : 'Looks good, keep it here';
 
   return (
     <div className="screen" style={{ maxWidth: 640, paddingBottom: 92 }}>
@@ -344,12 +441,17 @@ export default function RecommendationScreen() {
         <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
         <div className="screen-header-info">
           <span className="step-label">Your room</span>
-          <h2>Make room</h2>
+          <h2>Try your layout</h2>
         </div>
         <span style={stepCountStyle}>
           {doneCount + 1} of {totalCount}
         </span>
       </div>
+
+      <p style={{ ...typeScale.body, margin: '0 0 var(--space-md)', color: t.inkSoft }}>
+        See how your room feels with each piece in a different spot. Nothing here is a test to pass —
+        drag anything to try it, and the feedback below just tells you what that spot would feel like.
+      </p>
 
       {/* ── Progress track — one bar per unique furniture piece ─────────────── */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 'var(--space-md)' }}>
@@ -371,16 +473,14 @@ export default function RecommendationScreen() {
         })}
       </div>
 
-      {/* ── Action card — the engine's stable recommendation ──────────────── */}
-      {/* This sentence describes the top suggestion for the REAL layout and does
-          NOT change as the user drags the plan below — it's steady guidance. */}
+      {/* ── Action card — a suggestion, not a directive ─────────────────────── */}
       <section
         key={currentGroup.furnitureId}
         className="card"
         style={{ borderLeft: `5px solid ${currentGroup.color}`, animation: 'screenFadeIn 0.3s ease' }}
       >
         <p style={{ ...typeScale.label, margin: '0 0 2px', color: t.inkMute }}>
-          What to do
+          One idea
         </p>
         <p style={{ ...typeScale.display, margin: '0 0 12px', color: t.ink }}>
           {currentGroup.furnitureLabel}
@@ -388,7 +488,7 @@ export default function RecommendationScreen() {
 
         {instructionLines.map((line) => (
           <p key={line} style={{ ...typeScale.title, margin: '0 0 8px', color: t.ink }}>
-            {line}
+            Try: {line}
           </p>
         ))}
 
@@ -401,7 +501,11 @@ export default function RecommendationScreen() {
 
       {/* ── Interactive plan — the primary, always-visible sandbox ─────────── */}
       {/* Drag the block to explore; the status list below reacts live. No ghost
-          target — the suggestion is the sentence in the action card above. */}
+          target — the suggestion is the sentence in the action card above.
+          PlanSandbox reserves a hard 60vh for the plan itself (see its
+          planWrapStyle), so the room and every piece on it stay large enough
+          to grab confidently with a thumb no matter how long the status
+          list below grows. */}
       <section className="card card-sm">
         <PlanSandbox
           key={currentGroup.furnitureId}
@@ -490,7 +594,7 @@ export default function RecommendationScreen() {
       <div className="card card-sm" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
-            {doneCount} of {totalCount} furniture piece{totalCount !== 1 ? 's' : ''} addressed
+            {doneCount} of {totalCount} furniture piece{totalCount !== 1 ? 's' : ''} tried
           </p>
         </div>
         <div style={{
@@ -505,31 +609,30 @@ export default function RecommendationScreen() {
       </div>
 
       {/* ── Sticky action buttons ─────────────────────────────────────────────── */}
-      {(() => {
-        const showConfirm = settledState.isMoved && !settledState.isDragging && settledState.item !== null;
-        return (
-          <div style={stickyFooterStyle}>
-            <div
-              style={{
-                maxWidth: 640,
-                margin: '0 auto',
-                display: 'grid',
-                gridTemplateColumns: showConfirm ? '1fr 1fr' : '1fr',
-                gap: 10,
-              }}
-            >
-              <button className="btn btn-secondary" type="button" onClick={handleSkip}>
-                Skip
-              </button>
-              {showConfirm && (
-                <button className="btn btn-primary" type="button" onClick={handleConfirm}>
-                  I placed it here
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })()}
+      <div style={stickyFooterStyle}>
+        <div
+          style={{
+            maxWidth: 640,
+            margin: '0 auto',
+            display: 'grid',
+            gridTemplateColumns: showConfirm && !isAutoAdvancing ? '1fr 1fr' : '1fr',
+            gap: 10,
+          }}
+        >
+          {isAutoAdvancing ? (
+            <p style={autoAdvanceNoteStyle}>Comfortable — moving on to the next piece&hellip;</p>
+          ) : (
+            <button className="btn btn-secondary" type="button" onClick={handleSkip}>
+              Skip
+            </button>
+          )}
+          {showConfirm && !isAutoAdvancing && (
+            <button className="btn btn-primary" type="button" onClick={handleConfirm}>
+              {confirmLabel}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -549,6 +652,15 @@ const stepCountStyle: CSSProperties = {
   flexShrink: 0,
 };
 
+const autoAdvanceNoteStyle: CSSProperties = {
+  ...typeScale.body,
+  margin: 0,
+  textAlign: 'center',
+  color: t.comfortFg,
+  fontWeight: 700,
+  padding: '12px 0',
+};
+
 const stickyFooterStyle: CSSProperties = {
   position: 'fixed',
   left: 0,
@@ -561,4 +673,3 @@ const stickyFooterStyle: CSSProperties = {
   backdropFilter: 'blur(10px)',
   zIndex: 20,
 };
-

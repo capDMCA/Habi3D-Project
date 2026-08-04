@@ -1,6 +1,4 @@
-
-
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { projectItems } from './floorPlanGeometry';
 import { color } from './designTokens';
@@ -23,7 +21,9 @@ import type { FurnitureItem } from '../types';
  * measures against — so the plan and the analysis can never disagree.
  *
  * INTERACTION (optional). Pass `interactive` to make one block draggable. This
- * component owns only the pointer→world projection (via the SVG's own screen
+ * component owns only the pointer→world projection (via the SVG'
+ * 
+ * s own screen
  * CTM — the one place with the element ref) and reports raw world-metre
  * coordinates upward. Snapping, feasibility and snap-back live in the caller,
  * on top of the engine predicate — this component makes no geometry decisions.
@@ -76,6 +76,9 @@ function eventToWorldMetres(svg: SVGSVGElement, e: ReactPointerEvent): { xm: num
   return { xm: p.x / 100, zm: p.y / 100 }; // viewBox units are centimetres
 }
 
+/** Every rendered furniture piece must be tappable with a thumb. */
+const MIN_TOUCH_TARGET_PX = 44;
+
 export default function FloorPlan2D({
   items,
   roomWidthCm,
@@ -89,11 +92,52 @@ export default function FloorPlan2D({
   const rects = useMemo(() => projectItems(items), [items]);
   const ghostRects = useMemo(() => (ghostItem ? projectItems([ghostItem]) : []), [ghostItem]);
   const svgRef = useRef<SVGSVGElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
 
   const fontCm = Math.min(28, Math.max(16, Math.min(roomWidthCm, roomLengthCm) * 0.045));
   const vbW = roomWidthCm + PAD_CM * 2;
   const vbH = roomLengthCm + PAD_CM * 2;
+
+  // The narrower edge of the smallest piece on the plan, in centimetres —
+  // this is what has to clear the 44px touch-target floor. An empty room
+  // has nothing to protect, so it falls back to the room's own scale.
+  const smallestEdgeCm = useMemo(() => {
+    if (rects.length === 0) return Math.min(vbW, vbH);
+    return rects.reduce((min, r) => Math.min(min, r.wCm, r.hCm), Infinity);
+  }, [rects, vbW, vbH]);
+
+  // Measure the actual on-screen width available to the plan. The SVG scales
+  // proportionally to fill it, so this is what "px per cm" resolves to
+  // before any minimum-touch-target correction is applied.
+  const [containerWidthPx, setContainerWidthPx] = useState(0);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => setContainerWidthPx(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // The scale-up factor applied to the WHOLE plan — never the block alone —
+  // whenever the room is too large relative to its furniture for the
+  // smallest piece to clear 44px at natural (fit-to-width) scale.
+  const scale = useMemo(() => {
+    if (containerWidthPx <= 0) return 1;
+    const naturalPxPerCm = containerWidthPx / vbW;
+    const naturalSmallestPx = smallestEdgeCm * naturalPxPerCm;
+    if (naturalSmallestPx >= MIN_TOUCH_TARGET_PX) return 1;
+    return MIN_TOUCH_TARGET_PX / naturalSmallestPx;
+  }, [containerWidthPx, vbW, smallestEdgeCm]);
+
+  // Final on-screen pixel size. At scale 1 this equals the container width
+  // (the common case); above 1, the plan is deliberately wider/taller than
+  // the viewport and the wrapper scrolls so every piece stays reachable at
+  // a real tappable size instead of shrinking to fit.
+  const renderedWidthPx = containerWidthPx > 0 ? containerWidthPx * scale : undefined;
+  const renderedHeightPx = renderedWidthPx !== undefined ? (renderedWidthPx / vbW) * vbH : undefined;
 
   function handlePointerDown(e: ReactPointerEvent<SVGRectElement>, itemId: string) {
     if (onSelectItem) {
@@ -121,11 +165,21 @@ export default function FloorPlan2D({
     interactive.onDragEnd();
   }
 
+  // At scale 1 the SVG simply fills its wrapper (the common case: fit-to-
+  // width already clears 44px). Above 1 it's given explicit pixel dimensions
+  // larger than the wrapper, and the wrapper scrolls — the whole plan got
+  // bigger, not just the furniture, so proportions stay true to the room.
+  const svgSizeStyle: CSSProperties =
+    scale > 1 && renderedWidthPx !== undefined && renderedHeightPx !== undefined
+      ? { width: renderedWidthPx, height: renderedHeightPx, flexShrink: 0 }
+      : { width: '100%', height: '100%' };
+
   return (
+    <div ref={wrapRef} style={scrollWrapStyle}>
     <svg
       ref={svgRef}
       viewBox={`${-PAD_CM} ${-PAD_CM} ${vbW} ${vbH}`}
-      style={svgStyle}
+      style={{ ...svgStyle, ...svgSizeStyle }}
       role="img"
       aria-label="Top-down plan of your room and furniture"
     >
@@ -196,8 +250,8 @@ export default function FloorPlan2D({
         // 1. If actively dragging/infeasible -> show red infeasibility tint.
         // 2. If it is the selected item -> show solid Phase 1 accent blue tokens.
         // 3. Otherwise -> color code according to its current clearance status.
-        let fill: string = color.itemFill;
-        let stroke: string = color.itemStroke;
+        let fill: string;
+        let stroke: string;
 
         if (isBad) {
           fill = BAD_FILL;
@@ -249,13 +303,21 @@ export default function FloorPlan2D({
         );
       })}
     </svg>
+    </div>
   );
 }
 
-const svgStyle: CSSProperties = {
+const scrollWrapStyle: CSSProperties = {
   width: '100%',
-  height: 'auto',
-  maxHeight: '58vh',
+  height: '100%',
+  minHeight: 0,
+  overflow: 'auto',
+  borderRadius: 12,
+  // Momentum scroll on iOS when the plan is larger than its wrapper.
+  WebkitOverflowScrolling: 'touch',
+} as CSSProperties;
+
+const svgStyle: CSSProperties = {
   display: 'block',
   fontFamily: "'Inter', system-ui, sans-serif",
   touchAction: 'none', // let the SVG own the drag gesture, not the page scroll

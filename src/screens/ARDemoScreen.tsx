@@ -347,7 +347,7 @@ export default function ARDemoScreen() {
   const preARScreen = (
       <div className="screen">
         <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('auth')} aria-label="Go back">
+          <button className="back-btn" onClick={() => navigateTo('sessionStart')} aria-label="Go back">
             ←
           </button>
           <div className="screen-header-info">

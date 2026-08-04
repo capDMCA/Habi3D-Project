@@ -45,6 +45,32 @@ const RULE_CONSEQUENCE: Record<string, string> = {
   D5: 'is too tight a passage to move through',
 };
 
+// Same consequence, as a standalone sentence with no object names — for the
+// status row's primary line. Never a measurement, never a rule code: just
+// what it would feel like to live with this gap.
+const CONSEQUENCE_SENTENCE: Record<string, string> = {
+  L1: 'Not enough room to walk through comfortably',
+  L2: 'Not enough legroom here',
+  L3: 'A tight squeeze to move between these',
+  L4: 'The main walkway is too narrow here',
+  L5: 'Not enough depth for a comfortable seating area',
+  D1: 'Not enough room to pull the table out',
+  D2: 'Not enough room to pull a chair out and sit',
+  D3: 'No room to pass behind someone seated',
+  D4: 'Too tight to walk past someone seated',
+  D5: 'Too tight a passage to move through',
+};
+
+/**
+ * The plain-language consequence alone, standalone — "Not enough room to
+ * walk past comfortably." No object names, no measurement, no rule code.
+ * This is the resident-facing status row's primary line; the measurement
+ * (findingDetail) goes below it as a smaller, secondary line.
+ */
+export function findingConsequence(v: Violation): string {
+  return CONSEQUENCE_SENTENCE[v.ruleCode] ?? 'Tighter than recommended here';
+}
+
 /**
  * One-sentence reason a finding matters — names both objects (or the wall) and
  * the human consequence. No rule codes, no numbers.

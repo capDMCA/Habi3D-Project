@@ -4,15 +4,26 @@ import { statusMeta } from './statusVocabulary';
 import { color, type as typeScale } from './designTokens';
 
 /**
- * One finding, presented calmly: a state icon, a plain-language label, and a
- * one-line detail. The canonical row shared by the drag preview and (later)
- * the Analysis list, so both read identically.
+ * One finding, presented calmly: a state icon, the plain human consequence
+ * ("Not enough room to walk past comfortably") as the primary line, and the
+ * measurement as a smaller secondary line below it — never the other way
+ * round. The canonical row shared by the drag preview and the Analysis list,
+ * so both read identically.
+ *
+ * `improved` plays a brief colour-transition flash — not a toast, not a
+ * modal — when this exact finding just got better than it was a moment ago.
+ * It's driven entirely by CSS (a keyframe animation gated on the `improved`
+ * prop, colour supplied via a custom property) rather than a JS timer, so
+ * there's no setState-in-effect and no risk of a stuck highlight if the
+ * component unmounts mid-flash.
  */
 
 export interface StatusRowProps {
   status: StatusKey;
   title: string;
   detail: string;
+  /** True for the render right after this finding's status improved. */
+  improved?: boolean;
 }
 
 function StatusIcon({ status, color }: { status: StatusKey; color: string }) {
@@ -36,10 +47,14 @@ function StatusIcon({ status, color }: { status: StatusKey; color: string }) {
   );
 }
 
-export default function StatusRow({ status, title, detail }: StatusRowProps) {
+export default function StatusRow({ status, title, detail, improved = false }: StatusRowProps) {
   const meta = statusMeta(status);
+  const flashStyle: CSSProperties = improved
+    ? ({ animation: 'statusRowImprove 0.9s ease', '--status-row-flash-bg': meta.bg } as CSSProperties)
+    : {};
+
   return (
-    <div style={rowStyle}>
+    <div style={{ ...rowStyle, ...flashStyle }}>
       <span style={{ ...iconWrap, background: meta.bg }}>
         <StatusIcon status={status} color={meta.color} />
       </span>
@@ -55,7 +70,8 @@ const rowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 12,
-  padding: '12px 4px',
+  padding: '12px 10px',
+  borderRadius: 10,
 };
 
 const iconWrap: CSSProperties = {
@@ -76,7 +92,7 @@ const titleStyle: CSSProperties = {
 };
 
 const detailStyle: CSSProperties = {
-  ...typeScale.body,
   margin: '2px 0 0',
   fontWeight: 600,
+  fontSize: 12,
 };

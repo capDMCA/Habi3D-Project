@@ -264,7 +264,7 @@ export default function FurnitureInputScreen() {
       <div className="screen">
         {/* Header */}
         <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('unitSetup')} aria-label="Go back">
+          <button className="back-btn" onClick={() => navigateTo('sessionStart')} aria-label="Go back">
             ←
           </button>
           <div className="screen-header-info">
@@ -473,10 +473,6 @@ export default function FurnitureInputScreen() {
             Done Adding Furniture
           </button>
         )}
-
-        <button className="btn btn-secondary" onClick={() => navigateTo('dimensionVerification')}>
-          Verify Dimensions
-        </button>
       </div>
 
       <div

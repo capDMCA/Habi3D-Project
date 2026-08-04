@@ -21,8 +21,9 @@ export interface UnitConfig {
  *   Dining area: 500cm × 390cm = 19.50 sqm
  *   Combined: 49.50 sqm
  *
- * These are researcher estimates. Users can fine-tune ±50cm per dimension
- * on the UnitSetupScreen.
+ * These are researcher estimates — the one reference floor plan every
+ * Mulberry Place unit type currently resolves to. Read silently at session
+ * start; there is no screen to edit them.
  */
 export const MULBERRY_PLACE_2BR: UnitConfig = {
   name: 'Mulberry Place Bengaline — 2 Bedroom',
