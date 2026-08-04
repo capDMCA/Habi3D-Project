@@ -4,6 +4,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
+import DownloadReportButton from '../components/DownloadReportButton';
 import { color as t, radius } from '../components/designTokens';
 
 type RoomStatus = 'RED' | 'YELLOW' | 'GREEN';
@@ -89,6 +90,7 @@ export default function ReportScreen() {
         className="card"
         style={{
           ...cardStyle,
+          ...fadeInStyle(0),
           borderLeft: `5px solid ${redRemaining ? t.attentionFg : yellowRemaining ? t.tightFg : t.comfortFg}`,
         }}
       >
@@ -99,7 +101,7 @@ export default function ReportScreen() {
 
       {/* ── Room by room ───────────────────────────────────────────────────── */}
       {roomStatuses.length > 0 && (
-        <section className="card" style={cardStyle}>
+        <section className="card" style={{ ...cardStyle, ...fadeInStyle(1) }}>
           <span style={stepBadgeStyle}>Room by Room</span>
           <h3 style={{ margin: '8px 0 14px', fontSize: 18, fontWeight: 700, color: t.ink }}>
             How each space turned out
@@ -112,8 +114,20 @@ export default function ReportScreen() {
         </section>
       )}
 
+      {/* ── Keep a copy ──────────────────────────────────────────────────── */}
+      <section className="card" style={{ ...cardStyle, ...fadeInStyle(2) }}>
+        <span style={stepBadgeStyle}>Keep a copy</span>
+        <h3 style={{ margin: '10px 0 6px', fontSize: 18, fontWeight: 700, color: t.ink }}>
+          Save this to your phone
+        </h3>
+        <p style={{ margin: '0 0 16px', fontSize: 14, color: t.inkSoft, lineHeight: 1.5 }}>
+          A one-page PDF of your room and how each piece turned out — handy to keep or share.
+        </p>
+        <DownloadReportButton items={items} violations={violations} variant="primary" />
+      </section>
+
       {/* ── Actions ──────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 24 }}>
+      <div style={{ ...fadeInStyle(3), display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
         <button
           className="btn btn-primary"
           type="button"
@@ -187,6 +201,15 @@ function RoomStatusRow({ label, status }: { label: string; status: RoomStatus })
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
+
+/** Each section arrives a beat after the one before it — the results read
+ *  as a sequence of moments rather than all landing on the screen at once. */
+function fadeInStyle(order: number): CSSProperties {
+  return {
+    animation: 'screenFadeIn 0.4s ease backwards',
+    animationDelay: `${order * 70}ms`,
+  };
+}
 
 const cardStyle: CSSProperties = {
   background: '#FFFFFF',

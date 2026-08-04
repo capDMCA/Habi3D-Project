@@ -10,7 +10,7 @@ import PlanSandbox from '../components/PlanSandbox';
 import { commitLines } from '../components/previewMove';
 import type { PreviewMove } from '../components/previewMove';
 import { findingReason } from '../components/findingText';
-import { downloadRoomAssessmentPdf } from '../components/pdfReport';
+import DownloadReportButton from '../components/DownloadReportButton';
 import { color as t, type as typeScale } from '../components/designTokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import type { WallSide } from '../engine/clearance';
@@ -164,58 +164,6 @@ function FurnitureMesh({ item }: { item: FurnitureItem }) {
         <meshStandardMaterial color="#2B4E8C" roughness={0.45} metalness={0.05} />
       </mesh>
     </group>
-  );
-}
-
-/** The "Download my report" action — its own small state machine so a failed
- *  generation shows a plain inline retry, never a modal or toast. */
-function DownloadReportButton({
-  items,
-  violations,
-  roomWidthCm,
-  roomLengthCm,
-}: {
-  items: FurnitureItem[];
-  violations: Violation[];
-  roomWidthCm: number;
-  roomLengthCm: number;
-}) {
-  const [state, setState] = useState<'idle' | 'working' | 'error'>('idle');
-
-  async function handleDownload() {
-    setState('working');
-    try {
-      await downloadRoomAssessmentPdf({ items, violations, roomWidthCm, roomLengthCm });
-      setState('idle');
-    } catch {
-      setState('error');
-    }
-  }
-
-  return (
-    <div>
-      <button
-        className="btn btn-secondary"
-        type="button"
-        onClick={handleDownload}
-        disabled={state === 'working'}
-        style={{ marginTop: 10 }}
-      >
-        {state === 'working' ? 'Preparing your report…' : 'Download my report'}
-      </button>
-      {state === 'error' && (
-        <p style={{ margin: '8px 0 0', fontSize: 13, color: t.attentionFg }}>
-          Couldn&rsquo;t build the report just now.{' '}
-          <button
-            type="button"
-            onClick={handleDownload}
-            style={{ background: 'none', border: 'none', padding: 0, color: t.attentionFg, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
-          >
-            Try again
-          </button>
-        </p>
-      )}
-    </div>
   );
 }
 
@@ -379,7 +327,7 @@ export default function RecommendationScreen() {
           <button className="btn btn-primary" style={{ marginTop: 'var(--space-lg)' }} onClick={() => navigateTo('report')}>
             See the summary
           </button>
-          <DownloadReportButton items={items} violations={violations} roomWidthCm={roomWidthCm} roomLengthCm={roomLengthCm} />
+          <DownloadReportButton items={items} violations={violations} />
         </div>
       </div>
     );
@@ -416,7 +364,7 @@ export default function RecommendationScreen() {
           >
             See the summary
           </button>
-          <DownloadReportButton items={items} violations={violations} roomWidthCm={roomWidthCm} roomLengthCm={roomLengthCm} />
+          <DownloadReportButton items={items} violations={violations} />
         </div>
       </div>
     );

@@ -2,6 +2,8 @@ import { jsPDF } from 'jspdf';
 import { projectItems } from './floorPlanGeometry';
 import { findingConsequence } from './findingText';
 import { color as t } from './designTokens';
+import { CONDO_ROOMS } from '../data/condoLayout';
+import { UNIT_WIDTH_CM, UNIT_HEIGHT_CM } from './floorPlanDrag';
 import type { FurnitureItem, GapClassificationLevel, Violation } from '../types';
 
 /**
@@ -9,17 +11,17 @@ import type { FurnitureItem, GapClassificationLevel, Violation } from '../types'
  * record, not a technical export. No server call, no upload, no Supabase;
  * jsPDF renders straight to a browser download.
  *
- * The floor plan drawn into the PDF uses the exact same projectItems()
- * geometry the live FloorPlan2D component renders from (floorPlanGeometry.ts)
- * — never a screenshot/html2canvas capture — so the PDF can never show a
- * different room than the one the resident actually arranged.
+ * The floor plan drawn into the PDF is the same Mulberry Place room layout
+ * (CONDO_ROOMS, the unit envelope from floorPlanDrag.ts) and the same
+ * per-item rectangles (projectItems() in floorPlanGeometry.ts) that the live
+ * CondoFloorPlan component renders from — never a screenshot/html2canvas
+ * capture — so the PDF can never show a different room than the one the
+ * resident actually arranged.
  */
 
 export interface PdfReportParams {
   items: FurnitureItem[];
   violations: Violation[];
-  roomWidthCm: number;
-  roomLengthCm: number;
 }
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -67,29 +69,55 @@ const STATUS_STROKE: Record<GapClassificationLevel, string> = {
   GREEN: t.comfortFg,
 };
 
+/** Draws the Mulberry Place room layout plus every furniture piece at its
+ *  final position, scaled to fit the box given. Returns the bottom Y used. */
 function drawPlan(
   doc: jsPDF,
   items: FurnitureItem[],
   classificationById: Map<string, GapClassificationLevel>,
-  roomWidthCm: number,
-  roomLengthCm: number,
   originXmm: number,
   originYmm: number,
   maxWmm: number,
   maxHmm: number,
 ) {
-  const rects = projectItems(items);
-  const scale = Math.min(maxWmm / roomWidthCm, maxHmm / roomLengthCm);
-  const roomWmm = roomWidthCm * scale;
-  const roomHmm = roomLengthCm * scale;
+  const scale = Math.min(maxWmm / UNIT_WIDTH_CM, maxHmm / UNIT_HEIGHT_CM);
+  const unitWmm = UNIT_WIDTH_CM * scale;
+  const unitHmm = UNIT_HEIGHT_CM * scale;
 
-  // Room outline
+  // Outer unit boundary
   const [rs1, rs2, rs3] = hexToRgb(t.roomStroke);
   doc.setDrawColor(rs1, rs2, rs3);
-  doc.setFillColor(255, 255, 255);
-  doc.setLineWidth(0.5);
-  doc.roundedRect(originXmm, originYmm, roomWmm, roomHmm, 1.5, 1.5, 'FD');
+  doc.setLineWidth(0.6);
+  doc.roundedRect(originXmm, originYmm, unitWmm, unitHmm, 1.5, 1.5);
 
+  // Room zones — same light tint + label the live plan uses, just rendered
+  // for print: a muted ink label instead of white-on-saturated (the fill
+  // opacity here is too light for the live app's white room labels to read).
+  CONDO_ROOMS.forEach((room) => {
+    const x = originXmm + room.x * scale;
+    const y = originYmm + room.y * scale;
+    const w = room.width * scale;
+    const h = room.height * scale;
+
+    const [br, bg, bb] = hexToRgb(room.bgColor);
+    doc.setFillColor(br, bg, bb);
+    doc.setGState(doc.GState({ opacity: 0.08 }));
+    doc.setDrawColor(rs1, rs2, rs3);
+    doc.setLineWidth(0.25);
+    doc.rect(x, y, w, h, 'FD');
+    doc.setGState(doc.GState({ opacity: 1 }));
+
+    if (w > 14 && h > 8) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(110, 118, 134);
+      doc.text(room.label, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle', maxWidth: w - 2 });
+    }
+  });
+
+  // Furniture — coloured by final clearance status, same palette as the
+  // live plan and the rest of this report.
+  const rects = projectItems(items);
   rects.forEach((r) => {
     const x = originXmm + r.xCm * scale;
     const y = originYmm + r.yCm * scale;
@@ -105,13 +133,14 @@ function drawPlan(
     doc.roundedRect(x, y, w, h, 0.8, 0.8, 'FD');
 
     if (w > 10 && h > 6) {
+      doc.setFont('helvetica', 'normal');
       doc.setFontSize(6);
-      doc.setTextColor(70, 80, 100);
+      doc.setTextColor(60, 68, 88);
       doc.text(r.label, x + w / 2, y + h / 2, { align: 'center', baseline: 'middle', maxWidth: w - 2 });
     }
   });
 
-  return originYmm + roomHmm;
+  return originYmm + unitHmm;
 }
 
 /**
@@ -120,7 +149,7 @@ function drawPlan(
  * it without changing how it's invoked.
  */
 export async function downloadRoomAssessmentPdf(params: PdfReportParams): Promise<void> {
-  const { items, violations, roomWidthCm, roomLengthCm } = params;
+  const { items, violations } = params;
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -150,8 +179,8 @@ export async function downloadRoomAssessmentPdf(params: PdfReportParams): Promis
   const summaries = summariseItems(items, violations);
   const classificationById = new Map(summaries.map((s) => [s.id, s.classification]));
   const planTop = 40;
-  const planMaxH = 78;
-  const planBottom = drawPlan(doc, items, classificationById, roomWidthCm, roomLengthCm, margin, planTop, contentW, planMaxH);
+  const planMaxH = 100;
+  const planBottom = drawPlan(doc, items, classificationById, margin, planTop, contentW, planMaxH);
 
   // ── Per-item summary ────────────────────────────────────────────────
   let y = planBottom + 10;

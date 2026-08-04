@@ -99,6 +99,10 @@
   100% { background: transparent; }
 }
 
+@keyframes dlSpin {
+  to { transform: rotate(360deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wksp-rec-card {
     animation: none;
