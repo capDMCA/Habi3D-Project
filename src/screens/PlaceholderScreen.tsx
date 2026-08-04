@@ -21,7 +21,7 @@ export default function PlaceholderScreen({ screenName }: { screenName: string }
         <p className="card-subtitle" style={{ marginTop: 'var(--space-sm)', marginBottom: 'var(--space-lg)' }}>
           Screen <code>{screenName}</code> is not recognised.
         </p>
-        <button className="btn btn-secondary" style={{ maxWidth: 240 }} onClick={() => navigateTo('sessionStart')}>
+        <button className="btn btn-secondary" style={{ maxWidth: 240 }} onClick={() => navigateTo('entry')}>
           Back to Start
         </button>
       </div>

@@ -4,9 +4,9 @@ import type { ScreenName, RoomDimensions } from '../types';
 interface SessionState {
   currentScreen: ScreenName;
   // Anonymous session — no account, no login. Generated once when the
-  // resident taps "Start my session" on the session-start screen.
+  // resident taps "Begin Session" on the entry screen.
   sessionId: string | null;
-  // Which Mulberry Place unit type the resident confirmed on session-start.
+  // Which Mulberry Place unit type the resident confirmed on unit setup.
   unitTypeId: string | null;
   roomDimensions: RoomDimensions | null;
   // Actions
@@ -18,7 +18,7 @@ interface SessionState {
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
-  currentScreen: 'sessionStart',
+  currentScreen: 'entry',
   sessionId: null,
   unitTypeId: null,
   roomDimensions: null,
@@ -28,7 +28,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   setRoomDimensions: (dims) => set({ roomDimensions: dims }),
   reset: () =>
     set({
-      currentScreen: 'sessionStart',
+      currentScreen: 'entry',
       sessionId: null,
       unitTypeId: null,
       roomDimensions: null,

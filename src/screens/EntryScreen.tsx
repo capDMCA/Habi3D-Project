@@ -1,7 +1,19 @@
 import { useSessionStore } from '../stores/sessionStore';
 
+function createSessionId(): string {
+  if ('randomUUID' in crypto) return crypto.randomUUID();
+  return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export default function EntryScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
+  const setSessionId = useSessionStore((s) => s.setSessionId);
+
+  function handleBegin() {
+    // Anonymous session — no account, no login, nothing saved but an id.
+    setSessionId(createSessionId());
+    navigateTo('unitSetup');
+  }
 
   return (
     <div className="screen entry-screen">
@@ -17,7 +29,7 @@ export default function EntryScreen() {
 
       <h1 className="entry-title">Habi3D</h1>
       <p className="entry-subtitle">
-        
+        for Mulberry Place residents
       </p>
 
       {/* Start Session Card */}
@@ -25,7 +37,7 @@ export default function EntryScreen() {
         <button
           id="begin-session-btn"
           className="btn btn-primary"
-          onClick={() => navigateTo('sessionStart')}
+          onClick={handleBegin}
         >
           Begin Session
         </button>

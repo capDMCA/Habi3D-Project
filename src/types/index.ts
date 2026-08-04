@@ -1,5 +1,5 @@
 export type ScreenName =
-  | 'sessionStart'
+  | 'unitSetup'
   | 'entry'
   | 'arDemo'
   | 'furnitureInput'
