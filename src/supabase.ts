@@ -16,36 +16,50 @@ export const supabase = createClient(
 
 // ─── Account auth ────────────────────────────────────────────────────────────
 //
-// Real Supabase Auth (auth.users), not a hand-rolled table — the previous
-// login system (a custom `users` table with a SHA-256 password column) was
-// deleted along with AuthScreen/AdminScreen when the project first went
-// anonymous-only. This rebuilds auth from scratch on Supabase's own auth
-// system rather than reviving that table.
+// A plain `users` table (username, password_hash) — not Supabase Auth, and
+// not the pre-Supabase-Auth hand-rolled table either (that one hashed with
+// SHA-256; see CODEBASE_STATUS.md for the "does the old table still exist"
+// caveat). Hashing/verification happens entirely inside Postgres via the
+// `create_user`/`verify_login` RPC functions (pgcrypto's bcrypt) — the
+// client never sees a password_hash, only a user id back. Doing the bcrypt
+// compare here in the browser instead would require SELECTing password_hash
+// down to the client to compare against, which hands every hash to anyone
+// who opens devtools — that's why this isn't a client-side bcrypt call.
 
 export interface AuthUser {
   userId: string;
-  email: string;
+  username: string;
 }
 
-function toAuthUser(user: { id: string; email?: string | null }): AuthUser {
-  return { userId: user.id, email: user.email ?? '' };
-}
-
-/** Throws with a message safe to show directly under the form field. */
-export async function signUpWithEmail(email: string, password: string): Promise<AuthUser> {
+/** Throws with a message safe to show directly under the form field. Never
+ *  includes the password. */
+export async function createAccount(username: string, password: string): Promise<AuthUser> {
   if (!hasSupabaseConfig) throw new Error(supabaseConfigMessage);
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error) throw new Error(error.message);
-  if (!data.user) throw new Error('Could not create an account just now — try again.');
-  return toAuthUser(data.user);
+  const { data, error } = await supabase.rpc('create_user', {
+    p_username: username,
+    p_password: password,
+  });
+  if (error) {
+    if (error.message.includes('username_taken')) throw new Error('That username is already taken.');
+    if (error.message.includes('password_too_short')) throw new Error('Password must be at least 6 characters.');
+    if (error.message.includes('username_required')) throw new Error('Enter a username.');
+    throw new Error('Could not create an account just now — try again.');
+  }
+  if (!data) throw new Error('Could not create an account just now — try again.');
+  return { userId: data as string, username };
 }
 
-export async function signInWithEmail(email: string, password: string): Promise<AuthUser> {
+/** Generic failure message on purpose — never reveals whether the username
+ *  itself exists, only whether the username+password pair matched. */
+export async function logIn(username: string, password: string): Promise<AuthUser> {
   if (!hasSupabaseConfig) throw new Error(supabaseConfigMessage);
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw new Error(error.message);
-  if (!data.user) throw new Error('Could not log you in just now — try again.');
-  return toAuthUser(data.user);
+  const { data, error } = await supabase.rpc('verify_login', {
+    p_username: username,
+    p_password: password,
+  });
+  if (error) throw new Error('Something went wrong — try again.');
+  if (!data) throw new Error('Incorrect username or password.');
+  return { userId: data as string, username };
 }
 
 // ─── Saved session (resume-later layout) ─────────────────────────────────────

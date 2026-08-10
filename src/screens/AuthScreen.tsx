@@ -4,8 +4,8 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { MULBERRY_PLACE_2BR, MULBERRY_PLACE_2BR_ID } from '../data/roomData';
 import {
-  signInWithEmail,
-  signUpWithEmail,
+  logIn,
+  createAccount,
   fetchSavedSession,
   type SavedSessionRow,
 } from '../supabase';
@@ -14,8 +14,8 @@ type Mode = 'login' | 'signup';
 type Phase = 'form' | 'checking' | 'resumeChoice';
 
 /**
- * Log in / create account, on real Supabase Auth (auth.users) — not the
- * hand-rolled `users` table the project used before it went anonymous-only.
+ * Log in / create account, on a plain `users` table (username, password_hash)
+ * — no Supabase Auth, no synthetic email.
  *
  * Login has a second beat: if this account already has a saved layout
  * (saved_sessions, one row per user), the form is replaced by an inline
@@ -35,7 +35,7 @@ export default function AuthScreen() {
   const clearAll = useFurnitureStore((s) => s.clearAll);
 
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [phase, setPhase] = useState<Phase>('form');
   const [error, setError] = useState('');
@@ -59,14 +59,14 @@ export default function AuthScreen() {
 
     try {
       if (mode === 'signup') {
-        const user = await signUpWithEmail(email, password);
-        setUser(user.userId, user.email);
+        const user = await createAccount(username, password);
+        setUser(user.userId, user.username);
         startFresh();
         return;
       }
 
-      const user = await signInWithEmail(email, password);
-      setUser(user.userId, user.email);
+      const user = await logIn(username, password);
+      setUser(user.userId, user.username);
 
       const saved = await fetchSavedSession(user.userId);
       if (saved && saved.items.length > 0) {
@@ -157,16 +157,16 @@ export default function AuthScreen() {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="auth-email">Email</label>
+            <label className="form-label" htmlFor="auth-username">Username</label>
             <input
-              id="auth-email"
+              id="auth-username"
               className="form-input"
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Your username"
             />
           </div>
 

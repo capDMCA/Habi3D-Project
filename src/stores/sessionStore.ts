@@ -11,9 +11,10 @@ interface SessionState {
   // Fixed — this thesis scopes to one Mulberry Place unit, no picker.
   unitTypeId: string | null;
   roomDimensions: RoomDimensions | null;
-  // Supabase auth — null for the anonymous "Begin Session" path.
+  // Account identity (users table id) — null for the anonymous "Begin
+  // Session" path.
   userId: string | null;
-  userEmail: string | null;
+  username: string | null;
   // Which tab the auth screen opens on — set right before navigateTo('auth')
   // since screen routing carries no params of its own.
   authMode: 'login' | 'signup';
@@ -22,7 +23,7 @@ interface SessionState {
   setSessionId: (id: string) => void;
   setUnitTypeId: (id: string) => void;
   setRoomDimensions: (dims: RoomDimensions) => void;
-  setUser: (userId: string | null, email: string | null) => void;
+  setUser: (userId: string | null, username: string | null) => void;
   setAuthMode: (mode: 'login' | 'signup') => void;
   /** Generates a fresh sessionId and reads the fixed unit's dimensions —
    *  the single place both the anonymous and the authenticated paths start
@@ -42,13 +43,13 @@ export const useSessionStore = create<SessionState>((set) => ({
   unitTypeId: null,
   roomDimensions: null,
   userId: null,
-  userEmail: null,
+  username: null,
   authMode: 'login',
   navigateTo: (screen) => set({ currentScreen: screen }),
   setSessionId: (id) => set({ sessionId: id }),
   setUnitTypeId: (id) => set({ unitTypeId: id }),
   setRoomDimensions: (dims) => set({ roomDimensions: dims }),
-  setUser: (userId, email) => set({ userId, userEmail: email }),
+  setUser: (userId, username) => set({ userId, username }),
   setAuthMode: (mode) => set({ authMode: mode }),
   startNewSession: () =>
     set({
@@ -63,6 +64,6 @@ export const useSessionStore = create<SessionState>((set) => ({
       unitTypeId: null,
       roomDimensions: null,
       userId: null,
-      userEmail: null,
+      username: null,
     }),
 }));
