@@ -130,7 +130,14 @@ function drawPlan(
     doc.setFillColor(fr, fg, fb);
     doc.setDrawColor(sr, sg, sb);
     doc.setLineWidth(0.35);
-    doc.roundedRect(x, y, w, h, 0.8, 0.8, 'FD');
+
+    if (r.shape === 'round') {
+      // Same geometry source as the rect case (projectItems()) — w and h
+      // are equal for a round item's square bounding box, so w/2 is exact.
+      doc.circle(x + w / 2, y + h / 2, w / 2, 'FD');
+    } else {
+      doc.roundedRect(x, y, w, h, 0.8, 0.8, 'FD');
+    }
 
     if (w > 10 && h > 6) {
       doc.setFont('helvetica', 'normal');

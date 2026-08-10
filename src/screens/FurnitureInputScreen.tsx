@@ -4,6 +4,7 @@ import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay } from '@react-three/xr';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useAutosaveLayout } from '../stores/useAutosaveLayout';
 import ARMeasureSession, { type MeasurePhase } from '../ar/ARMeasureSession';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import type { FurnitureCategory, FurnitureItem, FurnitureShape } from '../types';
@@ -40,7 +41,7 @@ const SHAPES: Array<{ value: FurnitureShape; label: string; hint: string }> = [
   { value: 'oval', label: 'Oval', hint: 'Oval dining or coffee tables' },
 ];
 
-type MeasureTarget = 'length' | 'width';
+type MeasureTarget = 'length' | 'width' | 'diameter';
 
 function createFurnitureId(): string {
   if ('randomUUID' in crypto) return crypto.randomUUID();
@@ -151,6 +152,8 @@ export default function FurnitureInputScreen() {
   const addItem = useFurnitureStore((s) => s.addItem);
   const removeItem = useFurnitureStore((s) => s.removeItem);
 
+  useAutosaveLayout(items);
+
   const [category, setCategory] = useState<FurnitureCategory | ''>('');
   const [shape, setShape] = useState<FurnitureShape | ''>('');
   const [label, setLabel] = useState('');
@@ -187,8 +190,9 @@ export default function FurnitureInputScreen() {
     ? SHAPES.filter((s) => selectedCategoryDef.shapes.includes(s.value))
     : SHAPES;
   const measurementTitle =
-    measureTarget === 'length' ? 'Measuring length' :
-    measureTarget === 'width'  ? 'Measuring width'  : 'Measuring';
+    measureTarget === 'length'   ? 'Measuring length' :
+    measureTarget === 'width'    ? 'Measuring width'  :
+    measureTarget === 'diameter' ? 'Measuring diameter' : 'Measuring';
 
   function handlePhaseChange(phase: MeasurePhase, cm?: number) {
     setMeasurePhase(phase);
@@ -223,6 +227,14 @@ export default function FurnitureInputScreen() {
     }
 
     if (measureTarget === 'width') {
+      setWidthCm(String(distanceCm));
+    }
+
+    if (measureTarget === 'diameter') {
+      // A round table's footprint is a square of side = diameter — the
+      // same value on both axes, so effectiveLengthCm/effectiveWidthCm in
+      // the clearance engine reads it as an exact bounding box.
+      setLengthCm(String(distanceCm));
       setWidthCm(String(distanceCm));
     }
 
@@ -264,22 +276,18 @@ export default function FurnitureInputScreen() {
       <div className="screen">
         {/* Header */}
         <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('unitSetup')} aria-label="Go back">
+          <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
             ←
           </button>
           <div className="screen-header-info">
-            <span className="step-label">Step 2 of 6</span>
+            <span className="step-label">Step 1 of 2</span>
             <h2>Map Your Furniture</h2>
           </div>
         </div>
 
         {/* Progress */}
         <div className="progress-bar">
-          <div className="progress-step completed" />
           <div className="progress-step active" />
-          <div className="progress-step" />
-          <div className="progress-step" />
-          <div className="progress-step" />
           <div className="progress-step" />
         </div>
 
@@ -392,53 +400,88 @@ export default function FurnitureInputScreen() {
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="length-cm">
-                Length <span className="form-sublabel">(cm)</span>
-              </label>
-              <div style={measureRowStyle}>
-                <input
-                  id="length-cm"
-                  className="form-input"
-                  inputMode="numeric"
-                  value={lengthCm}
-                  onChange={(event) => setLengthCm(event.target.value.replace(/\D/g, ''))}
-                  placeholder="Measure or enter"
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={measureButtonStyle}
-                  onClick={() => startMeasurement('length')}
-                >
-                  Measure
-                </button>
+            {shape === 'round' ? (
+              <div className="form-group">
+                <label className="form-label" htmlFor="diameter-cm">
+                  Diameter <span className="form-sublabel">(cm)</span>
+                </label>
+                <p className="form-sublabel" style={{ display: 'block', margin: '-2px 0 8px' }}>
+                  Tap two points across the table, edge to edge through the centre.
+                </p>
+                <div style={measureRowStyle}>
+                  <input
+                    id="diameter-cm"
+                    className="form-input"
+                    inputMode="numeric"
+                    value={lengthCm}
+                    onChange={(event) => {
+                      const digits = event.target.value.replace(/\D/g, '');
+                      setLengthCm(digits);
+                      setWidthCm(digits);
+                    }}
+                    placeholder="Measure or enter"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={measureButtonStyle}
+                    onClick={() => startMeasurement('diameter')}
+                  >
+                    Measure
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="length-cm">
+                    Length <span className="form-sublabel">(cm)</span>
+                  </label>
+                  <div style={measureRowStyle}>
+                    <input
+                      id="length-cm"
+                      className="form-input"
+                      inputMode="numeric"
+                      value={lengthCm}
+                      onChange={(event) => setLengthCm(event.target.value.replace(/\D/g, ''))}
+                      placeholder="Measure or enter"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={measureButtonStyle}
+                      onClick={() => startMeasurement('length')}
+                    >
+                      Measure
+                    </button>
+                  </div>
+                </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="width-cm">
-                Width <span className="form-sublabel">(cm)</span>
-              </label>
-              <div style={measureRowStyle}>
-                <input
-                  id="width-cm"
-                  className="form-input"
-                  inputMode="numeric"
-                  value={widthCm}
-                  onChange={(event) => setWidthCm(event.target.value.replace(/\D/g, ''))}
-                  placeholder="Measure or enter"
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={measureButtonStyle}
-                  onClick={() => startMeasurement('width')}
-                >
-                  Measure
-                </button>
-              </div>
-            </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="width-cm">
+                    Width <span className="form-sublabel">(cm)</span>
+                  </label>
+                  <div style={measureRowStyle}>
+                    <input
+                      id="width-cm"
+                      className="form-input"
+                      inputMode="numeric"
+                      value={widthCm}
+                      onChange={(event) => setWidthCm(event.target.value.replace(/\D/g, ''))}
+                      placeholder="Measure or enter"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={measureButtonStyle}
+                      onClick={() => startMeasurement('width')}
+                    >
+                      Measure
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="form-group">
               <label className="form-label" htmlFor="height-cm">

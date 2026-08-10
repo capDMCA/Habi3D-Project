@@ -1,18 +1,26 @@
 import { useSessionStore } from '../stores/sessionStore';
 
-function createSessionId(): string {
-  if ('randomUUID' in crypto) return crypto.randomUUID();
-  return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 export default function EntryScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
-  const setSessionId = useSessionStore((s) => s.setSessionId);
+  const startNewSession = useSessionStore((s) => s.startNewSession);
+  const setAuthMode = useSessionStore((s) => s.setAuthMode);
 
   function handleBegin() {
     // Anonymous session — no account, no login, nothing saved but an id.
-    setSessionId(createSessionId());
-    navigateTo('unitSetup');
+    // Single-unit scope: dimensions come from the fixed Mulberry Place
+    // config, no picker screen.
+    startNewSession();
+    navigateTo('furnitureInput');
+  }
+
+  function handleLogIn() {
+    setAuthMode('login');
+    navigateTo('auth');
+  }
+
+  function handleCreateAccount() {
+    setAuthMode('signup');
+    navigateTo('auth');
   }
 
   return (
@@ -41,10 +49,35 @@ export default function EntryScreen() {
         >
           Begin Session
         </button>
+        <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', margin: '10px 0 2px' }}>
+          Try it now — nothing is saved unless you have an account
+        </p>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+          <button
+            id="login-btn"
+            className="btn btn-secondary"
+            style={{ flex: 1 }}
+            onClick={handleLogIn}
+          >
+            Log in
+          </button>
+          <button
+            id="create-account-btn"
+            className="btn btn-secondary"
+            style={{ flex: 1 }}
+            onClick={handleCreateAccount}
+          >
+            Create account
+          </button>
+        </div>
+        <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', margin: '10px 0 0' }}>
+          An account lets you leave and pick up where you left off
+        </p>
       </div>
 
-      
-      <p className="entry-footer"> 
+
+      <p className="entry-footer">
         A Thesis project by AAC from Mapua University - BSIT <a target="_blank" rel="noopener noreferrer">
          </a>
         <br />

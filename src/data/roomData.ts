@@ -25,6 +25,10 @@ export interface UnitConfig {
  * Mulberry Place unit type currently resolves to. Read silently at session
  * start; there is no screen to edit them.
  */
+/** Stable id for the single unit this thesis scopes to — no picker, so this
+ *  is the only value sessionStore.unitTypeId is ever set to. */
+export const MULBERRY_PLACE_2BR_ID = 'mulberry-place-bengaline-2br';
+
 export const MULBERRY_PLACE_2BR: UnitConfig = {
   name: 'Mulberry Place Bengaline — 2 Bedroom',
   building: 'Mulberry Place',

@@ -8,6 +8,7 @@ import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
+import { useAutosaveLayout } from '../stores/useAutosaveLayout';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import {
   canPlace,
@@ -94,6 +95,8 @@ export default function WorkspaceScreen() {
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
   const setSpaceScoreAfter = useViolationStore((s) => s.setSpaceScoreAfter);
   const recommendations = useViolationStore((s) => s.recommendations);
+
+  useAutosaveLayout(items);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -326,6 +329,10 @@ export default function WorkspaceScreen() {
 
   const handleRotate = useCallback(() => {
     if (!selectedItem) return;
+    // A circle's bounding box (and clearance footprint) is identical at
+    // every angle — spinning it changes nothing visible or measurable, so
+    // rotation is a no-op rather than a control that pretends to do something.
+    if (selectedItem.shape === 'round') return;
     const rotation = selectedItem.rotationY + Math.PI / 2;
     const rotated = { ...selectedItem, rotationY: rotation };
 
@@ -539,7 +546,7 @@ export default function WorkspaceScreen() {
                 <span>
                   {selectedItem.label} in {selectedRoomLabel}
                   <span style={{ color: t.inkMute, fontWeight: 500 }}>
-                    {' · '}drag anywhere · arrows nudge · R rotates · Ctrl+Z undo
+                    {' · '}drag anywhere · arrows nudge
                   </span>
                 </span>
               ) : (
@@ -547,14 +554,16 @@ export default function WorkspaceScreen() {
               )}
             </span>
             <div style={{ display: 'flex', gap: 12 }}>
-              <button
-                className="wksp-outline-btn"
-                style={actionBtn}
-                onClick={handleRotate}
-                disabled={!selectedItem}
-              >
-                Rotate 90
-              </button>
+              {selectedItem?.shape !== 'round' && (
+                <button
+                  className="wksp-outline-btn"
+                  style={actionBtn}
+                  onClick={handleRotate}
+                  disabled={!selectedItem}
+                >
+                  Rotate 90
+                </button>
+              )}
               <button
                 className="wksp-outline-btn"
                 style={secBtn}

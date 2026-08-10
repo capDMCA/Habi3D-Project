@@ -425,20 +425,35 @@ export default function CondoFloorPlan({
                 />
               )}
 
-              <rect
-                x={r.xCm}
-                y={r.yCm}
-                width={r.wCm}
-                height={r.hCm}
-                fill={fill}
-                stroke={stroke}
-                strokeWidth={isSelected || isDragging ? 4 : 2}
-                rx={4}
-                style={{
-                  transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
-                  pointerEvents: 'none',
-                }}
-              />
+              {r.shape === 'round' ? (
+                <circle
+                  cx={r.xCm + r.wCm / 2}
+                  cy={r.yCm + r.hCm / 2}
+                  r={r.wCm / 2}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={isSelected || isDragging ? 4 : 2}
+                  style={{
+                    transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
+                    pointerEvents: 'none',
+                  }}
+                />
+              ) : (
+                <rect
+                  x={r.xCm}
+                  y={r.yCm}
+                  width={r.wCm}
+                  height={r.hCm}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={isSelected || isDragging ? 4 : 2}
+                  rx={4}
+                  style={{
+                    transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
 
               <text
                 x={r.xCm + r.wCm / 2}

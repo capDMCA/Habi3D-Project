@@ -8,6 +8,9 @@ interface FurnitureState {
   updatePosition: (id: string, x: number, z: number, rot: number) => void;
   removeItem: (id: string) => void;
   clearAll: () => void;
+  /** Replaces the whole layout wholesale — used when resuming a saved
+   *  session, as opposed to addItem's one-at-a-time entry flow. */
+  setItems: (items: FurnitureItem[]) => void;
 }
 
 export const useFurnitureStore = create<FurnitureState>((set) => ({
@@ -33,4 +36,5 @@ export const useFurnitureStore = create<FurnitureState>((set) => ({
       items: state.items.filter((item) => item.id !== id),
     })),
   clearAll: () => set({ items: [] }),
+  setItems: (items) => set({ items }),
 }));

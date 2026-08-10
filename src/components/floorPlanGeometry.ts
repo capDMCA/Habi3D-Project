@@ -1,5 +1,5 @@
 import { toBounds } from '../engine/clearance';
-import type { FurnitureItem } from '../types';
+import type { FurnitureItem, FurnitureShape } from '../types';
 
 /**
  * Pure world → plan projection for the 2D floor plan.
@@ -21,6 +21,10 @@ export interface PlanRect {
   yCm: number;
   wCm: number;
   hCm: number;
+  /** Passed through from the source item so renderers (CondoFloorPlan,
+   *  pdfReport) can draw a circle for round furniture without re-deriving
+   *  it — one shape flag, read once, at the one place bounds are computed. */
+  shape: FurnitureShape;
 }
 
 export function projectItems(items: FurnitureItem[]): PlanRect[] {
@@ -33,6 +37,7 @@ export function projectItems(items: FurnitureItem[]): PlanRect[] {
       yCm: b.minZ * 100,
       wCm: (b.maxX - b.minX) * 100,
       hCm: (b.maxZ - b.minZ) * 100,
+      shape: item.shape,
     };
   });
 }

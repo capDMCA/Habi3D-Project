@@ -1,6 +1,6 @@
 export type ScreenName =
-  | 'unitSetup'
   | 'entry'
+  | 'auth'
   | 'arDemo'
   | 'furnitureInput'
   | 'positionMap'

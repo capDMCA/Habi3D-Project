@@ -292,18 +292,14 @@ export default function PositionMapScreen() {
             &lt;
           </button>
           <div className="screen-header-info">
-            <span className="step-label">Step 4 of 6</span>
+            <span className="step-label">Step 2 of 2</span>
             <h2>Position Furniture</h2>
           </div>
         </div>
 
         <div className="progress-bar">
           <div className="progress-step completed" />
-          <div className="progress-step completed" />
-          <div className="progress-step completed" />
           <div className="progress-step active" />
-          <div className="progress-step" />
-          <div className="progress-step" />
         </div>
 
         {errorMsg && (
