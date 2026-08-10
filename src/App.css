@@ -239,7 +239,7 @@
   width: 100%;
   padding: 14px var(--space-lg);
   border-radius: var(--radius);
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
@@ -305,7 +305,7 @@
   padding: 12px var(--space-md);
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   font-size: 1rem;
   color: var(--text-primary);
   background: var(--card);
@@ -603,6 +603,67 @@
 .entry-card {
   width: 100%;
   max-width: 360px;
+}
+
+/* Primary CTA gets extra height/weight beyond the shared .btn baseline —
+   for a first-time visitor, trying the tool is the highest-value action
+   (no commitment, proves the app's worth before asking for an account), so
+   it reads as the obvious first tap, not one of three equal options. */
+.btn-large {
+  min-height: 56px;
+  font-size: 1.0625rem;
+}
+
+.entry-hint {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 10px 0 0;
+}
+
+/* "or" divider between the primary path and the account paths — makes the
+   Begin Session button read as its own tier, not just the first item in a
+   list of three. */
+.entry-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin: var(--space-lg) 0 var(--space-md);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.entry-divider::before,
+.entry-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Log in is the tertiary action here — a first-time visitor is more likely
+   to want an account than to already have one, so it drops to a plain link
+   rather than competing with Create Account as an equal-weight button. */
+.entry-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin-top: var(--space-sm);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.entry-link-strong {
+  color: var(--primary);
+  font-weight: 600;
+  margin-left: 4px;
 }
 
 .entry-footer {

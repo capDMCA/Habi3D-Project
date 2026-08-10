@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { fontFamily } from './designTokens';
 
 interface Props {
   children: ReactNode;
@@ -55,7 +56,7 @@ const wrap = {
   padding: 20,
   maxWidth: 640,
   margin: '0 auto',
-  fontFamily: "'Inter', system-ui, sans-serif",
+  fontFamily,
 } as const;
 
 const heading = { color: '#b91c1c', fontSize: 20, margin: '8px 0' } as const;

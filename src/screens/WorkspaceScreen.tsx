@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import CondoFloorPlan from '../components/CondoFloorPlan';
 import ClearanceMeter, { BandGlyph } from '../components/ClearanceMeter';
-import { color as t, radius } from '../components/designTokens';
+import { color as t, radius, fontFamily } from '../components/designTokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
 import { useFurnitureStore } from '../stores/furnitureStore';
@@ -472,9 +472,9 @@ export default function WorkspaceScreen() {
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <header style={header}>
         <button className="wksp-icon-btn" style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
-        <div style={{ flex: 1 }}>
+        <div style={headerTitleWrap}>
           {focusedRoom ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 18 }}>
+            <div style={headerTitleRow}>
               <span
                 style={{ cursor: 'pointer', color: t.brand, fontWeight: 700 }}
                 onClick={() => setFocusedRoomId(null)}
@@ -485,13 +485,8 @@ export default function WorkspaceScreen() {
               <span style={{ color: t.ink, fontWeight: 850 }}>{focusedRoom.label}</span>
             </div>
           ) : (
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: t.ink }}>Mulberry Place Digital Twin</h1>
+            <span style={headerTitle}>Mulberry Place</span>
           )}
-          <p style={{ margin: 0, fontSize: 14, color: t.inkSoft, fontWeight: 500 }}>
-            {issueCount === 0 && blockedWalkwaysCount === 0
-              ? 'All rooms and walkways clear'
-              : `${issueCount} clearance issues · ${blockedWalkwaysCount} blocked walkways`}
-          </p>
         </div>
         <button className="wksp-solid-btn" style={finishBtn} onClick={() => navigateTo('report')}>Done</button>
       </header>
@@ -530,56 +525,65 @@ export default function WorkspaceScreen() {
                   : undefined
               }
             />
+
+            {/* Floating control cluster — replaces the old full-width footer
+                bar. Same three handlers as before (handleRotate/handleUndo/
+                handleResetPosition), same keyboard shortcuts still wired
+                independently via the window keydown listener above; this is
+                a placement/visual change only. */}
+            <div style={floatingControls}>
+              {selectedItem?.shape !== 'round' && (
+                <button
+                  className="wksp-icon-btn"
+                  style={iconBtn(!selectedItem)}
+                  onClick={handleRotate}
+                  disabled={!selectedItem}
+                  aria-label="Rotate 90 degrees"
+                  title="Rotate 90° (R)"
+                >
+                  ↻
+                </button>
+              )}
+              <button
+                className="wksp-icon-btn"
+                style={iconBtn(false)}
+                onClick={handleUndo}
+                aria-label="Undo"
+                title="Undo (Ctrl/Cmd+Z)"
+              >
+                ↶
+              </button>
+              <button
+                className="wksp-icon-btn"
+                style={iconBtn(!selectedItem)}
+                onClick={handleResetPosition}
+                disabled={!selectedItem}
+                aria-label="Reset position"
+                title="Reset position"
+              >
+                ⟲
+              </button>
+            </div>
           </div>
 
           {/* Toast Warning */}
           {toast && <div style={toastBanner}>{toast}</div>}
 
-          {/* Interactive controls under the plan */}
-          <div style={controlToolbar}>
-            <span style={feedbackHint}>
-              {infeasible ? (
-                <span style={{ color: t.attentionFg, fontWeight: 700 }}>
-                  Overlapping another piece — release to snap back to the last clear spot
-                </span>
-              ) : selectedItem ? (
-                <span>
-                  {selectedItem.label} in {selectedRoomLabel}
-                  <span style={{ color: t.inkMute, fontWeight: 500 }}>
-                    {' · '}drag anywhere · arrows nudge
-                  </span>
-                </span>
-              ) : (
-                'Drag any piece to move it — it can go into any room'
-              )}
-            </span>
-            <div style={{ display: 'flex', gap: 12 }}>
-              {selectedItem?.shape !== 'round' && (
-                <button
-                  className="wksp-outline-btn"
-                  style={actionBtn}
-                  onClick={handleRotate}
-                  disabled={!selectedItem}
-                >
-                  Rotate 90
-                </button>
-              )}
-              <button
-                className="wksp-outline-btn"
-                style={secBtn}
-                onClick={handleUndo}
-              >
-                Undo
-              </button>
-              <button
-                className="wksp-outline-btn"
-                style={secBtn}
-                onClick={handleResetPosition}
-                disabled={!selectedItem}
-              >
-                Reset
-              </button>
-            </div>
+          {/* Slim single-line status caption — replaces the old footer's
+              left-hand text, which wrapped onto several lines at phone
+              width. The "drag anywhere · arrows nudge" hint is dropped as
+              permanent chrome now that the plan itself is the dominant
+              element on screen; it was onboarding text, not live state. */}
+          <div style={planCaption}>
+            {infeasible ? (
+              <span style={{ color: t.attentionFg, fontWeight: 700 }}>
+                Overlapping — release to snap back
+              </span>
+            ) : selectedItem ? (
+              `${selectedItem.label} · ${selectedRoomLabel}`
+            ) : (
+              'Tap a piece to select it'
+            )}
           </div>
         </section>
 
@@ -671,8 +675,8 @@ export default function WorkspaceScreen() {
                         style={{
                           ...violationCard,
                           borderLeftColor: bandColor,
-                          borderColor: isFocused ? bandColor : '#E2E8F0',
-                          background: isFocused ? '#FFFFFF' : '#F8FAFC',
+                          borderColor: isFocused ? bandColor : t.line,
+                          background: isFocused ? t.surface : t.ground,
                           animationDelay: `${Math.min(idx, 8) * 40}ms`,
                         }}
                         onClick={() => handleSelectItem(v.furnitureId)}
@@ -884,19 +888,49 @@ const shell: CSSProperties = {
   flexDirection: 'column',
   height: '100dvh',
   width: '100%',
-  background: '#F8FAFC',
-  fontFamily: "'Inter', system-ui, sans-serif",
+  background: t.ground,
+  fontFamily,
   overflow: 'hidden',
 };
 
+// Single compact row — a title, a back button, a Done button. The old
+// header additionally stacked an h1 + a status subtitle ("N clearance
+// issues · N blocked walkways") beneath it, which is what made the bar tall
+// (measured ~125px / ~15% of a 390×844 viewport before this pass). The
+// subtitle is dropped rather than shrunk: its content is a duplicate of the
+// pill row directly underneath (Issues/Warnings/Walkways/Clear counts) —
+// removing it loses no information, just the repetition.
 const header: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  padding: '12px 24px',
-  background: '#FFFFFF',
-  borderBottom: '1px solid #E2E8F0',
-  gap: 16,
+  padding: '6px 12px',
+  minHeight: 52,
+  background: t.surface,
+  borderBottom: `1px solid ${t.line}`,
+  gap: 10,
   flexShrink: 0,
+};
+
+const headerTitleWrap: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+};
+
+const headerTitleRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  fontSize: 15,
+};
+
+const headerTitle: CSSProperties = {
+  fontSize: 16,
+  fontWeight: 800,
+  color: t.ink,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  display: 'block',
 };
 
 const backBtn: CSSProperties = {
@@ -905,28 +939,32 @@ const backBtn: CSSProperties = {
   fontSize: 18,
   fontWeight: 700,
   cursor: 'pointer',
-  padding: '6px 10px',
+  minWidth: 44,
+  minHeight: 44,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
+  flexShrink: 0,
 };
 
 const finishBtn: CSSProperties = {
   background: t.brand,
-  color: '#FFFFFF',
+  color: t.surface,
   border: 'none',
-  padding: '10px 24px',
+  minHeight: 44,
+  padding: '0 16px',
   borderRadius: radius.sm,
   fontWeight: 700,
-  fontSize: 16,
+  fontSize: 15,
   cursor: 'pointer',
+  flexShrink: 0,
 };
 
 const workspaceLayout: CSSProperties = {
   display: 'flex',
   flex: 1,
   flexDirection: 'row',
-  height: 'calc(100vh - 60px)',
+  height: 'calc(100vh - 52px)',
   overflow: 'hidden',
   flexWrap: 'wrap',
 };
@@ -935,7 +973,7 @@ const planPanel: CSSProperties = {
   flex: '82% 1 600px', // takes 82% width on desktop
   display: 'flex',
   flexDirection: 'column',
-  padding: '24px',
+  padding: '12px 16px 16px',
   overflow: 'hidden',
   height: '100%',
   position: 'relative',
@@ -950,10 +988,51 @@ const planContainer: CSSProperties = {
   position: 'relative',
 };
 
+// Rotate/Undo/Reset now live here, floating over the plan's top-right
+// corner, instead of a dedicated footer bar below it — see the JSX comment
+// at the call site for why.
+const floatingControls: CSSProperties = {
+  position: 'absolute',
+  top: 10,
+  right: 10,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  zIndex: 5,
+};
+
+const iconBtn = (disabled: boolean): CSSProperties => ({
+  width: 44,
+  height: 44,
+  borderRadius: '50%',
+  border: `1px solid ${t.line}`,
+  background: t.surface,
+  color: disabled ? t.inkMute : t.brand,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: 19,
+  fontWeight: 700,
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  opacity: disabled ? 0.5 : 1,
+  boxShadow: '0 2px 8px rgba(15,23,42,0.14)',
+});
+
+const planCaption: CSSProperties = {
+  fontSize: 13,
+  color: t.inkSoft,
+  fontWeight: 500,
+  marginTop: 8,
+  flexShrink: 0,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+};
+
 const pillRow: CSSProperties = {
   display: 'flex',
   gap: 10,
-  marginBottom: 16,
+  marginBottom: 10,
   flexWrap: 'wrap',
 };
 
@@ -971,8 +1050,8 @@ const toastBanner: CSSProperties = {
   top: 50,
   left: '50%',
   transform: 'translateX(-50%)',
-  background: '#DC2626',
-  color: '#FFFFFF',
+  background: t.attentionFg,
+  color: t.surface,
   padding: '10px 20px',
   borderRadius: '20px',
   fontSize: 14,
@@ -983,50 +1062,13 @@ const toastBanner: CSSProperties = {
   zIndex: 10,
 };
 
-const controlToolbar: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  paddingTop: 16,
-  borderTop: '1px solid #E2E8F0',
-  marginTop: 16,
-  flexShrink: 0,
-};
-
-const feedbackHint: CSSProperties = {
-  fontSize: 16,
-  color: t.inkSoft,
-  fontWeight: 500,
-};
-
-const actionBtn: CSSProperties = {
-  background: '#FFFFFF',
-  border: '1px solid #CBD5E1',
-  color: t.brand,
-  padding: '10px 20px',
-  borderRadius: radius.sm,
-  fontWeight: 700,
-  fontSize: 16,
-  cursor: 'pointer',
-};
-
-const secBtn: CSSProperties = {
-  background: 'none',
-  border: '1px solid transparent',
-  color: t.inkSoft,
-  padding: '10px 16px',
-  fontSize: 16,
-  fontWeight: 600,
-  cursor: 'pointer',
-};
-
 const sideDrawer: CSSProperties = {
   // Wider than the old 18%: the recommendation cards now carry a rule name, a
   // banded meter and an action, which crush below ~300px.
   flex: '0 1 340px',
   minWidth: 300,
-  background: '#FFFFFF',
-  borderLeft: '1px solid #E2E8F0',
+  background: t.surface,
+  borderLeft: `1px solid ${t.line}`,
   boxShadow: '-2px 0 8px rgba(0,0,0,0.01)',
   display: 'flex',
   flexDirection: 'column',
@@ -1035,7 +1077,7 @@ const sideDrawer: CSSProperties = {
 
 const tabHeader: CSSProperties = {
   display: 'flex',
-  borderBottom: '1px solid #E2E8F0',
+  borderBottom: `1px solid ${t.line}`,
   flexShrink: 0,
   overflowX: 'auto',
 };
@@ -1045,7 +1087,7 @@ const tabBtn = (active: boolean): CSSProperties => ({
   padding: '14px 10px',
   border: 'none',
   background: 'none',
-  fontFamily: "'Inter', system-ui, sans-serif",
+  fontFamily,
   fontSize: 14,
   fontWeight: 700,
   color: active ? t.brand : t.inkMute,
@@ -1083,8 +1125,8 @@ const listItemStyle = (sel: boolean): CSSProperties => ({
   alignItems: 'center',
   padding: '12px 14px',
   borderRadius: radius.sm,
-  background: sel ? t.brandTint : '#F8FAFC',
-  border: `1px solid ${sel ? t.brand : '#E2E8F0'}`,
+  background: sel ? t.brandTint : t.ground,
+  border: `1px solid ${sel ? t.brand : t.line}`,
   borderLeft: '4px solid',
   cursor: 'pointer',
   transition: 'all 0.15s ease',
@@ -1101,8 +1143,8 @@ const badgeStyle: CSSProperties = {
 const violationCard: CSSProperties = {
   padding: '14px 16px',
   borderRadius: radius.md,
-  background: '#F8FAFC',
-  border: '1px solid #E2E8F0',
+  background: t.ground,
+  border: `1px solid ${t.line}`,
   borderLeft: '4px solid',
   cursor: 'pointer',
   transition: 'background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease',
@@ -1155,8 +1197,8 @@ const recRuleRef: CSSProperties = {
 const ruleRefCard: CSSProperties = {
   padding: '12px 14px',
   borderRadius: radius.sm,
-  background: '#F8FAFC',
-  border: '1px solid #E2E8F0',
+  background: t.ground,
+  border: `1px solid ${t.line}`,
 };
 
 const ruleGroupHeading: CSSProperties = {
@@ -1221,8 +1263,8 @@ const checkRow: CSSProperties = {
   alignItems: 'center',
   padding: '12px 14px',
   borderRadius: radius.sm,
-  background: '#F8FAFC',
-  border: '1px solid #E2E8F0',
+  background: t.ground,
+  border: `1px solid ${t.line}`,
   fontSize: 16,
 };
 

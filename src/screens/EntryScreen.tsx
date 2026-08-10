@@ -37,49 +37,46 @@ export default function EntryScreen() {
 
       <h1 className="entry-title">Habi3D</h1>
       <p className="entry-subtitle">
-        for Mulberry Place residents
+        Furniture clearance planning, built for Mulberry Place residents
       </p>
 
       {/* Start Session Card */}
       <div className="card entry-card" id="entry-card">
         <button
           id="begin-session-btn"
-          className="btn btn-primary"
+          className="btn btn-primary btn-large"
           onClick={handleBegin}
         >
           Begin Session
         </button>
-        <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', margin: '10px 0 2px' }}>
+        <p className="entry-hint">
           Try it now — nothing is saved unless you have an account
         </p>
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button
-            id="login-btn"
-            className="btn btn-secondary"
-            style={{ flex: 1 }}
-            onClick={handleLogIn}
-          >
-            Log in
-          </button>
-          <button
-            id="create-account-btn"
-            className="btn btn-secondary"
-            style={{ flex: 1 }}
-            onClick={handleCreateAccount}
-          >
-            Create account
-          </button>
-        </div>
-        <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', margin: '10px 0 0' }}>
-          An account lets you leave and pick up where you left off
+        <div className="entry-divider"><span>or</span></div>
+
+        <button
+          id="create-account-btn"
+          className="btn btn-secondary"
+          onClick={handleCreateAccount}
+        >
+          Create account
+        </button>
+        <p className="entry-hint">
+          Save your layout and pick up where you left off
         </p>
+
+        <button
+          id="login-btn"
+          className="entry-link"
+          onClick={handleLogIn}
+        >
+          Already have an account? <span className="entry-link-strong">Log in</span>
+        </button>
       </div>
 
-
       <p className="entry-footer">
-        A Thesis project by AAC from Mapua University - BSIT <a target="_blank" rel="noopener noreferrer">
-         </a>
+        A Thesis project by AAC from Mapua University - BSIT
         <br />
         © 2026 Habi3D. All rights reserved.
       </p>

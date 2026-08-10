@@ -178,7 +178,7 @@ function RoomStatusRow({ label, status }: { label: string; status: RoomStatus })
         alignItems: 'center',
         gap: 12,
         padding: '12px 0',
-        borderBottom: '1px solid #E2E8F0',
+        borderBottom: `1px solid ${t.line}`,
       }}
     >
       <div style={{ width: 10, height: 10, borderRadius: '50%', background: colorFor[status], flexShrink: 0 }} />
@@ -212,8 +212,8 @@ function fadeInStyle(order: number): CSSProperties {
 }
 
 const cardStyle: CSSProperties = {
-  background: '#FFFFFF',
-  border: '1px solid #E2E8F0',
+  background: t.surface,
+  border: `1px solid ${t.line}`,
   borderRadius: radius.lg,
   padding: 20,
   marginBottom: 20,
@@ -222,7 +222,7 @@ const cardStyle: CSSProperties = {
 
 const primaryBtnStyle: CSSProperties = {
   background: t.brand,
-  color: '#FFFFFF',
+  color: t.surface,
   border: 'none',
   padding: '14px 24px',
   borderRadius: radius.md,
@@ -234,9 +234,9 @@ const primaryBtnStyle: CSSProperties = {
 };
 
 const secondaryBtnStyle: CSSProperties = {
-  background: '#FFFFFF',
-  border: '1px solid #CBD5E1',
-  color: '#4B5563',
+  background: t.surface,
+  border: `1px solid ${t.line}`,
+  color: t.inkSoft,
   padding: '14px 24px',
   borderRadius: radius.md,
   fontWeight: 600,

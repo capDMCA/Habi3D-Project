@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { fontFamily } from '../components/designTokens';
 import type { FurnitureItem } from '../types';
 
 const xrPlacementStore = createXRStore({
@@ -395,7 +396,7 @@ export default function PositionMapScreen() {
                   position: 'fixed',
                   inset: 0,
                   pointerEvents: 'none',
-                  fontFamily: "'Inter', system-ui, sans-serif",
+                  fontFamily,
                 }}
               >
                 <div

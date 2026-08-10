@@ -7,6 +7,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useAutosaveLayout } from '../stores/useAutosaveLayout';
 import ARMeasureSession, { type MeasurePhase } from '../ar/ARMeasureSession';
 import { createFurnitureShape } from '../ar/shapeLibrary';
+import { fontFamily } from '../components/designTokens';
 import type { FurnitureCategory, FurnitureItem, FurnitureShape } from '../types';
 
 const xrMeasureStore = createXRStore({
@@ -538,7 +539,7 @@ export default function FurnitureInputScreen() {
             )}
 
             <XRDomOverlay>
-              <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', fontFamily: "'Inter', system-ui, sans-serif" }}>
+              <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', fontFamily }}>
 
                 {/* Top bar — title + exit */}
                 <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', gap: 12, alignItems: 'flex-start', pointerEvents: 'auto' }}>
@@ -613,7 +614,7 @@ const choiceStyle: CSSProperties = {
   minHeight: 54,
   border: '1px solid var(--border)',
   borderRadius: 14,
-  background: '#ffffff',
+  background: 'var(--card)',
   color: 'var(--text-primary)',
   padding: '12px 14px',
   textAlign: 'left',
@@ -622,9 +623,9 @@ const choiceStyle: CSSProperties = {
 
 const selectedChoiceStyle: CSSProperties = {
   ...choiceStyle,
-  border: '2px solid #1F3864',
-  background: '#eef4ff',
-  color: '#1F3864',
+  border: '2px solid var(--primary)',
+  background: 'var(--primary-tint)',
+  color: 'var(--primary)',
 };
 
 const shapeChoiceStyle: CSSProperties = {
@@ -636,8 +637,8 @@ const shapeChoiceStyle: CSSProperties = {
 
 const selectedShapeStyle: CSSProperties = {
   ...shapeChoiceStyle,
-  border: '2px solid #1F3864',
-  background: '#eef4ff',
+  border: '2px solid var(--primary)',
+  background: 'var(--primary-tint)',
 };
 
 const choiceLabelStyle: CSSProperties = {
@@ -649,7 +650,7 @@ const previewPanelStyle: CSSProperties = {
   border: '1px solid var(--border)',
   borderRadius: 16,
   padding: 12,
-  background: '#f8fafc',
+  background: 'var(--bg-alt)',
 };
 
 const measureRowStyle: CSSProperties = {
@@ -685,8 +686,8 @@ const countBadgeStyle: CSSProperties = {
   minWidth: 34,
   height: 34,
   borderRadius: 999,
-  background: '#1F3864',
-  color: '#ffffff',
+  background: 'var(--primary)',
+  color: 'var(--card)',
   fontWeight: 850,
 };
 
@@ -703,7 +704,7 @@ const addedItemStyle: CSSProperties = {
   padding: 12,
   borderRadius: 14,
   border: '1px solid var(--border)',
-  background: '#ffffff',
+  background: 'var(--card)',
 };
 
 const addedItemTitleStyle: CSSProperties = {
@@ -718,14 +719,14 @@ const addedItemTitleStyle: CSSProperties = {
 
 const addedItemMetaStyle: CSSProperties = {
   margin: '2px 0 0',
-  color: '#64748b',
+  color: 'var(--text-muted)',
   fontSize: 12,
   fontWeight: 650,
 };
 
 const addedItemDimsStyle: CSSProperties = {
   margin: '2px 0 0',
-  color: '#1F3864',
+  color: 'var(--primary)',
   fontSize: 12,
   fontWeight: 800,
 };
@@ -733,9 +734,9 @@ const addedItemDimsStyle: CSSProperties = {
 const removeButtonStyle: CSSProperties = {
   minHeight: 36,
   borderRadius: 12,
-  border: '1px solid #fecaca',
-  background: '#fff7f7',
-  color: '#b91c1c',
+  border: '1px solid var(--danger-border)',
+  background: 'var(--danger-bg)',
+  color: 'var(--danger)',
   padding: '0 10px',
   fontWeight: 800,
 };

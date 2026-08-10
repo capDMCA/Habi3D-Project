@@ -1,17 +1,40 @@
 import type { CSSProperties } from 'react';
 
 /**
- * The single source of colour and type for the recommendation plan surface —
- * FloorPlan2D, StatusRow, and the action card all read from here. No component
- * defines its own shade or font size.
+ * The single source of colour, type, and typeface for the whole app — every
+ * screen and component reads from here. `index.css`'s `:root` custom
+ * properties (`--text-primary`, `--success`, etc.) are a byte-for-byte CSS
+ * mirror of the values below, because plain className-based screens need
+ * real CSS custom properties and jsPDF (`pdfReport.ts`) needs concrete hex
+ * strings at generation time — neither can resolve a shared .ts import on
+ * their own. Change a value here first, then carry it into `index.css`'s
+ * `:root` block by hand; nothing auto-syncs the two.
  *
- * Three severity states share one colour language everywhere. The interactive
- * accent (draggable block, ghost target) is a distinct blue — separate from the
- * red/amber/green states so "you can move this" never reads as a warning.
+ * Three severity states share one colour language everywhere, including the
+ * generic success/warning/danger UI elsewhere in the app (form errors,
+ * AR-support badges) — those used to be a separate, unverified colour set
+ * (e.g. `#10B981` green on white, ~2.3:1 contrast) that drifted out of sync
+ * with this file's contrast-checked values. Reconciled onto one set so there
+ * is exactly one "what does red mean" answer app-wide.
+ *
+ * The interactive accent (draggable block, ghost target) is a distinct blue —
+ * separate from the red/amber/green states so "you can move this" never
+ * reads as a warning.
  *
  * Foreground values are chosen for daylight legibility on white (all ≥ 4.5:1
  * contrast); the accent blue sits clearly apart from every state hue.
  */
+
+/** Native OS UI font — San Francisco (iOS/macOS), Roboto (Android), Segoe UI
+ *  (Windows) — never a webfont. Chosen over Inter (the previous choice, CDN
+ *  `@import`ed from Google Fonts) specifically because this app is used
+ *  one-handed, inside a resident's own apartment, on whatever wifi they
+ *  have: zero network requests for text to render, zero flash-of-unstyled-
+ *  text, and each OS's own face is already metrics-tuned for small-size
+ *  legibility on that exact device — which is the whole point of a utility
+ *  tool read at arm's length, not a marketing surface. */
+export const fontFamily =
+  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
 export const color = {
   // neutrals — a slight cool bias so they read as chosen, not default grey
@@ -46,19 +69,33 @@ export const color = {
   comfortBg: '#E7F4EF',
 } as const;
 
-/** Four sizes, deliberate weights. Reading text (title/body) never below 15px;
+/** Four sizes, deliberate weights, one typeface. Reading text (title/body)
+ *  never below 15px — bumped a step past that floor (16px) now that the
+ *  native system faces replace Inter, which was chosen partly for a large
+ *  x-height; system fonts read a touch smaller at the same px, so body
+ *  gets a little headroom rather than sitting exactly on the limit.
  *  `label` (13px, uppercase) is for structural eyebrows only, not prose. */
 export const type = {
-  display: { fontSize: 22, fontWeight: 800, lineHeight: 1.2 } as CSSProperties,
-  title: { fontSize: 18, fontWeight: 700, lineHeight: 1.35 } as CSSProperties,
-  body: { fontSize: 15, fontWeight: 500, lineHeight: 1.5 } as CSSProperties,
+  display: { fontFamily, fontSize: 24, fontWeight: 800, lineHeight: 1.2 } as CSSProperties,
+  title: { fontFamily, fontSize: 19, fontWeight: 700, lineHeight: 1.3 } as CSSProperties,
+  body: { fontFamily, fontSize: 16, fontWeight: 500, lineHeight: 1.5 } as CSSProperties,
   label: {
+    fontFamily,
     fontSize: 13,
     fontWeight: 700,
     letterSpacing: '0.05em',
     textTransform: 'uppercase',
   } as CSSProperties,
 } as const;
+
+/** Signature choice: every live measurement in the app (drag-time gap
+ *  readouts, clearance meter values, dimension steppers) uses tabular
+ *  figures. Digits update in place, several times a second while dragging,
+ *  without the text reflowing or jittering side to side — a considered
+ *  detail tied to this app's actual core interaction (watching a number
+ *  change in real time), not a decorative flourish. Spread into any style
+ *  object rendering a live cm/percentage value. */
+export const numeric: CSSProperties = { fontVariantNumeric: 'tabular-nums' };
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 } as const;
 export const radius = { sm: 8, md: 12, lg: 16 } as const;
