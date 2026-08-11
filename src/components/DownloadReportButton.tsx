@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { downloadRoomAssessmentPdf } from './pdfReport';
 import { color as t, radius } from './designTokens';
+import type { GapClassification } from '../engine/clearance';
 import type { FurnitureItem, Violation } from '../types';
 
 /**
@@ -18,6 +19,12 @@ type DownloadState = 'idle' | 'working' | 'success' | 'error';
 export interface DownloadReportButtonProps {
   items: FurnitureItem[];
   violations: Violation[];
+  /** Every rule check performed, cleared and violated alike — powers the
+   *  PDF's rule-by-rule detail section. Optional so the (currently
+   *  unreached) RecommendationScreen caller, which never computed this,
+   *  still compiles unchanged; its PDF just gets a "no rules" fallback
+   *  section rather than the full breakdown. */
+  allClassifications?: GapClassification[];
   /** 'primary' for a screen where this is the main action; 'secondary' when
    *  it sits alongside another primary button. */
   variant?: 'primary' | 'secondary';
@@ -49,13 +56,18 @@ function CheckIcon() {
   );
 }
 
-export default function DownloadReportButton({ items, violations, variant = 'secondary' }: DownloadReportButtonProps) {
+export default function DownloadReportButton({
+  items,
+  violations,
+  allClassifications = [],
+  variant = 'secondary',
+}: DownloadReportButtonProps) {
   const [state, setState] = useState<DownloadState>('idle');
 
   async function handleDownload() {
     setState('working');
     try {
-      await downloadRoomAssessmentPdf({ items, violations });
+      await downloadRoomAssessmentPdf({ items, violations, allClassifications });
       setState('success');
     } catch {
       setState('error');

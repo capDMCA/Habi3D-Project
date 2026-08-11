@@ -6,14 +6,37 @@ import { useFurnitureStore } from '../stores/furnitureStore';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import DownloadReportButton from '../components/DownloadReportButton';
 import { color as t, radius } from '../components/designTokens';
+import { runClearanceAnalysis } from '../engine/clearance';
+import type { RoomDimensions } from '../types';
 
 type RoomStatus = 'RED' | 'YELLOW' | 'GREEN';
 
+/** Same fallback/derivation as AnalysisScreen.tsx's local copy — the PDF
+ *  needs the full rule-by-rule breakdown (allClassifications), which
+ *  violationStore never stores, so this recomputes it fresh from the
+ *  layout's final state rather than threading a new field through the
+ *  store and every screen that calls setViolations/refreshViolations. */
+function getRoomDimensions(roomDimensions: RoomDimensions | null) {
+  if (!roomDimensions) return { roomWidthCm: 360, roomLengthCm: 520 };
+  return {
+    roomWidthCm: Math.max(roomDimensions.livingWidthCm, roomDimensions.diningWidthCm),
+    roomLengthCm: roomDimensions.livingDepthCm + roomDimensions.diningDepthCm,
+  };
+}
+
 export default function ReportScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
+  const roomDimensions = useSessionStore((s) => s.roomDimensions);
   const recommendations = useViolationStore((s) => s.recommendations);
   const violations = useViolationStore((s) => s.violations);
   const items = useFurnitureStore((s) => s.items);
+
+  // Recomputed here rather than read from violationStore — see the
+  // getRoomDimensions comment above.
+  const allClassifications = useMemo(() => {
+    const { roomWidthCm, roomLengthCm } = getRoomDimensions(roomDimensions);
+    return runClearanceAnalysis(items, roomWidthCm, roomLengthCm).allClassifications;
+  }, [items, roomDimensions]);
 
   const totalIssues = recommendations.length;
   const redRemaining = violations.some((v) => v.classification === 'RED');
@@ -123,7 +146,12 @@ export default function ReportScreen() {
         <p style={{ margin: '0 0 16px', fontSize: 14, color: t.inkSoft, lineHeight: 1.5 }}>
           A one-page PDF of your room and how each piece turned out — handy to keep or share.
         </p>
-        <DownloadReportButton items={items} violations={violations} variant="primary" />
+        <DownloadReportButton
+          items={items}
+          violations={violations}
+          allClassifications={allClassifications}
+          variant="primary"
+        />
       </section>
 
       {/* ── Actions ──────────────────────────────────────────────────────── */}
