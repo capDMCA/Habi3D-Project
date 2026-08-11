@@ -525,13 +525,32 @@ export default function WorkspaceScreen() {
                   : undefined
               }
             />
+          </div>
 
-            {/* Floating control cluster — replaces the old full-width footer
-                bar. Same three handlers as before (handleRotate/handleUndo/
-                handleResetPosition), same keyboard shortcuts still wired
-                independently via the window keydown listener above; this is
-                a placement/visual change only. */}
-            <div style={floatingControls}>
+          {/* Toast Warning */}
+          {toast && <div style={toastBanner}>{toast}</div>}
+
+          {/* Slim toolbar row directly under the plan — status caption on
+              the left, compact icon buttons on the right. Replaces both the
+              old full-width text-button footer AND the floating cluster
+              that used to sit on top of the canvas (moved here so it never
+              covers the plan). Same three handlers as before
+              (handleRotate/handleUndo/handleResetPosition) and the keyboard
+              shortcuts are still wired independently via the window keydown
+              listener above — placement/visual change only. */}
+          <div style={planToolbar}>
+            <span style={planCaption}>
+              {infeasible ? (
+                <span style={{ color: t.attentionFg, fontWeight: 700 }}>
+                  Overlapping — release to snap back
+                </span>
+              ) : selectedItem ? (
+                `${selectedItem.label} · ${selectedRoomLabel}`
+              ) : (
+                'Tap a piece to select it'
+              )}
+            </span>
+            <div style={toolbarIconRow}>
               {selectedItem?.shape !== 'round' && (
                 <button
                   className="wksp-icon-btn"
@@ -564,26 +583,6 @@ export default function WorkspaceScreen() {
                 ⟲
               </button>
             </div>
-          </div>
-
-          {/* Toast Warning */}
-          {toast && <div style={toastBanner}>{toast}</div>}
-
-          {/* Slim single-line status caption — replaces the old footer's
-              left-hand text, which wrapped onto several lines at phone
-              width. The "drag anywhere · arrows nudge" hint is dropped as
-              permanent chrome now that the plan itself is the dominant
-              element on screen; it was onboarding text, not live state. */}
-          <div style={planCaption}>
-            {infeasible ? (
-              <span style={{ color: t.attentionFg, fontWeight: 700 }}>
-                Overlapping — release to snap back
-              </span>
-            ) : selectedItem ? (
-              `${selectedItem.label} · ${selectedRoomLabel}`
-            ) : (
-              'Tap a piece to select it'
-            )}
           </div>
         </section>
 
@@ -988,17 +987,24 @@ const planContainer: CSSProperties = {
   position: 'relative',
 };
 
-// Rotate/Undo/Reset now live here, floating over the plan's top-right
-// corner, instead of a dedicated footer bar below it — see the JSX comment
-// at the call site for why.
-const floatingControls: CSSProperties = {
-  position: 'absolute',
-  top: 10,
-  right: 10,
+// One slim row directly under the plan — caption on the left, Rotate/Undo/
+// Reset on the right. Replaces the earlier floating-over-the-canvas cluster,
+// which could sit on top of the plan itself; this keeps the canvas clear.
+const planToolbar: CSSProperties = {
   display: 'flex',
-  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  marginTop: 10,
+  paddingTop: 10,
+  borderTop: `1px solid ${t.line}`,
+  flexShrink: 0,
+};
+
+const toolbarIconRow: CSSProperties = {
+  display: 'flex',
   gap: 8,
-  zIndex: 5,
+  flexShrink: 0,
 };
 
 const iconBtn = (disabled: boolean): CSSProperties => ({
@@ -1006,24 +1012,23 @@ const iconBtn = (disabled: boolean): CSSProperties => ({
   height: 44,
   borderRadius: '50%',
   border: `1px solid ${t.line}`,
-  background: t.surface,
+  background: t.ground,
   color: disabled ? t.inkMute : t.brand,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  fontSize: 19,
+  fontSize: 18,
   fontWeight: 700,
   cursor: disabled ? 'not-allowed' : 'pointer',
   opacity: disabled ? 0.5 : 1,
-  boxShadow: '0 2px 8px rgba(15,23,42,0.14)',
 });
 
 const planCaption: CSSProperties = {
   fontSize: 13,
   color: t.inkSoft,
   fontWeight: 500,
-  marginTop: 8,
-  flexShrink: 0,
+  flex: 1,
+  minWidth: 0,
   whiteSpace: 'nowrap',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
