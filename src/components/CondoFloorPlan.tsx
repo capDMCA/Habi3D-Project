@@ -47,6 +47,9 @@ export interface CondoFloorPlanProps {
 const PAD_CM = 25;
 const WIDTH_CM = UNIT_WIDTH_CM;
 const HEIGHT_CM = UNIT_HEIGHT_CM;
+// A click that never travels this far is a click, not a drag — nothing about
+// the view, undo history, or furniture position may change because of it.
+const DRAG_THRESHOLD_PX = 5;
 
 /**
  * Live state of a grab. Screen-to-world conversion uses the scale captured when
@@ -192,8 +195,10 @@ export default function CondoFloorPlan({
       moved: false,
     };
 
-    setDraggingId(itemId);
-    interactiveRef.current.onDragStart(itemId);
+    // Note: setDraggingId/onDragStart do NOT fire here — see onMove below.
+    // A plain click must produce zero side effects (no ghost outline, no
+    // undo-history push, no store write), so "a drag has begun" is only
+    // true once the pointer actually crosses DRAG_THRESHOLD_PX.
 
     const onMove = (evt: PointerEvent) => {
       const drag = dragRef.current;
@@ -202,13 +207,17 @@ export default function CondoFloorPlan({
       const current = itemsRef.current.find((it) => it.id === drag.itemId);
       if (!current) return;
 
+      if (!drag.moved) {
+        const traveledPx = Math.hypot(evt.clientX - drag.startClientX, evt.clientY - drag.startClientY);
+        if (traveledPx <= DRAG_THRESHOLD_PX) return; // still just a click — no-op
+        drag.moved = true;
+        setDraggingId(drag.itemId);
+        interactiveRef.current?.onDragStart(drag.itemId);
+      }
+
       // Screen delta → world delta, using the scale from drag start.
       const dxM = (evt.clientX - drag.startClientX) / drag.pxPerCmX / 100;
       const dzM = (evt.clientY - drag.startClientY) / drag.pxPerCmY / 100;
-
-      if (!drag.moved && Math.hypot(evt.clientX - drag.startClientX, evt.clientY - drag.startClientY) > 2) {
-        drag.moved = true;
-      }
 
       const rawX = drag.startPosX + dxM;
       const rawZ = drag.startPosZ + dzM;
@@ -237,7 +246,10 @@ export default function CondoFloorPlan({
       setActiveGuides([]);
       setCollidingIds([]);
       setDropRoomId(null);
-      if (drag) interactiveRef.current?.onDragEnd(drag.itemId);
+      // Only a real drag (crossed the threshold, so onDragStart already
+      // fired) reaches onDragEnd — a plain click never committed anything
+      // to begin with, so there's nothing to finalize.
+      if (drag?.moved) interactiveRef.current?.onDragEnd(drag.itemId);
     };
 
     window.addEventListener('pointermove', onMove);

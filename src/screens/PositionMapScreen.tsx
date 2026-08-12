@@ -3,6 +3,14 @@ import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay, useXRHitTest, XROrigin } from '@react-three/xr';
 import * as THREE from 'three';
 import { createFurnitureShape } from '../ar/shapeLibrary';
+import {
+  deriveCalibration,
+  applyCalibration,
+  invertCalibration,
+  calibrationThetaRad,
+  type ArPoint,
+  type CalibrationTransform,
+} from '../ar/calibration';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { fontFamily } from '../components/designTokens';
@@ -124,6 +132,7 @@ function PlacementScene({
   placing,
   onPreviewMove,
   onFloorTap,
+  calibration,
 }: {
   items: FurnitureItem[];
   activeItem: FurnitureItem | null;
@@ -132,9 +141,16 @@ function PlacementScene({
   placing: boolean;
   onPreviewMove: (position: { x: number; z: number }) => void;
   onFloorTap: (position: { x: number; z: number }) => void;
+  /** Already-placed items (placedItems below) are stored in the 2D plan's
+   *  frame — this session's own hit-tests are still raw AR-local. Rendering
+   *  them correctly in the live AR view means converting plan-frame back to
+   *  this session's AR-local space, the inverse of what onFloorTap/
+   *  confirmPlacement do on the way in. */
+  calibration: CalibrationTransform;
 }) {
   const latestHitRef = useRef<{ x: number; z: number } | null>(null);
   const placedItems = items.filter((item) => isPositioned(item) && item.id !== activeItem?.id);
+  const thetaRad = calibrationThetaRad(calibration);
 
   useXRHitTest(
     useCallback(
@@ -176,8 +192,8 @@ function PlacementScene({
         <PlacementMesh
           key={item.id}
           item={item}
-          position={{ x: item.posX, z: item.posZ }}
-          rotationY={item.rotationY}
+          position={invertCalibration({ x: item.posX, z: item.posZ }, calibration)}
+          rotationY={item.rotationY - thetaRad}
           mode="placed"
           showLabel
         />
@@ -196,6 +212,71 @@ function PlacementScene({
   );
 }
 
+/** A small marker at the first (corner) calibration tap, so the user can
+ *  see it registered while aiming the second tap. */
+function CalibrationMarker({ position }: { position: ArPoint }) {
+  return (
+    <mesh position={[position.x, 0.02, position.z]}>
+      <sphereGeometry args={[0.05, 16, 16]} />
+      <meshStandardMaterial color="#2563EB" />
+    </mesh>
+  );
+}
+
+/**
+ * Captures the two calibration taps before any furniture placement is
+ * allowed. Structurally the same hit-test → pointerdown-tap pattern
+ * PlacementScene uses below, just driving two reference points instead of
+ * a furniture position.
+ */
+function CalibrationScene({
+  step,
+  cornerPoint,
+  onTapCorner,
+  onTapWall,
+}: {
+  step: 'corner' | 'wall';
+  cornerPoint: ArPoint | null;
+  onTapCorner: (p: ArPoint) => void;
+  onTapWall: (p: ArPoint) => void;
+}) {
+  const latestHitRef = useRef<ArPoint | null>(null);
+
+  useXRHitTest(
+    useCallback((results, getWorldMatrix) => {
+      if (results.length === 0) return;
+      const hasMatrix = getWorldMatrix(hitMatrix, results[0]);
+      if (!hasMatrix) return;
+      const point = new THREE.Vector3().setFromMatrixPosition(hitMatrix);
+      latestHitRef.current = { x: point.x, z: point.z };
+    }, []),
+    'viewer',
+  );
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('button, input, select, textarea')) return;
+      const hit = latestHitRef.current;
+      if (!hit) return;
+      if (step === 'corner') onTapCorner(hit);
+      else onTapWall(hit);
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [step, onTapCorner, onTapWall]);
+
+  return (
+    <>
+      <ambientLight intensity={1.4} />
+      <directionalLight position={[3, 5, 3]} intensity={0.9} />
+      <XROrigin />
+      {cornerPoint && <CalibrationMarker position={cornerPoint} />}
+    </>
+  );
+}
+
 export default function PositionMapScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const items = useFurnitureStore((s) => s.items);
@@ -209,12 +290,54 @@ export default function PositionMapScreen() {
   const [placing, setPlacing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Calibration — once per AR session (see the subscribe effect below,
+  // which clears all of this the moment the session ends). Placement is
+  // gated on `calibration` being non-null; see the render below.
+  const [calibration, setCalibration] = useState<CalibrationTransform | null>(null);
+  const [calibrationStep, setCalibrationStep] = useState<'corner' | 'wall'>('corner');
+  const [cornerPoint, setCornerPoint] = useState<ArPoint | null>(null);
+  const [calibrationError, setCalibrationError] = useState('');
+
   useEffect(() => {
     return xrPlacementStore.subscribe((state, prevState) => {
       if (state.session === prevState.session) return;
       setArActive(state.session != null);
+      if (state.session == null) {
+        // Session ended — its reference space is gone with it. Next entry
+        // is a fresh session with an unrelated origin/heading, so
+        // calibration must run again before any placement is allowed.
+        setCalibration(null);
+        setCalibrationStep('corner');
+        setCornerPoint(null);
+        setCalibrationError('');
+      }
     });
   }, []);
+
+  const handleTapCorner = useCallback((p: ArPoint) => {
+    setCornerPoint(p);
+    setCalibrationStep('wall');
+  }, []);
+
+  const handleTapWall = useCallback(
+    (p: ArPoint) => {
+      if (!cornerPoint) return;
+      const transform = deriveCalibration(cornerPoint, p);
+      if (!transform) {
+        setCalibrationError("That's too close to the corner — step further along the north wall and tap again.");
+        return;
+      }
+      setCalibrationError('');
+      setCalibration(transform);
+    },
+    [cornerPoint],
+  );
+
+  function retryCalibration() {
+    setCalibrationStep('corner');
+    setCornerPoint(null);
+    setCalibrationError('');
+  }
 
   const unpositionedItems = items.filter((item) => !isPositioned(item));
   const activeItem = items.find((item) => item.id === activeItemId) ?? null;
@@ -261,9 +384,14 @@ export default function PositionMapScreen() {
   }
 
   function confirmPlacement() {
-    if (!activeItem || !lockedPosition) return;
+    if (!activeItem || !lockedPosition || !calibration) return;
 
-    updatePosition(activeItem.id, lockedPosition.x, lockedPosition.z, rotationY);
+    // The write path: lockedPosition/rotationY are this session's raw
+    // AR-local values (correct for what the live ghost mesh showed) —
+    // convert to the 2D plan's frame before it ever reaches furnitureStore.
+    const planPosition = applyCalibration(lockedPosition, calibration);
+    const planRotationY = rotationY + calibrationThetaRad(calibration);
+    updatePosition(activeItem.id, planPosition.x, planPosition.z, planRotationY);
 
     const remainingAfterConfirm = items.filter(
       (item) => item.id !== activeItem.id && !isPositioned(item),
@@ -380,15 +508,25 @@ export default function PositionMapScreen() {
       >
         <Canvas style={{ position: 'absolute', inset: 0 }} gl={{ antialias: true, alpha: true }}>
           <XR store={xrPlacementStore}>
-            <PlacementScene
-              items={items}
-              activeItem={activeItem}
-              lockedPosition={visibleActivePosition}
-              rotationY={rotationY}
-              placing={placing}
-              onPreviewMove={setPreviewPosition}
-              onFloorTap={handleFloorTap}
-            />
+            {calibration ? (
+              <PlacementScene
+                items={items}
+                activeItem={activeItem}
+                lockedPosition={visibleActivePosition}
+                rotationY={rotationY}
+                placing={placing}
+                onPreviewMove={setPreviewPosition}
+                onFloorTap={handleFloorTap}
+                calibration={calibration}
+              />
+            ) : (
+              <CalibrationScene
+                step={calibrationStep}
+                cornerPoint={cornerPoint}
+                onTapCorner={handleTapCorner}
+                onTapWall={handleTapWall}
+              />
+            )}
 
             <XRDomOverlay>
               <div
@@ -422,11 +560,26 @@ export default function PositionMapScreen() {
                       lineHeight: 1.45,
                     }}
                   >
-                    <strong>{activeItem?.label ?? 'Furniture placement'}</strong>
-                    <br />
-                    {placing
-                      ? 'Move your phone until the preview sits on the real furniture position, then tap the floor.'
-                      : 'Adjust rotation to match the real furniture, then confirm placement.'}
+                    {calibration ? (
+                      <>
+                        <strong>{activeItem?.label ?? 'Furniture placement'}</strong>
+                        <br />
+                        {placing
+                          ? 'Move your phone until the preview sits on the real furniture position, then tap the floor.'
+                          : 'Adjust rotation to match the real furniture, then confirm placement.'}
+                      </>
+                    ) : (
+                      <>
+                        <strong>{calibrationStep === 'corner' ? 'Step 1 of 2 — Set the corner' : 'Step 2 of 2 — Set north'}</strong>
+                        <br />
+                        {calibrationStep === 'corner'
+                          ? "Stand at the unit's northwest corner — where the two outer walls meet — and tap the floor right at the corner."
+                          : 'Now walk a few steps along the north wall and tap the floor again, to show which way is east.'}
+                        {calibrationError && (
+                          <div style={{ marginTop: 6, color: '#fca5a5', fontWeight: 700 }}>{calibrationError}</div>
+                        )}
+                      </>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -444,7 +597,35 @@ export default function PositionMapScreen() {
                   </button>
                 </div>
 
-                {activeItem && (
+                {!calibration && calibrationStep === 'wall' && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 16,
+                      right: 16,
+                      bottom: 24,
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={retryCalibration}
+                      style={{
+                        width: '100%',
+                        background: 'rgba(17, 24, 39, 0.86)',
+                        color: 'white',
+                        border: 0,
+                        borderRadius: 8,
+                        padding: '12px 14px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      Start over from the corner
+                    </button>
+                  </div>
+                )}
+
+                {calibration && activeItem && (
                   <div
                     style={{
                       position: 'absolute',
