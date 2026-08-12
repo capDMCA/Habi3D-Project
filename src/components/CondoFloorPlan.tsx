@@ -1,8 +1,10 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { projectItems } from './floorPlanGeometry';
+import { computeGridGeometry } from './gridOverlay';
 import { color as t } from './designTokens';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
+import type { RoomZone } from '../data/condoLayout';
 import { WALKWAY_PATHS, type WalkwayStatus } from '../engine/walkways';
 import {
   clampToUnit,
@@ -50,6 +52,19 @@ const HEIGHT_CM = UNIT_HEIGHT_CM;
 // A click that never travels this far is a click, not a drag — nothing about
 // the view, undo history, or furniture position may change because of it.
 const DRAG_THRESHOLD_PX = 5;
+
+// Computed once — the unit's own dimensions never change at runtime, so
+// there's no reason to recompute this per render or per instance.
+const GRID = computeGridGeometry(WIDTH_CM, HEIGHT_CM);
+
+/** Which room a grid cell's centre falls in, for label colour + the
+ *  living/dining opacity reduction. Rooms tile the unit with no gaps, so
+ *  every cell centre resolves to exactly one room. */
+function roomAtPoint(xCm: number, yCm: number): RoomZone | undefined {
+  return CONDO_ROOMS.find(
+    (r) => xCm >= r.x && xCm < r.x + r.width && yCm >= r.y && yCm < r.y + r.height,
+  );
+}
 
 /**
  * Live state of a grab. Screen-to-world conversion uses the scale captured when
@@ -271,12 +286,63 @@ export default function CondoFloorPlan({
         {/* Outer unit boundary */}
         <rect x={0} y={0} width={WIDTH_CM} height={HEIGHT_CM} fill="none" stroke={t.roomStroke} strokeWidth={6} rx={8} />
 
-        {/* 1. ROOM ZONES */}
+        {/* 0. DIMENSION CALLOUTS — overall unit width/height only, for
+            orientation. Pulled from WIDTH_CM/HEIGHT_CM (UNIT_WIDTH_CM/
+            UNIT_HEIGHT_CM from floorPlanDrag.ts, themselves derived from the
+            real room data) — never a hand-typed number. Kept thin/small and
+            outside the unit boundary so it stays secondary to the actual
+            furniture/clearance UI. */}
+        <g style={pointerNone}>
+          <line x1={0} y1={-10} x2={WIDTH_CM} y2={-10} stroke={t.roomStroke} strokeWidth={1} opacity={0.6} />
+          <line x1={0} y1={-14} x2={0} y2={-6} stroke={t.roomStroke} strokeWidth={1} opacity={0.6} />
+          <line x1={WIDTH_CM} y1={-14} x2={WIDTH_CM} y2={-6} stroke={t.roomStroke} strokeWidth={1} opacity={0.6} />
+          <text x={WIDTH_CM / 2} y={-16} fontSize={9} fontWeight={600} fill={t.inkMute} textAnchor="middle">
+            {WIDTH_CM} cm ({(WIDTH_CM / 30.48).toFixed(1)} ft)
+          </text>
+
+          <line x1={-10} y1={0} x2={-10} y2={HEIGHT_CM} stroke={t.roomStroke} strokeWidth={1} opacity={0.6} />
+          <line x1={-14} y1={0} x2={-6} y2={0} stroke={t.roomStroke} strokeWidth={1} opacity={0.6} />
+          <line x1={-14} y1={HEIGHT_CM} x2={-6} y2={HEIGHT_CM} stroke={t.roomStroke} strokeWidth={1} opacity={0.6} />
+          <text
+            x={-16}
+            y={HEIGHT_CM / 2}
+            fontSize={9}
+            fontWeight={600}
+            fill={t.inkMute}
+            textAnchor="middle"
+            transform={`rotate(-90, -16, ${HEIGHT_CM / 2})`}
+          >
+            {HEIGHT_CM} cm ({(HEIGHT_CM / 30.48).toFixed(1)} ft)
+          </text>
+        </g>
+
+        {/* 1. ROOM ZONES
+            Living/dining render at full fill/label weight — they're where
+            clearance rules actually apply (see the earlier audit: the engine
+            has no room-zone awareness at all, this "rule room" distinction is
+            purely which categories runClearanceAnalysis's rules can ever
+            fire for) and where furniture actually gets placed. The other 6
+            rooms render muted — decoration only. Every interactive affordance
+            below (stroke highlight, drop-target glow, click-to-focus) is
+            untouched and identical for every room regardless of this — this
+            only changes fill/label opacity, never what's clickable or
+            droppable. */}
         {CONDO_ROOMS.map((room) => {
           const isRoomActive = !activeRoomId || activeRoomId === room.id;
           const isHighlighted = activeRoomId === room.id;
           const isDropTarget = dropRoomId === room.id;
           const isDimmed = focusedRoomId && focusedRoomId !== room.id;
+          const isRuleRoom = room.id === 'living' || room.id === 'dining';
+
+          const baseFillOpacity = isRuleRoom ? t.roomFillOpacityActive : t.roomFillOpacityMuted;
+          // Label opacity is NOT reduced for muted rooms — a "Kitchen" label
+          // that's too faint to read isn't muted, it's broken. The fill wash
+          // alone carries the active/muted distinction; every room's name
+          // stays equally legible, since knowing what a room IS stays useful
+          // even where clearance rules don't apply. (Tried reducing label
+          // opacity too, first pass — white text against the near-white plan
+          // background at ~0.25 opacity was functionally invisible.)
+          const labelOpacity = isRoomActive ? t.roomLabelOpacityActive : 0.4;
 
           return (
             <g key={room.id} style={{ transition: 'opacity 0.3s ease' }} opacity={isDimmed ? 0.3 : 1}>
@@ -286,7 +352,7 @@ export default function CondoFloorPlan({
                 width={room.width}
                 height={room.height}
                 fill={room.bgColor}
-                fillOpacity={isDropTarget ? 0.22 : 0.08}
+                fillOpacity={isDropTarget ? 0.22 : baseFillOpacity}
                 stroke={isDropTarget ? t.accent : isHighlighted ? t.accent : t.roomStroke}
                 strokeWidth={isDropTarget ? 4 : isHighlighted ? 3 : 1.5}
                 style={{
@@ -303,7 +369,7 @@ export default function CondoFloorPlan({
                 fill={room.textColor}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                opacity={isRoomActive ? 0.95 : 0.4}
+                opacity={labelOpacity}
                 style={pointerNone}
               >
                 {room.label}
@@ -311,6 +377,62 @@ export default function CondoFloorPlan({
             </g>
           );
         })}
+
+        {/* 1B. WAYFINDING GRID — a background reference layer, drawn above the
+            room fill but below furniture. Never intercepts pointer events:
+            the whole group is pointer-events:none, so drag/click handling on
+            rooms and furniture below is completely unaffected. Lettered rows
+            and numbered columns are computed once from the unit's own real
+            dimensions (gridOverlay.ts) — not hand-picked to match any
+            reference image. Labels read quieter inside living/dining, since
+            that's the one area the user is actually working in. */}
+        <g style={pointerNone}>
+          {GRID.verticalLinesCm.map((x) => (
+            <line
+              key={`grid-v-${x}`}
+              x1={x}
+              y1={0}
+              x2={x}
+              y2={HEIGHT_CM}
+              stroke={t.roomStroke}
+              strokeWidth={0.75}
+              opacity={0.35}
+            />
+          ))}
+          {GRID.horizontalLinesCm.map((y) => (
+            <line
+              key={`grid-h-${y}`}
+              x1={0}
+              y1={y}
+              x2={WIDTH_CM}
+              y2={y}
+              stroke={t.roomStroke}
+              strokeWidth={0.75}
+              opacity={0.35}
+            />
+          ))}
+          {GRID.cells.map((cell) => {
+            const cx = cell.xCm + cell.wCm / 2;
+            const cy = cell.yCm + cell.hCm / 2;
+            const cellRoom = roomAtPoint(cx, cy);
+            const isActiveRoom = cellRoom?.id === 'living' || cellRoom?.id === 'dining';
+            return (
+              <text
+                key={`grid-label-${cell.rowLabel}${cell.colLabel}`}
+                x={cx}
+                y={cy}
+                fontSize={9}
+                fontWeight={600}
+                fill={cellRoom?.textColor ?? t.roomStroke}
+                opacity={isActiveRoom ? 0.22 : 0.5}
+                textAnchor="middle"
+                dominantBaseline="middle"
+              >
+                {cell.rowLabel}{cell.colLabel}
+              </text>
+            );
+          })}
+        </g>
 
         {/* 2. WALKWAY CORRIDORS */}
         {WALKWAY_PATHS.map((path) => {

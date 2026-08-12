@@ -50,6 +50,20 @@ export const color = {
   itemFill: '#EDF1F7', //  neutral furniture
   itemStroke: '#97A2B4',
 
+  // Room-fill muting for the wayfinding plan. condoLayout.ts's per-room
+  // bgColor/textColor stay the source of truth for what colour each of the
+  // 8 rooms IS — this pair only controls how strongly that colour reads:
+  // full weight for living/dining (where clearance rules actually apply
+  // and furniture is actually placed), muted for the other 6 (bedrooms,
+  // CR, kitchen, balcony, storage). This is a decorative distinction
+  // only — it does not gate what the app allows; the only real placement
+  // restriction is RoomZone.allowedCategories. Room LABEL opacity is
+  // deliberately not part of this — see the comment at its one call site
+  // in CondoFloorPlan.tsx for why (a muted label still needs to be legible).
+  roomFillOpacityActive: 0.16,
+  roomFillOpacityMuted: 0.07,
+  roomLabelOpacityActive: 0.95,
+
   // accent — interactive elements only (draggable block + ghost outline)
   accent: '#2563EB', //  ~4.9:1
   accentFill: '#DCE8FF', //  solid fill of the draggable block
