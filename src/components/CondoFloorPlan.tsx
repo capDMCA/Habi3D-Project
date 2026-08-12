@@ -701,11 +701,24 @@ const containerStyle: CSSProperties = {
   position: 'relative',
 };
 
+// Fixed to the FULL unit's ratio (the zoomed-out view), always — never the
+// ratio of whatever viewBox happens to be active. Without this, the <svg>
+// element's own CSS box (sized by `width:auto;height:auto` off its
+// intrinsic/viewBox aspect ratio) resizes and re-centres itself every time
+// `vb` animates between a room's shape and the full unit's differently-
+// shaped rectangle, on top of the intentional camera pan/zoom — the plan
+// frame itself visibly jumps, not just its content. Locking the outer box
+// to one constant shape makes the frame's size and centred position on
+// screen completely stable; `preserveAspectRatio`'s default (xMidYMid
+// meet) then does the letterboxing/centring of whatever viewBox is
+// currently active INSIDE that fixed frame, which is exactly the zoom
+// effect this is meant to look like.
 const svgStyle: CSSProperties = {
   maxWidth: '100%',
   maxHeight: '100%',
   width: 'auto',
   height: 'auto',
+  aspectRatio: `${WIDTH_CM + PAD_CM * 2} / ${HEIGHT_CM + PAD_CM * 2}`,
   display: 'block',
   boxShadow: '0 8px 30px rgba(0, 0, 0, 0.06)',
   borderRadius: '16px',
