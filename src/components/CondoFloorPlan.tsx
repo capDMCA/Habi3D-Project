@@ -5,7 +5,6 @@ import { computeGridGeometry } from './gridOverlay';
 import { color as t } from './designTokens';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import type { RoomZone } from '../data/condoLayout';
-import { WALKWAY_PATHS, type WalkwayStatus } from '../engine/walkways';
 import {
   clampToUnit,
   snapFree,
@@ -17,15 +16,6 @@ import {
   type AlignmentGuide,
 } from './floorPlanDrag';
 import type { FurnitureItem } from '../types';
-
-function walkwayBelongsToRoom(pathId: string, roomId: string): boolean {
-  if (roomId === 'living') return ['living_dining', 'living_balcony', 'living_bedroom'].includes(pathId);
-  if (roomId === 'dining') return ['living_dining', 'dining_kitchen'].includes(pathId);
-  if (roomId === 'bedroom1' || roomId === 'bedroom2') return ['living_bedroom', 'bedroom_bathroom'].includes(pathId);
-  if (roomId === 'kitchen') return ['dining_kitchen'].includes(pathId);
-  if (roomId === 'bathroom') return ['bedroom_bathroom'].includes(pathId);
-  return false;
-}
 
 export interface CondoFloorPlanInteraction {
   draggableItemId: string;
@@ -41,7 +31,6 @@ export interface CondoFloorPlanProps {
   itemStatuses?: Record<string, 'RED' | 'YELLOW' | 'GREEN'>;
   interactive?: CondoFloorPlanInteraction;
   onSelectItem?: (itemId: string) => void;
-  walkwayStatuses?: WalkwayStatus[];
   focusedRoomId?: string | null;
   onFocusRoom?: (roomId: string | null) => void;
 }
@@ -88,7 +77,6 @@ export default function CondoFloorPlan({
   itemStatuses = {},
   interactive,
   onSelectItem,
-  walkwayStatuses = [],
   focusedRoomId = null,
   onFocusRoom,
 }: CondoFloorPlanProps) {
@@ -433,41 +421,6 @@ export default function CondoFloorPlan({
             );
           })}
         </g>
-
-        {/* 2. WALKWAY CORRIDORS */}
-        {WALKWAY_PATHS.map((path) => {
-          const status = walkwayStatuses.find((s) => s.id === path.id)?.status ?? 'GREEN';
-          const isWalkwayDimmed = activeRoomId && !walkwayBelongsToRoom(path.id, activeRoomId);
-
-          let walkwayColor: string = t.comfortFg;
-          let fillOpacity = 0.05;
-          if (status === 'RED') {
-            walkwayColor = t.attentionFg;
-            fillOpacity = 0.15;
-          } else if (status === 'YELLOW') {
-            walkwayColor = t.tightFg;
-            fillOpacity = 0.12;
-          }
-
-          return (
-            <g key={path.id} style={{ transition: 'opacity 0.25s ease' }} opacity={isWalkwayDimmed ? 0.15 : 1}>
-              <rect
-                x={path.x}
-                y={path.y}
-                width={path.width}
-                height={path.height}
-                fill={walkwayColor}
-                fillOpacity={fillOpacity}
-                stroke={walkwayColor}
-                strokeWidth={1.5}
-                strokeDasharray="4 3"
-                strokeOpacity={isWalkwayDimmed ? 0.15 : 0.6}
-                rx={2}
-                style={pointerNone}
-              />
-            </g>
-          );
-        })}
 
         {/* 3. ALIGNMENT GUIDES */}
         {activeGuides.map((g, idx) =>

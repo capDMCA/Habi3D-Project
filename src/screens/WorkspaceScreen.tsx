@@ -510,7 +510,6 @@ export default function WorkspaceScreen() {
               highlightItemId={selectedItem?.id}
               itemStatuses={itemStatuses}
               onSelectItem={handleSelectItem}
-              walkwayStatuses={walkwayStatuses}
               focusedRoomId={focusedRoomId}
               onFocusRoom={setFocusedRoomId}
               interactive={
