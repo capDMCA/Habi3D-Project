@@ -14,8 +14,10 @@ type Mode = 'login' | 'signup';
 type Phase = 'form' | 'checking' | 'resumeChoice';
 
 /**
- * Log in / create account, on a plain `users` table (username, password_hash)
- * — no Supabase Auth, no synthetic email.
+ * Log in / create account via Supabase Auth — the username the resident
+ * types is turned into a synthetic `${username}@habi3d.local` email under
+ * the hood (see supabase.ts's createAccount/logIn); this screen only ever
+ * shows a username field.
  *
  * Login has a second beat: if this account already has a saved layout
  * (saved_sessions, one row per user), the form is replaced by an inline

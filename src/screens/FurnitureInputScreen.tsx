@@ -27,7 +27,7 @@ const CATEGORIES: Array<{
   { key: 'dining_table', label: 'Dining Table', rules: ['D1', 'D2', 'D3', 'D4', 'D5'], shapes: ['rectangle', 'round', 'oval'] },
   { key: 'dining_chair', label: 'Dining Chair', rules: ['D2', 'D3', 'D4'], shapes: ['rectangle'] },
   { key: 'sofa', label: 'Sofa', rules: ['L1', 'L2', 'L3', 'L5'], shapes: ['rectangle', 'l-shape'] },
-  { key: 'tv_stand', label: 'TV Stand', rules: ['L1', 'L4'], shapes: ['rectangle'] },
+  { key: 'tv_stand', label: 'TV Rack', rules: ['L1', 'L4'], shapes: ['rectangle'] },
   { key: 'cabinet', label: 'Cabinet / Storage', rules: ['L1', 'L3'], shapes: ['rectangle'] },
   { key: 'side_table', label: 'Side Table', rules: ['L1', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
   { key: 'coffee_table', label: 'Coffee Table', rules: ['L2', 'L3'], shapes: ['rectangle', 'round', 'oval'] },

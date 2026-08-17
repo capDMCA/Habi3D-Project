@@ -16,59 +16,78 @@ export const supabase = createClient(
 
 // ─── Account auth ────────────────────────────────────────────────────────────
 //
-// A plain `users` table (username, password_hash) — not Supabase Auth, and
-// not the pre-Supabase-Auth hand-rolled table either (that one hashed with
-// SHA-256; see CODEBASE_STATUS.md for the "does the old table still exist"
-// caveat). Hashing/verification happens entirely inside Postgres via the
-// `create_user`/`verify_login` RPC functions (pgcrypto's bcrypt) — the
-// client never sees a password_hash, only a user id back. Doing the bcrypt
-// compare here in the browser instead would require SELECTing password_hash
-// down to the client to compare against, which hands every hash to anyone
-// who opens devtools — that's why this isn't a client-side bcrypt call.
+// Plain Supabase Auth (`supabase.auth.signUp`/`signInWithPassword`) — not the
+// custom `users` table + pgcrypto RPC pair this app used previously (see
+// CODEBASE_STATUS.md Round 6 for that design; reversed here on explicit
+// instruction back to standard Supabase behaviour). The app's UI only ever
+// asks for a username, so a synthetic email (`${username}@habi3d.local`) is
+// what's actually handed to Supabase Auth underneath — the real identity the
+// rest of the app cares about is the returned `user.id` (`auth.uid()`), which
+// flows into sessionStore exactly like the old custom-table id did.
+//
+// Requires "Confirm email" turned OFF in the Supabase project (Dashboard →
+// Authentication → Sign In / Providers → Email). The synthetic domain can
+// never receive a real confirmation link — with confirmation left on,
+// signUp() would create the auth.users row but never establish a session,
+// and every later RLS check against auth.uid() would silently fail.
 
 export interface AuthUser {
   userId: string;
   username: string;
 }
 
+const SYNTHETIC_EMAIL_DOMAIN = 'habi3d.local';
+
+/** Throws before ever constructing an email if the username itself contains
+ *  "@" — otherwise `${username}@habi3d.local` could end up with two "@"
+ *  signs and silently target a different (invalid) address. */
+function buildSyntheticEmail(username: string): string {
+  if (username.includes('@')) {
+    throw new Error('Username cannot contain "@".');
+  }
+  return `${username}@${SYNTHETIC_EMAIL_DOMAIN}`;
+}
+
 /** Throws with a message safe to show directly under the form field. Never
  *  includes the password. */
 export async function createAccount(username: string, password: string): Promise<AuthUser> {
+  const email = buildSyntheticEmail(username);
   if (!hasSupabaseConfig) throw new Error(supabaseConfigMessage);
-  const { data, error } = await supabase.rpc('create_user', {
-    p_username: username,
-    p_password: password,
-  });
+
+  const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) {
-    if (error.message.includes('username_taken')) throw new Error('That username is already taken.');
-    if (error.message.includes('password_too_short')) throw new Error('Password must be at least 6 characters.');
-    if (error.message.includes('username_required')) throw new Error('Enter a username.');
+    const msg = error.message.toLowerCase();
+    if (msg.includes('already registered') || msg.includes('already exists')) {
+      throw new Error('That username is already taken.');
+    }
+    if (msg.includes('password')) throw new Error('Password must be at least 6 characters.');
     throw new Error('Could not create an account just now — try again.');
   }
-  if (!data) throw new Error('Could not create an account just now — try again.');
-  return { userId: data as string, username };
+  if (!data.user) throw new Error('Could not create an account just now — try again.');
+  return { userId: data.user.id, username };
 }
 
-/** Generic failure message on purpose — never reveals whether the username
- *  itself exists, only whether the username+password pair matched. */
+/** Generic failure message on purpose — Supabase Auth itself never reveals
+ *  whether the underlying email/username exists, only whether the
+ *  credentials matched. */
 export async function logIn(username: string, password: string): Promise<AuthUser> {
+  const email = buildSyntheticEmail(username);
   if (!hasSupabaseConfig) throw new Error(supabaseConfigMessage);
-  const { data, error } = await supabase.rpc('verify_login', {
-    p_username: username,
-    p_password: password,
-  });
-  if (error) throw new Error('Something went wrong — try again.');
-  if (!data) throw new Error('Incorrect username or password.');
-  return { userId: data as string, username };
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw new Error('Incorrect username or password.');
+  if (!data.user) throw new Error('Incorrect username or password.');
+  return { userId: data.user.id, username };
 }
 
 // ─── Saved session (resume-later layout) ─────────────────────────────────────
 //
 // One row per user_id — upserted, not appended — so "resume" always means
-// "my most recent layout," with no session-history table to manage. Requires
-// a `saved_sessions` table (see CODEBASE_STATUS.md for the exact DDL + RLS
-// policies to run in the Supabase SQL editor — this client has no way to
-// create it).
+// "my most recent layout," with no session-history table to manage. user_id
+// now references auth.users(id) directly (real Supabase Auth), not the old
+// custom `users` table. Requires a `saved_sessions` table with RLS keyed on
+// auth.uid() = user_id — this client has no way to create it; run the SQL
+// in the Supabase SQL editor manually.
 
 export interface SavedSessionRow {
   sessionId: string;

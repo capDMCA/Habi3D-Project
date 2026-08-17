@@ -101,7 +101,10 @@ export default function WorkspaceScreen() {
   useAutosaveLayout(items);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  // Internal one-shot bookkeeping only — never read by JSX (confirmed via
+  // grep) — so a ref, not state: flipping it shouldn't itself force a
+  // render, only the store writes it gates should.
+  const loadedRef = useRef(false);
   const [infeasible, setInfeasible] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('items');
   const [toast, setToast] = useState<string | null>(null);
@@ -122,8 +125,11 @@ export default function WorkspaceScreen() {
   const roomLengthCm = 880;
 
   // ── Normalize & Assign rooms once on mount ────────────────────────────────
+  // Pure external-system sync (writes to furnitureStore) gated by a ref, not
+  // state — no component state setter runs in here at all, so there's
+  // nothing for this effect to cascade.
   useEffect(() => {
-    if (items.length > 0 && !loaded) {
+    if (items.length > 0 && !loadedRef.current) {
       // First ensure all items have roomIds
       const withRooms = initializeRoomAssignments(items);
       withRooms.forEach((it) => {
@@ -138,19 +144,35 @@ export default function WorkspaceScreen() {
         updatePosition(it.id, it.posX, it.posZ, it.rotationY);
       });
 
-      setPreview(normalized);
-      previewRef.current = normalized;
-      setLoaded(true);
+      // Not seeding `preview` here — the store writes above flip `items`,
+      // and the render-time sync just below picks it up on the next render.
+      loadedRef.current = true;
     }
-  }, [items, updateItem, updatePosition, loaded]);
+  }, [items, updateItem, updatePosition]);
 
   // ── Keep preview in sync with store ───────────────────────────────────────
+  // Adjusted during render rather than in a follow-up effect — this is
+  // React's documented pattern for state that mirrors another value
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes):
+  // calling the setter here, guarded by an identity check against the last
+  // seen `items`, applies before the screen paints instead of costing an
+  // extra commit. Interactive paths (drag, undo, rotate, reset) already set
+  // `preview` directly inside their own handlers — this is the catch-all
+  // for any other path that changes the store's `items`. `items !== prevItems`
+  // is already false until the mount-normalization effect above has run at
+  // least once, so no separate `loaded` gate is needed here.
+  const [prevItems, setPrevItems] = useState(items);
+  if (items !== prevItems) {
+    setPrevItems(items);
+    setPreview(items);
+  }
+
+  // Refs may only be mutated in an effect or event handler, never at render
+  // time — so `previewRef` (read imperatively by drag/undo/rotate handlers)
+  // is kept in sync here rather than alongside the `setPreview` call above.
   useEffect(() => {
-    if (loaded) {
-      setPreview(items);
-      previewRef.current = items;
-    }
-  }, [items, loaded]);
+    previewRef.current = preview;
+  }, [preview]);
 
   // ── Toast warning ────────────────────────────────────────────────────────
   const showToast = useCallback((msg: string) => {
