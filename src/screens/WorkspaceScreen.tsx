@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import CondoFloorPlan from '../components/CondoFloorPlan';
 import ClearanceMeter, { BandGlyph } from '../components/ClearanceMeter';
-import { color as t, radius, fontFamily } from '../components/designTokens';
+import { color as t, radius, fontFamily } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
 import { useFurnitureStore } from '../stores/furnitureStore';
@@ -95,6 +95,8 @@ export default function WorkspaceScreen() {
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
   const setSpaceScoreAfter = useViolationStore((s) => s.setSpaceScoreAfter);
   const recommendations = useViolationStore((s) => s.recommendations);
+  const captureInitialFindings = useViolationStore((s) => s.captureInitialFindings);
+  const markItemTouched = useViolationStore((s) => s.markItemTouched);
 
   useAutosaveLayout(items);
 
@@ -176,6 +178,18 @@ export default function WorkspaceScreen() {
     }
   }, [analysis, refreshViolations, recommendations.length, setSpaceScoreBefore]);
 
+  // Session-start snapshot for ReportScreen's "you made N spots more
+  // comfortable" headline. Deliberately NOT gated on violations.length > 0
+  // like the effect above — a session that starts fully comfortable still
+  // needs a real (empty) snapshot captured, so a violation introduced later
+  // reads as a genuine change rather than defaulting to "nothing to compare
+  // against." captureInitialFindings is itself idempotent (no-ops after the
+  // first call), so calling it on every analysis recompute is safe — it
+  // only ever actually captures once, whichever call happens first.
+  useEffect(() => {
+    captureInitialFindings(analysis.violations);
+  }, [analysis, captureInitialFindings]);
+
   // ── Selection ─────────────────────────────────────────────────────────────
   const selectedItem = useMemo(() => {
     if (selectedId) return preview.find((it) => it.id === selectedId) ?? null;
@@ -219,12 +233,13 @@ export default function WorkspaceScreen() {
       setPreview(layout);
       updateItem(changed.id, { roomId: changed.roomId });
       updatePosition(changed.id, changed.posX, changed.posZ, changed.rotationY);
+      markItemTouched(changed.id);
 
       const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
       refreshViolations(fresh.violations);
       setSpaceScoreAfter(fresh.spaceScoreBefore);
     },
-    [roomWidthCm, roomLengthCm, updateItem, updatePosition, refreshViolations, setSpaceScoreAfter],
+    [roomWidthCm, roomLengthCm, updateItem, updatePosition, markItemTouched, refreshViolations, setSpaceScoreAfter],
   );
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
@@ -476,7 +491,7 @@ export default function WorkspaceScreen() {
           {focusedRoom ? (
             <div style={headerTitleRow}>
               <span
-                style={{ cursor: 'pointer', color: t.brand, fontWeight: 700 }}
+                style={{ cursor: 'pointer', color: t.inkSoft, fontWeight: 700, textDecoration: 'underline' }}
                 onClick={() => setFocusedRoomId(null)}
               >
                 Mulberry Place
@@ -946,7 +961,7 @@ const backBtn: CSSProperties = {
 };
 
 const finishBtn: CSSProperties = {
-  background: t.brand,
+  background: t.ink,
   color: t.surface,
   border: 'none',
   minHeight: 44,
@@ -1012,7 +1027,7 @@ const iconBtn = (disabled: boolean): CSSProperties => ({
   borderRadius: '50%',
   border: `1px solid ${t.line}`,
   background: t.ground,
-  color: disabled ? t.inkMute : t.brand,
+  color: disabled ? t.inkMute : t.ink,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -1094,8 +1109,8 @@ const tabBtn = (active: boolean): CSSProperties => ({
   fontFamily,
   fontSize: 14,
   fontWeight: 700,
-  color: active ? t.brand : t.inkMute,
-  borderBottom: active ? `3px solid ${t.brand}` : '3px solid transparent',
+  color: active ? t.ink : t.inkMute,
+  borderBottom: active ? `3px solid ${t.ink}` : '3px solid transparent',
   cursor: 'pointer',
   whiteSpace: 'nowrap',
 });
@@ -1129,8 +1144,8 @@ const listItemStyle = (sel: boolean): CSSProperties => ({
   alignItems: 'center',
   padding: '12px 14px',
   borderRadius: radius.sm,
-  background: sel ? t.brandTint : t.ground,
-  border: `1px solid ${sel ? t.brand : t.line}`,
+  background: sel ? t.surface : t.ground,
+  border: `1px solid ${sel ? t.ink : t.line}`,
   borderLeft: '4px solid',
   cursor: 'pointer',
   transition: 'all 0.15s ease',

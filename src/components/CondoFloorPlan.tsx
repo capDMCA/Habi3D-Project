@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, useEffect } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { projectItems } from './floorPlanGeometry';
 import { computeGridGeometry } from './gridOverlay';
-import { color as t } from './designTokens';
+import { color as t } from './tokens';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import type { RoomZone } from '../data/condoLayout';
 import {

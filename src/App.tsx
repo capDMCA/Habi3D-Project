@@ -1,7 +1,6 @@
 import { useSessionStore } from './stores/sessionStore';
 import EntryScreen from './screens/EntryScreen';
 import AuthScreen from './screens/AuthScreen';
-import ARDemoScreen from './screens/ARDemoScreen';
 import FurnitureInputScreen from './screens/FurnitureInputScreen';
 import PositionMapScreen from './screens/PositionMapScreen';
 import WorkspaceScreen from './screens/WorkspaceScreen';
@@ -17,8 +16,6 @@ export default function App() {
       return <EntryScreen />;
     case 'auth':
       return <AuthScreen />;
-    case 'arDemo':
-      return <ARDemoScreen />;
     case 'furnitureInput':
       return <FurnitureInputScreen />;
     case 'positionMap':

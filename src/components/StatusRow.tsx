@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { StatusKey } from './statusVocabulary';
 import { statusMeta } from './statusVocabulary';
-import { color, type as typeScale } from './designTokens';
+import { color, type as typeScale } from './tokens';
 
 /**
  * One finding, presented calmly: a state icon, the plain human consequence
@@ -24,6 +24,11 @@ export interface StatusRowProps {
   detail: string;
   /** True for the render right after this finding's status improved. */
   improved?: boolean;
+  /** Optional third line, quieter than `detail` and not severity-coloured —
+   *  for context about the finding that isn't itself a measurement (e.g.
+   *  "You decided this works for you" on ReportScreen). Omit for the
+   *  default two-line row. */
+  note?: string;
 }
 
 function StatusIcon({ status, color }: { status: StatusKey; color: string }) {
@@ -47,7 +52,7 @@ function StatusIcon({ status, color }: { status: StatusKey; color: string }) {
   );
 }
 
-export default function StatusRow({ status, title, detail, improved = false }: StatusRowProps) {
+export default function StatusRow({ status, title, detail, improved = false, note }: StatusRowProps) {
   const meta = statusMeta(status);
   const flashStyle: CSSProperties = improved
     ? ({ animation: 'statusRowImprove 0.9s ease', '--status-row-flash-bg': meta.bg } as CSSProperties)
@@ -61,6 +66,7 @@ export default function StatusRow({ status, title, detail, improved = false }: S
       <div style={{ minWidth: 0 }}>
         <p style={titleStyle}>{title}</p>
         <p style={{ ...detailStyle, color: meta.color }}>{detail}</p>
+        {note && <p style={noteStyle}>{note}</p>}
       </div>
     </div>
   );
@@ -95,4 +101,12 @@ const detailStyle: CSSProperties = {
   margin: '2px 0 0',
   fontWeight: 600,
   fontSize: 12,
+};
+
+const noteStyle: CSSProperties = {
+  margin: '4px 0 0',
+  fontWeight: 500,
+  fontStyle: 'italic',
+  fontSize: 11,
+  color: color.inkMute,
 };

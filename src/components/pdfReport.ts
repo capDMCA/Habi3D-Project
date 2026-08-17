@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { projectItems } from './floorPlanGeometry';
 import { findingConsequence } from './findingText';
-import { color as t } from './designTokens';
+import { color as t } from './tokens';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import { UNIT_WIDTH_CM, UNIT_HEIGHT_CM } from './floorPlanDrag';
 import { ALL_RULE_GUIDANCE, bandLabel } from '../engine/ruleGuidance';

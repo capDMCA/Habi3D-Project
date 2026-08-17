@@ -5,7 +5,7 @@ import StatusRow from './StatusRow';
 import { isFeasible, snapCm, withMovedItem, withRotatedItem } from './floorPlanDrag';
 import { describeFinding, findingConsequence, findingDetail } from './findingText';
 import { statusForClassification } from './statusVocabulary';
-import { color as t, type as typeScale } from './designTokens';
+import { color as t, type as typeScale } from './tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import type { ClearanceResult } from '../engine/clearance';
 import { stableViolationKey } from '../engine/violationKey';

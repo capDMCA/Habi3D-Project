@@ -12,6 +12,17 @@ interface ViolationState {
   currentStepIndex: number;
   spaceScoreBefore: number;
   spaceScoreAfter: number;
+  // Session-start snapshot of finding identities (stableViolationKey), captured
+  // once and never overwritten again — unlike `violations`, which is replaced
+  // wholesale on every commit. This is what makes "you made N spots more
+  // comfortable" on ReportScreen a real before/after, not a guess: diff this
+  // against the current violations' keys. Null until the first analysis runs.
+  initialFindingKeys: Set<string> | null;
+  // Furniture ids the resident actually committed a change to this session
+  // (drag-end, rotate, or reset — anything that reaches commitLayout).
+  // Distinguishes "left this alone on purpose" from "never touched it" for a
+  // finding that's still tight/needs-attention on the completion screen.
+  touchedItemIds: Set<string>;
   setViolations: (violations: Violation[]) => void;
   refreshViolations: (violations: Violation[]) => void;
   resolveCurrentStep: () => void;
@@ -20,6 +31,10 @@ interface ViolationState {
   setCurrentStepIndex: (index: number) => void;
   setSpaceScoreBefore: (score: number) => void;
   setSpaceScoreAfter: (score: number) => void;
+  /** No-ops if a snapshot was already captured this session — call freely
+   *  on every analysis without worrying about clobbering it. */
+  captureInitialFindings: (violations: Violation[]) => void;
+  markItemTouched: (itemId: string) => void;
   reset: () => void;
   clearViolations: () => void;
 }
@@ -32,6 +47,8 @@ function applyResolved(list: Violation[], resolvedKeys: Set<string>): Violation[
 export const useViolationStore = create<ViolationState>((set) => ({
   violations: [],
   recommendations: [],
+  initialFindingKeys: null,
+  touchedItemIds: new Set<string>(),
   resolvedKeys: new Set<string>(),
   currentStepIndex: 0,
   spaceScoreBefore: 0,
@@ -146,6 +163,18 @@ export const useViolationStore = create<ViolationState>((set) => ({
       return { currentStepIndex: nextIndex };
     }),
   setSpaceScoreAfter: (score) => set({ spaceScoreAfter: score }),
+  captureInitialFindings: (violations) =>
+    set((state) => {
+      if (state.initialFindingKeys !== null) return state; // already captured this session
+      return { initialFindingKeys: new Set(violations.map(stableViolationKey)) };
+    }),
+  markItemTouched: (itemId) =>
+    set((state) => {
+      if (state.touchedItemIds.has(itemId)) return state;
+      const touchedItemIds = new Set(state.touchedItemIds);
+      touchedItemIds.add(itemId);
+      return { touchedItemIds };
+    }),
   reset: () =>
     set({
       violations: [],
@@ -154,6 +183,8 @@ export const useViolationStore = create<ViolationState>((set) => ({
       currentStepIndex: 0,
       spaceScoreBefore: 0,
       spaceScoreAfter: 0,
+      initialFindingKeys: null,
+      touchedItemIds: new Set<string>(),
     }),
   clearViolations: () =>
     set({
@@ -163,5 +194,7 @@ export const useViolationStore = create<ViolationState>((set) => ({
       currentStepIndex: 0,
       spaceScoreBefore: 0,
       spaceScoreAfter: 0,
+      initialFindingKeys: null,
+      touchedItemIds: new Set<string>(),
     }),
 }));

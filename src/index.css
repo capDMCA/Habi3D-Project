@@ -1,11 +1,11 @@
 /* ============================================================
    Habi3D Design System — Global Styles
 
-   These custom properties mirror src/components/designTokens.ts, the
-   canonical source (see the comment at the top of that file for why two
-   files still exist — className-based screens need real CSS custom
-   properties; designTokens.ts also feeds jsPDF and the SVG plan surface,
-   which can't resolve var()). Change a value in designTokens.ts first,
+   These custom properties mirror src/components/tokens/ (colors.ts and
+   spacing.ts), the canonical source (see the comment at the top of
+   colors.ts for why two files still exist — className-based screens need
+   real CSS custom properties; the tokens also feed jsPDF and the SVG plan
+   surface, which can't resolve var()). Change a value in tokens/ first,
    then update the matching line here.
    ============================================================ */
 
@@ -23,28 +23,28 @@
   --primary-light: #2B4E8C;
   --primary-dark: #162A4A;
   --primary-gradient: linear-gradient(135deg, #1F3864 0%, #2B4E8C 100%);
-  /* Mirrors designTokens.color.brandTint — the one "selected/active" light
-     wash of the brand blue, used instead of each screen inventing its own. */
+  /* Mirrors tokens/colors.ts's color.brandTint — the one "selected/active"
+     light wash of the brand blue, used instead of each screen inventing its own. */
   --primary-tint: #E6EDF8;
 
-  /* Background — mirrors designTokens.color.ground / .surface */
+  /* Background — mirrors tokens/colors.ts's color.ground / .surface */
   --bg: #F3F5F9;
   --bg-alt: #EEEEF0;
 
   /* Card */
   --card: #FFFFFF;
 
-  /* Text — mirrors designTokens.color.ink / .inkSoft / .inkMute */
+  /* Text — mirrors tokens/colors.ts's color.ink / .inkSoft / .inkMute */
   --text-primary: #16203A;
   --text-secondary: #4B5670;
   --text-muted: #8892A4;
   --text-inverse: #FFFFFF;
 
-  /* Border — mirrors designTokens.color.line */
+  /* Border — mirrors tokens/colors.ts's color.line */
   --border: #D8DEE9;
   --border-focus: #1F3864;
 
-  /* Status colors — mirrors designTokens.color.comfortFg/tightFg/attentionFg
+  /* Status colors — mirrors tokens/colors.ts's color.comfortFg/tightFg/attentionFg
      (and their *Bg pairs) exactly, so the generic UI (form errors, AR-support
      badges) and the clearance-severity system never disagree on what a given
      hue means, or on contrast: these are the same ≥4.5:1-on-white values,

@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { color as t } from './designTokens';
+import { color as t } from './tokens';
 import { bandRanges, meterMaxCm, type Band, type RuleGuidance } from '../engine/ruleGuidance';
 
 /**

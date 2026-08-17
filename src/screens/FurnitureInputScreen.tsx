@@ -7,7 +7,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useAutosaveLayout } from '../stores/useAutosaveLayout';
 import ARMeasureSession, { type MeasurePhase } from '../ar/ARMeasureSession';
 import { createFurnitureShape } from '../ar/shapeLibrary';
-import { fontFamily } from '../components/designTokens';
+import { fontFamily } from '../components/tokens';
 import type { FurnitureCategory, FurnitureItem, FurnitureShape } from '../types';
 
 const xrMeasureStore = createXRStore({

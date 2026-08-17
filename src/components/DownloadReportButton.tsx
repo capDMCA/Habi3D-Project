@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { downloadRoomAssessmentPdf } from './pdfReport';
-import { color as t, radius } from './designTokens';
+import { color as t, radius } from './tokens';
 import type { GapClassification } from '../engine/clearance';
 import type { FurnitureItem, Violation } from '../types';
 

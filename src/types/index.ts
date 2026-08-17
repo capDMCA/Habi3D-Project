@@ -1,7 +1,6 @@
 export type ScreenName =
   | 'entry'
   | 'auth'
-  | 'arDemo'
   | 'furnitureInput'
   | 'positionMap'
   | 'analysis'

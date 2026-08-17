@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { projectItems } from './floorPlanGeometry';
-import { color } from './designTokens';
+import { color } from './tokens';
 import type { FurnitureItem } from '../types';
 
 /**

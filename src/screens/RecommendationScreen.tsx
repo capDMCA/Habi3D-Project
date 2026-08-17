@@ -11,7 +11,7 @@ import { commitLines } from '../components/previewMove';
 import type { PreviewMove } from '../components/previewMove';
 import { findingReason } from '../components/findingText';
 import DownloadReportButton from '../components/DownloadReportButton';
-import { color as t, type as typeScale } from '../components/designTokens';
+import { color as t, type as typeScale } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import type { WallSide } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';

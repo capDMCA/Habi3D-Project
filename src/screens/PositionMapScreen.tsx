@@ -13,7 +13,7 @@ import {
 } from '../ar/calibration';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { fontFamily } from '../components/designTokens';
+import { fontFamily } from '../components/tokens';
 import type { FurnitureItem } from '../types';
 
 const xrPlacementStore = createXRStore({

@@ -1,4 +1,4 @@
-import { color } from './designTokens';
+import { color } from './tokens';
 import type { GapClassificationLevel } from '../types';
 
 /**
