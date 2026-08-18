@@ -212,13 +212,15 @@ function PlacementScene({
   );
 }
 
-/** A small marker at the first (corner) calibration tap, so the user can
- *  see it registered while aiming the second tap. */
-function CalibrationMarker({ position }: { position: ArPoint }) {
+/** A small marker at a calibration tap, so the user can see it registered
+ *  while aiming the next tap or deciding whether to retap. Blue for the
+ *  corner, green for the north-wall reference point — visually distinct so
+ *  it's obvious which point a "Retap" action would discard. */
+function CalibrationMarker({ position, color = '#2563EB' }: { position: ArPoint; color?: string }) {
   return (
     <mesh position={[position.x, 0.02, position.z]}>
       <sphereGeometry args={[0.05, 16, 16]} />
-      <meshStandardMaterial color="#2563EB" />
+      <meshStandardMaterial color={color} />
     </mesh>
   );
 }
@@ -228,15 +230,22 @@ function CalibrationMarker({ position }: { position: ArPoint }) {
  * allowed. Structurally the same hit-test → pointerdown-tap pattern
  * PlacementScene uses below, just driving two reference points instead of
  * a furniture position.
+ *
+ * Once a wall point is tapped it's held for review (see `wallPoint` /
+ * `pendingCalibration` in PositionMapScreen) rather than committed
+ * immediately — so once `wallPoint` is non-null here, further taps are
+ * ignored until the parent clears it (Retap) or commits it (confirm).
  */
 function CalibrationScene({
   step,
   cornerPoint,
+  wallPoint,
   onTapCorner,
   onTapWall,
 }: {
   step: 'corner' | 'wall';
   cornerPoint: ArPoint | null;
+  wallPoint: ArPoint | null;
   onTapCorner: (p: ArPoint) => void;
   onTapWall: (p: ArPoint) => void;
 }) {
@@ -273,6 +282,7 @@ function CalibrationScene({
       <directionalLight position={[3, 5, 3]} intensity={0.9} />
       <XROrigin />
       {cornerPoint && <CalibrationMarker position={cornerPoint} />}
+      {wallPoint && <CalibrationMarker position={wallPoint} color="#22C55E" />}
     </>
   );
 }
@@ -296,7 +306,19 @@ export default function PositionMapScreen() {
   const [calibration, setCalibration] = useState<CalibrationTransform | null>(null);
   const [calibrationStep, setCalibrationStep] = useState<'corner' | 'wall'>('corner');
   const [cornerPoint, setCornerPoint] = useState<ArPoint | null>(null);
+  // The second (north-wall) tap, held for review rather than committed
+  // immediately — `pendingCalibration` is the transform derived from it,
+  // computed eagerly so the too-close rejection still gives instant
+  // feedback, but not written into `calibration` (and so not usable for
+  // placement) until the user explicitly confirms it. This is what makes a
+  // "Retap" control possible before the tap is ever committed.
+  const [wallPoint, setWallPoint] = useState<ArPoint | null>(null);
+  const [pendingCalibration, setPendingCalibration] = useState<CalibrationTransform | null>(null);
   const [calibrationError, setCalibrationError] = useState('');
+  // Recalibrating (Task 3) mid-session — asking for confirmation only when
+  // there's something to lose (an item already placed under the transform
+  // being discarded).
+  const [recalibrateConfirmPending, setRecalibrateConfirmPending] = useState(false);
 
   useEffect(() => {
     return xrPlacementStore.subscribe((state, prevState) => {
@@ -309,7 +331,10 @@ export default function PositionMapScreen() {
         setCalibration(null);
         setCalibrationStep('corner');
         setCornerPoint(null);
+        setWallPoint(null);
+        setPendingCalibration(null);
         setCalibrationError('');
+        setRecalibrateConfirmPending(false);
       }
     });
   }, []);
@@ -321,22 +346,79 @@ export default function PositionMapScreen() {
 
   const handleTapWall = useCallback(
     (p: ArPoint) => {
-      if (!cornerPoint) return;
+      // A point is already pending review — ignore further taps until the
+      // user retaps (clearing it) or confirms (committing it).
+      if (!cornerPoint || pendingCalibration) return;
       const transform = deriveCalibration(cornerPoint, p);
       if (!transform) {
         setCalibrationError("That's too close to the corner — step further along the north wall and tap again.");
         return;
       }
       setCalibrationError('');
-      setCalibration(transform);
+      setWallPoint(p);
+      setPendingCalibration(transform);
     },
-    [cornerPoint],
+    [cornerPoint, pendingCalibration],
   );
 
+  /** Tap 2's "Retap" — discards the pending point, stays on the wall step
+   *  ready for a new tap. Tap 1 (cornerPoint) is left untouched. */
+  function retapWallPoint() {
+    setWallPoint(null);
+    setPendingCalibration(null);
+    setCalibrationError('');
+  }
+
+  /** Tap 2's confirm — this is the actual commit moment: only now does
+   *  `calibration` become non-null and placement become possible. */
+  function confirmWallPoint() {
+    if (!pendingCalibration) return;
+    setCalibration(pendingCalibration);
+    setWallPoint(null);
+    setPendingCalibration(null);
+  }
+
+  /** Tap 1's "Retap" — discards the corner and returns to the first step.
+   *  No other state (items, active placement) is touched. */
   function retryCalibration() {
     setCalibrationStep('corner');
     setCornerPoint(null);
+    setWallPoint(null);
+    setPendingCalibration(null);
     setCalibrationError('');
+  }
+
+  /** Task 3 — redo the whole calibration after it's already committed and
+   *  placement has started. Purely local React state: doesn't end the XR
+   *  session (confirmed safe — session lifecycle and calibration state are
+   *  fully decoupled) and doesn't touch `items` — already-placed furniture
+   *  keeps its stored plan-frame position exactly as it was. See the
+   *  warning copy below for why that's surfaced explicitly rather than
+   *  silently assumed. Also leaves any in-progress placement (activeItemId/
+   *  lockedPosition/previewPosition) alone: those are raw AR-local
+   *  coordinates, unaffected by which calibration transform is active, so
+   *  the in-progress item's ghost doesn't jump — it's simply re-mapped
+   *  through the new transform whenever the user next confirms it. */
+  function recalibrate() {
+    setCalibration(null);
+    setCalibrationStep('corner');
+    setCornerPoint(null);
+    setWallPoint(null);
+    setPendingCalibration(null);
+    setCalibrationError('');
+    setRecalibrateConfirmPending(false);
+  }
+
+  function requestRecalibrate() {
+    if (items.some(isPositioned)) {
+      setRecalibrateConfirmPending(true);
+    } else {
+      recalibrate();
+    }
+  }
+
+  function cancelRecalibrate() {
+    setRecalibrateConfirmPending(false);
   }
 
   const unpositionedItems = items.filter((item) => !isPositioned(item));
@@ -523,6 +605,7 @@ export default function PositionMapScreen() {
               <CalibrationScene
                 step={calibrationStep}
                 cornerPoint={cornerPoint}
+                wallPoint={wallPoint}
                 onTapCorner={handleTapCorner}
                 onTapWall={handleTapWall}
               />
@@ -568,6 +651,12 @@ export default function PositionMapScreen() {
                           ? 'Move your phone until the preview sits on the real furniture position, then tap the floor.'
                           : 'Adjust rotation to match the real furniture, then confirm placement.'}
                       </>
+                    ) : pendingCalibration ? (
+                      <>
+                        <strong>Reference point set</strong>
+                        <br />
+                        Retap if that didn't land where you meant, or confirm below to lock it in.
+                      </>
                     ) : (
                       <>
                         <strong>{calibrationStep === 'corner' ? 'Step 1 of 2 — Set the corner' : 'Step 2 of 2 — Set north'}</strong>
@@ -581,23 +670,42 @@ export default function PositionMapScreen() {
                       </>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={stopAR}
-                    style={{
-                      background: '#ef4444',
-                      color: 'white',
-                      border: 0,
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Exit
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'auto' }}>
+                    {calibration && (
+                      <button
+                        type="button"
+                        onClick={requestRecalibrate}
+                        style={{
+                          background: 'rgba(17, 24, 39, 0.86)',
+                          color: 'white',
+                          border: 0,
+                          borderRadius: 8,
+                          padding: '10px 14px',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Recalibrate
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={stopAR}
+                      style={{
+                        background: '#ef4444',
+                        color: 'white',
+                        border: 0,
+                        borderRadius: 8,
+                        padding: '10px 14px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      Exit
+                    </button>
+                  </div>
                 </div>
 
-                {!calibration && calibrationStep === 'wall' && (
+                {!calibration && calibrationStep === 'wall' && !pendingCalibration && (
                   <div
                     style={{
                       position: 'absolute',
@@ -625,7 +733,83 @@ export default function PositionMapScreen() {
                   </div>
                 )}
 
-                {calibration && activeItem && (
+                {!calibration && pendingCalibration && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 16,
+                      right: 16,
+                      bottom: 24,
+                      background: 'rgba(255, 255, 255, 0.94)',
+                      color: '#111827',
+                      borderRadius: 8,
+                      padding: 14,
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>
+                      Reference point set — retap if it's off, or confirm to continue.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <button type="button" className="btn btn-secondary" onClick={retapWallPoint} style={{ minHeight: 46 }}>
+                        Retap
+                      </button>
+                      <button type="button" className="btn btn-primary" onClick={confirmWallPoint} style={{ minHeight: 46 }}>
+                        Use this point
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={retryCalibration}
+                      style={{
+                        width: '100%',
+                        marginTop: 10,
+                        background: 'none',
+                        border: 0,
+                        color: '#6B7280',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      Or start over from the corner
+                    </button>
+                  </div>
+                )}
+
+                {calibration && recalibrateConfirmPending && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 16,
+                      right: 16,
+                      bottom: 24,
+                      background: 'rgba(255, 255, 255, 0.94)',
+                      color: '#111827',
+                      borderRadius: 8,
+                      padding: 14,
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    <p style={{ margin: '0 0 12px', fontSize: 13, lineHeight: 1.5 }}>
+                      <strong>Recalibrate?</strong> You've already placed{' '}
+                      {items.filter(isPositioned).length} item{items.filter(isPositioned).length === 1 ? '' : 's'}. Recalibrating won't
+                      move them — they'll keep their current positions and may look misaligned until you re-place them.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <button type="button" className="btn btn-secondary" onClick={cancelRecalibrate} style={{ minHeight: 46 }}>
+                        Cancel
+                      </button>
+                      <button type="button" className="btn btn-primary" onClick={recalibrate} style={{ minHeight: 46 }}>
+                        Recalibrate anyway
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {calibration && activeItem && !recalibrateConfirmPending && (
                   <div
                     style={{
                       position: 'absolute',
