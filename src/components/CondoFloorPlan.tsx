@@ -341,7 +341,7 @@ export default function CondoFloorPlan({
                 height={room.height}
                 fill={room.bgColor}
                 fillOpacity={isDropTarget ? 0.22 : baseFillOpacity}
-                stroke={isDropTarget ? t.accent : isHighlighted ? t.accent : t.roomStroke}
+                stroke={isDropTarget || isHighlighted ? t.ink : t.roomStroke}
                 strokeWidth={isDropTarget ? 4 : isHighlighted ? 3 : 1.5}
                 style={{
                   cursor: focusedRoomId ? 'default' : 'pointer',
@@ -431,7 +431,7 @@ export default function CondoFloorPlan({
               y1={0}
               x2={g.coord * 100}
               y2={HEIGHT_CM}
-              stroke={t.accent}
+              stroke={t.ink}
               strokeWidth={2}
               strokeDasharray="6 4"
               opacity={0.9}
@@ -444,7 +444,7 @@ export default function CondoFloorPlan({
               y1={g.coord * 100}
               x2={WIDTH_CM}
               y2={g.coord * 100}
-              stroke={t.accent}
+              stroke={t.ink}
               strokeWidth={2}
               strokeDasharray="6 4"
               opacity={0.9}
@@ -470,11 +470,15 @@ export default function CondoFloorPlan({
           let stroke: string;
 
           if (isColliding) {
-            fill = t.attentionBg;
-            stroke = t.attentionFg;
+            // Darker fill than the plain-selected case below — a real
+            // blocking state (this drop would overlap) needs to read as
+            // more urgent than "just selected," even with color removed
+            // from the distinction entirely.
+            fill = t.inkMute;
+            stroke = t.ink;
           } else if (isSelected) {
-            fill = t.accentFill;
-            stroke = t.accent;
+            fill = t.line;
+            stroke = t.ink;
           } else {
             const status = itemStatuses[r.id] ?? 'GREEN';
             if (status === 'RED') {
@@ -504,7 +508,7 @@ export default function CondoFloorPlan({
                   width={r.wCm + 6}
                   height={r.hCm + 6}
                   fill="none"
-                  stroke={isColliding ? t.attentionFg : t.accent}
+                  stroke={isColliding ? t.ink : t.inkSoft}
                   strokeWidth={2}
                   strokeOpacity={0.35}
                   rx={7}
@@ -627,7 +631,7 @@ export default function CondoFloorPlan({
                 y={room.y}
                 width={room.width}
                 height={room.height}
-                fill={focusedRoomId === room.id ? t.accent : '#E2E8F0'}
+                fill={focusedRoomId === room.id ? t.ink : '#E2E8F0'}
                 stroke="#94A3B8"
                 strokeWidth={1}
                 style={{ cursor: 'pointer' }}

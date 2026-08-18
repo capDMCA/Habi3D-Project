@@ -577,7 +577,7 @@ export default function WorkspaceScreen() {
           <div style={planToolbar}>
             <span style={planCaption}>
               {infeasible ? (
-                <span style={{ color: t.attentionFg, fontWeight: 700 }}>
+                <span style={{ color: t.ink, fontWeight: 700 }}>
                   Overlapping — release to snap back
                 </span>
               ) : selectedItem ? (
@@ -1091,13 +1091,16 @@ const toastBanner: CSSProperties = {
   top: 50,
   left: '50%',
   transform: 'translateX(-50%)',
-  background: t.attentionFg,
+  // Neutral now, not attention-red — this banner is reused for plain
+  // confirmations too ("Sofa moved to Living Room"), not only warnings, so
+  // a severity hue here was already miscalibrated even before this pass.
+  background: t.ink,
   color: t.surface,
   padding: '10px 20px',
   borderRadius: '20px',
   fontSize: 14,
   fontWeight: 700,
-  boxShadow: '0 4px 15px rgba(220, 38, 38, 0.25)',
+  boxShadow: '0 4px 15px rgba(22, 32, 58, 0.25)',
   animation: 'fadeIn 0.2s ease',
   pointerEvents: 'none',
   zIndex: 10,
