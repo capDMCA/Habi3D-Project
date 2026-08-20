@@ -13,7 +13,8 @@ import {
 } from '../ar/calibration';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { fontFamily } from '../components/tokens';
+import Spinner from '../components/Spinner';
+import { fontFamily, numeric } from '../components/tokens';
 import type { FurnitureItem } from '../types';
 
 const xrPlacementStore = createXRStore({
@@ -299,6 +300,10 @@ export default function PositionMapScreen() {
   const [rotationDeg, setRotationDeg] = useState(0);
   const [placing, setPlacing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  // Covers the gap between tapping "Place in room" and the WebXR session
+  // actually starting (camera permission, ARCore handshake) — previously a
+  // blank wait with no feedback until the AR overlay suddenly appeared.
+  const [arInitializing, setArInitializing] = useState(false);
 
   // Calibration — once per AR session (see the subscribe effect below,
   // which clears all of this the moment the session ends). Placement is
@@ -434,6 +439,7 @@ export default function PositionMapScreen() {
     setLockedPosition(isPositioned(item) ? { x: item.posX, z: item.posZ } : null);
     setRotationDeg(radiansToDegrees(item.rotationY));
     setPlacing(true);
+    setArInitializing(true);
 
     try {
       await xrPlacementStore.enterAR();
@@ -442,6 +448,8 @@ export default function PositionMapScreen() {
       setErrorMsg(message);
       setActiveItemId(null);
       setPlacing(false);
+    } finally {
+      setArInitializing(false);
     }
   }
 
@@ -570,8 +578,19 @@ export default function PositionMapScreen() {
                     </p>
                   </div>
                 </div>
-                <button className="btn btn-primary" onClick={() => startPlacement(item)}>
-                  Place in room
+                <button
+                  className="btn btn-primary"
+                  onClick={() => startPlacement(item)}
+                  disabled={arInitializing}
+                >
+                  {arInitializing && activeItemId === item.id ? (
+                    <>
+                      <Spinner />
+                      Setting up your camera…
+                    </>
+                  ) : (
+                    'Place in room'
+                  )}
                 </button>
               </div>
             ))}
@@ -680,7 +699,11 @@ export default function PositionMapScreen() {
                           color: 'white',
                           border: 0,
                           borderRadius: 8,
-                          padding: '10px 14px',
+                          minHeight: 44,
+                          padding: '0 14px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                           fontWeight: 700,
                           whiteSpace: 'nowrap',
                         }}
@@ -696,7 +719,11 @@ export default function PositionMapScreen() {
                         color: 'white',
                         border: 0,
                         borderRadius: 8,
-                        padding: '10px 14px',
+                        minHeight: 44,
+                        padding: '0 14px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         fontWeight: 700,
                       }}
                     >
@@ -835,7 +862,7 @@ export default function PositionMapScreen() {
                       }}
                     >
                       Rotation
-                      <span>{rotationDeg} deg</span>
+                      <span style={numeric}>{rotationDeg} deg</span>
                     </label>
                     <input
                       id="rotation-slider"

@@ -7,7 +7,8 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useAutosaveLayout } from '../stores/useAutosaveLayout';
 import ARMeasureSession, { type MeasurePhase } from '../ar/ARMeasureSession';
 import { createFurnitureShape } from '../ar/shapeLibrary';
-import { fontFamily } from '../components/tokens';
+import Spinner from '../components/Spinner';
+import { fontFamily, numeric } from '../components/tokens';
 import type { FurnitureCategory, FurnitureItem, FurnitureShape } from '../types';
 
 const xrMeasureStore = createXRStore({
@@ -166,6 +167,10 @@ export default function FurnitureInputScreen() {
   const [arError, setArError] = useState('');
   const [measurePhase, setMeasurePhase] = useState<MeasurePhase>('scanning');
   const [liveCm, setLiveCm] = useState(0);
+  // Covers the gap between tapping "Measure" and the WebXR session actually
+  // starting (camera permission, ARCore handshake) — previously a blank
+  // wait with no feedback until the AR overlay suddenly appeared.
+  const [arInitializing, setArInitializing] = useState(false);
 
   useEffect(() => {
     return xrMeasureStore.subscribe((state, prevState) => {
@@ -205,12 +210,15 @@ export default function FurnitureInputScreen() {
     setMeasurePhase('scanning');
     setLiveCm(0);
     setMeasureTarget(target);
+    setArInitializing(true);
     try {
       await xrMeasureStore.enterAR();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setArError(message);
       setMeasureTarget(null);
+    } finally {
+      setArInitializing(false);
     }
   }
 
@@ -413,6 +421,7 @@ export default function FurnitureInputScreen() {
                   <input
                     id="diameter-cm"
                     className="form-input"
+                    style={numeric}
                     inputMode="numeric"
                     value={lengthCm}
                     onChange={(event) => {
@@ -427,8 +436,9 @@ export default function FurnitureInputScreen() {
                     className="btn btn-secondary"
                     style={measureButtonStyle}
                     onClick={() => startMeasurement('diameter')}
+                    disabled={arInitializing}
                   >
-                    Measure
+                    {arInitializing && measureTarget === 'diameter' ? <Spinner /> : 'Measure'}
                   </button>
                 </div>
               </div>
@@ -442,6 +452,7 @@ export default function FurnitureInputScreen() {
                     <input
                       id="length-cm"
                       className="form-input"
+                      style={numeric}
                       inputMode="numeric"
                       value={lengthCm}
                       onChange={(event) => setLengthCm(event.target.value.replace(/\D/g, ''))}
@@ -452,8 +463,9 @@ export default function FurnitureInputScreen() {
                       className="btn btn-secondary"
                       style={measureButtonStyle}
                       onClick={() => startMeasurement('length')}
+                      disabled={arInitializing}
                     >
-                      Measure
+                      {arInitializing && measureTarget === 'length' ? <Spinner /> : 'Measure'}
                     </button>
                   </div>
                 </div>
@@ -466,6 +478,7 @@ export default function FurnitureInputScreen() {
                     <input
                       id="width-cm"
                       className="form-input"
+                      style={numeric}
                       inputMode="numeric"
                       value={widthCm}
                       onChange={(event) => setWidthCm(event.target.value.replace(/\D/g, ''))}
@@ -476,8 +489,9 @@ export default function FurnitureInputScreen() {
                       className="btn btn-secondary"
                       style={measureButtonStyle}
                       onClick={() => startMeasurement('width')}
+                      disabled={arInitializing}
                     >
-                      Measure
+                      {arInitializing && measureTarget === 'width' ? <Spinner /> : 'Measure'}
                     </button>
                   </div>
                 </div>
@@ -491,6 +505,7 @@ export default function FurnitureInputScreen() {
               <input
                 id="height-cm"
                 className="form-input"
+                style={numeric}
                 inputMode="numeric"
                 value={heightCm}
                 onChange={(event) => setHeightCm(event.target.value.replace(/\D/g, ''))}
@@ -558,7 +573,7 @@ export default function FurnitureInputScreen() {
                   <button
                     type="button"
                     onClick={stopMeasurement}
-                    style={{ background: 'rgba(239,68,68,0.92)', color: 'white', border: 0, borderRadius: 12, padding: '12px 16px', fontWeight: 700, fontSize: 14, backdropFilter: 'blur(8px)' }}
+                    style={{ background: 'rgba(239,68,68,0.92)', color: 'white', border: 0, borderRadius: 12, minHeight: 44, padding: '0 16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, backdropFilter: 'blur(8px)' }}
                   >
                     Exit
                   </button>
@@ -732,7 +747,7 @@ const addedItemDimsStyle: CSSProperties = {
 };
 
 const removeButtonStyle: CSSProperties = {
-  minHeight: 36,
+  minHeight: 44,
   borderRadius: 12,
   border: '1px solid var(--danger-border)',
   background: 'var(--danger-bg)',

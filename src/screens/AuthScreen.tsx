@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { MULBERRY_PLACE_2BR, MULBERRY_PLACE_2BR_ID } from '../data/roomData';
+import Spinner from '../components/Spinner';
 import {
   logIn,
   createAccount,
@@ -168,7 +169,7 @@ export default function AuthScreen() {
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Your username"
+              placeholder={mode === 'signup' ? 'Your username (no @ symbol)' : 'Your username'}
             />
           </div>
 
@@ -190,6 +191,7 @@ export default function AuthScreen() {
           {error && <p className="form-error">{error}</p>}
 
           <button className="btn btn-primary" type="submit" disabled={busy}>
+            {busy && <Spinner />}
             {busy ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account'}
           </button>
         </form>

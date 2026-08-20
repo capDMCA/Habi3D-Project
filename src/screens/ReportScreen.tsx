@@ -145,6 +145,7 @@ export default function ReportScreen() {
           style={expandBtnStyle}
         >
           {expanded ? 'Hide the details' : 'See the details'}
+          <span aria-hidden="true" style={chevronStyle(expanded)}>▾</span>
         </button>
 
         {expanded && (
@@ -323,6 +324,9 @@ const secondaryBtnStyle: CSSProperties = {
 
 const expandBtnStyle: CSSProperties = {
   marginTop: 14,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
   background: 'none',
   border: 'none',
   padding: 0,
@@ -331,6 +335,18 @@ const expandBtnStyle: CSSProperties = {
   fontWeight: 700,
   cursor: 'pointer',
 };
+
+/** Points down when collapsed ("more to reveal below"), flips to point up
+ *  once expanded — the same disclosure convention as a native accordion,
+ *  spelled with a plain glyph rather than an icon asset (matches this
+ *  screen's existing preference for text/glyphs over imagery). */
+function chevronStyle(expanded: boolean): CSSProperties {
+  return {
+    display: 'inline-block',
+    transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+    transition: 'transform 0.2s ease',
+  };
+}
 
 const stepBadgeStyle: CSSProperties = {
   display: 'inline-block',

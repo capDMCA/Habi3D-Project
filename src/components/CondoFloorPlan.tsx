@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, useEffect } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { projectItems } from './floorPlanGeometry';
 import { computeGridGeometry } from './gridOverlay';
-import { color as t } from './tokens';
+import { color as t, numeric } from './tokens';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import type { RoomZone } from '../data/condoLayout';
 import {
@@ -332,6 +332,27 @@ export default function CondoFloorPlan({
           // background at ~0.25 opacity was functionally invisible.)
           const labelOpacity = isRoomActive ? t.roomLabelOpacityActive : 0.4;
 
+          const strokeColor = isDropTarget || isHighlighted ? t.ink : t.roomStroke;
+          const strokeW = isDropTarget ? 4 : isHighlighted ? 3 : 1.5;
+
+          // Living's south wall and dining's north wall are the same
+          // real-world wall (living ends at y=700, dining starts at
+          // y=700cm) — each room independently strokes its own full
+          // rectangle, so that shared wall rendered as two overlapping
+          // lines. Every other wall, on every room including these two,
+          // is untouched: the rect below still strokes normally except on
+          // this one room, where the shared edge is left open and redrawn
+          // as a single 3-sided path instead, so the two real corners stay
+          // properly mitered and only the shared segment is gone.
+          const omitEdge: 'top' | 'bottom' | null =
+            room.id === 'living' ? 'bottom' : room.id === 'dining' ? 'top' : null;
+          const openSidesPath =
+            omitEdge === 'bottom'
+              ? `M ${room.x} ${room.y + room.height} L ${room.x} ${room.y} L ${room.x + room.width} ${room.y} L ${room.x + room.width} ${room.y + room.height}`
+              : omitEdge === 'top'
+                ? `M ${room.x} ${room.y} L ${room.x} ${room.y + room.height} L ${room.x + room.width} ${room.y + room.height} L ${room.x + room.width} ${room.y}`
+                : null;
+
           return (
             <g key={room.id} style={{ transition: 'opacity 0.3s ease' }} opacity={isDimmed ? 0.3 : 1}>
               <rect
@@ -341,14 +362,23 @@ export default function CondoFloorPlan({
                 height={room.height}
                 fill={room.bgColor}
                 fillOpacity={isDropTarget ? 0.22 : baseFillOpacity}
-                stroke={isDropTarget || isHighlighted ? t.ink : t.roomStroke}
-                strokeWidth={isDropTarget ? 4 : isHighlighted ? 3 : 1.5}
+                stroke={omitEdge ? 'none' : strokeColor}
+                strokeWidth={strokeW}
                 style={{
                   cursor: focusedRoomId ? 'default' : 'pointer',
                   transition: 'fill-opacity 0.15s ease, stroke 0.15s ease',
                 }}
                 onClick={() => !focusedRoomId && onFocusRoom?.(room.id)}
               />
+              {openSidesPath && (
+                <path
+                  d={openSidesPath}
+                  fill="none"
+                  stroke={strokeColor}
+                  strokeWidth={strokeW}
+                  style={{ ...pointerNone, transition: 'stroke 0.15s ease' }}
+                />
+              )}
               <text
                 x={room.x + room.width / 2}
                 y={room.y + room.height / 2}
@@ -603,6 +633,7 @@ export default function CondoFloorPlan({
                 fill="#FFFFFF"
                 textAnchor="middle"
                 dominantBaseline="middle"
+                style={numeric}
               >
                 {gapLabel(cm)}
               </text>

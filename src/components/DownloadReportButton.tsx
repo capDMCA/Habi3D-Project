@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { downloadRoomAssessmentPdf } from './pdfReport';
+import Spinner from './Spinner';
 import { color as t, radius } from './tokens';
 import type { GapClassification } from '../engine/clearance';
 import type { FurnitureItem, Violation } from '../types';
@@ -35,15 +36,6 @@ function DownloadIcon() {
     <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M8 2v7.5M8 9.5 5 6.5M8 9.5l3-3" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
       <path d="M3 12.5v.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-.5" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function Spinner() {
-  return (
-    <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ animation: 'dlSpin 0.8s linear infinite' }}>
-      <circle cx={8} cy={8} r={6.25} stroke="currentColor" strokeOpacity={0.25} strokeWidth={1.6} />
-      <path d="M14.25 8a6.25 6.25 0 0 0-6.25-6.25" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" />
     </svg>
   );
 }

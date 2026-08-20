@@ -12,12 +12,30 @@
   max-width: 480px;
   width: 100%;
   margin: 0 auto;
-  animation: screenFadeIn 0.35s ease;
+  animation: screenFadeIn 0.2s ease;
+}
+
+/* One shared entrance transition, reused on every one of the app's 6 live
+   screens (the 5 that use .screen directly, plus WorkspaceScreen's own
+   .wksp-shell below, since its full-height flex layout can't use .screen's
+   max-width/padding rules). App.tsx's router swaps screens by instant
+   unmount/mount — there's no outgoing-screen exit to animate without a
+   bigger change to that model, so this covers the incoming side, which is
+   the one currently silent. */
+.wksp-shell {
+  animation: screenFadeIn 0.2s ease;
 }
 
 @keyframes screenFadeIn {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen,
+  .wksp-shell {
+    animation: none;
+  }
 }
 
 @keyframes fadeIn {
@@ -562,6 +580,13 @@
   text-align: center;
   min-height: 100dvh;
   padding: var(--space-xl);
+  /* .screen's own safe-area-aware padding-bottom (further down this file)
+     gets overwritten by the plain `padding` shorthand above — re-applied
+     explicitly here so the footer text still clears a phone's gesture-nav
+     bar. This is the one screen most likely to need it: full-bleed
+     min-height:100dvh, unlike every other screen's max-width:480px card
+     that never reaches the very bottom edge. */
+  padding-bottom: calc(var(--space-xl) + env(safe-area-inset-bottom, 0px));
   background:
     radial-gradient(circle at 28% 18%, var(--primary-light) 0%, transparent 55%),
     linear-gradient(160deg, var(--primary) 0%, var(--primary-dark) 100%);

@@ -505,7 +505,7 @@ export default function WorkspaceScreen() {
   }, [focusedRoomId]);
 
   return (
-    <div style={shell}>
+    <div className="wksp-shell" style={shell}>
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <header style={header}>
         <button className="wksp-icon-btn" style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
