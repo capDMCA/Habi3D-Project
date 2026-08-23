@@ -4,15 +4,13 @@ import { MULBERRY_PLACE_2BR, MULBERRY_PLACE_2BR_ID } from '../data/roomData';
 
 interface SessionState {
   currentScreen: ScreenName;
-  // Set once a session actually starts (anonymous "Begin Session", or after
-  // sign-up/login) — never on cold load, so a stale reload can't silently
-  // resume as if a session were already active.
+  // Set once a session actually starts after sign-up/login — never on cold
+  // load, so a stale reload can't silently resume as if a session were already active.
   sessionId: string | null;
   // Fixed — this thesis scopes to one Mulberry Place unit, no picker.
   unitTypeId: string | null;
   roomDimensions: RoomDimensions | null;
-  // Account identity (users table id) — null for the anonymous "Begin
-  // Session" path.
+  // Account identity (users table id)
   userId: string | null;
   username: string | null;
   // Which tab the auth screen opens on — set right before navigateTo('auth')
@@ -25,9 +23,8 @@ interface SessionState {
   setRoomDimensions: (dims: RoomDimensions) => void;
   setUser: (userId: string | null, username: string | null) => void;
   setAuthMode: (mode: 'login' | 'signup') => void;
-  /** Generates a fresh sessionId and reads the fixed unit's dimensions —
-   *  the single place both the anonymous and the authenticated paths start
-   *  a new session from, so they can never drift out of sync. */
+  /** Generates a fresh sessionId and reads the fixed unit's dimensions when
+   *  starting a new session. */
   startNewSession: () => void;
   reset: () => void;
 }

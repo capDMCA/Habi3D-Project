@@ -6,10 +6,8 @@ import type { FurnitureItem } from '../types';
 const AUTOSAVE_DEBOUNCE_MS = 1500;
 
 /**
- * Debounced "leave and resume later" autosave. A no-op for the anonymous
- * "Begin Session" path (userId is null there — nothing is saved beyond the
- * sessionId, as already documented on that flow), so this hook is safe to
- * call unconditionally from any screen that mutates furnitureStore.
+ * Debounced "leave and resume later" autosave for authenticated sessions.
+ * Safe to call unconditionally from any screen that mutates furnitureStore.
  *
  * Fires on every layout change rather than only at the completion state, so
  * a resident who closes the tab mid-arrangement — before ever reaching the
