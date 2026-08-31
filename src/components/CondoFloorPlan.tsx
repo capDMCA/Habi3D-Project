@@ -16,6 +16,7 @@ import {
   type AlignmentGuide,
 } from './floorPlanDrag';
 import type { FurnitureItem } from '../types';
+import { MAIN_ENTRY_WALKWAY_RECT } from '../engine/walkways';
 
 export interface CondoFloorPlanInteraction {
   draggableItemId: string;
@@ -450,6 +451,34 @@ export default function CondoFloorPlan({
               </text>
             );
           })}
+        </g>
+
+        {/* 2. MAIN WALKWAY CORRIDOR OVERLAY (Front Entrance -> Bedrooms) */}
+        <g style={pointerNone}>
+          <rect
+            x={MAIN_ENTRY_WALKWAY_RECT.x}
+            y={MAIN_ENTRY_WALKWAY_RECT.y}
+            width={MAIN_ENTRY_WALKWAY_RECT.width}
+            height={MAIN_ENTRY_WALKWAY_RECT.height}
+            fill="rgba(43, 84, 154, 0.05)"
+            stroke={t.inkSoft}
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            rx={6}
+          />
+          <text
+            x={MAIN_ENTRY_WALKWAY_RECT.x + MAIN_ENTRY_WALKWAY_RECT.width / 2}
+            y={MAIN_ENTRY_WALKWAY_RECT.y + MAIN_ENTRY_WALKWAY_RECT.height / 2}
+            fontSize={11}
+            fontWeight={700}
+            fill={t.inkMute}
+            letterSpacing={2}
+            opacity={0.45}
+            textAnchor="middle"
+            transform={`rotate(-90, ${MAIN_ENTRY_WALKWAY_RECT.x + MAIN_ENTRY_WALKWAY_RECT.width / 2}, ${MAIN_ENTRY_WALKWAY_RECT.y + MAIN_ENTRY_WALKWAY_RECT.height / 2})`}
+          >
+            MAIN WALKWAY
+          </text>
         </g>
 
         {/* 3. ALIGNMENT GUIDES */}

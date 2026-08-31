@@ -19,6 +19,33 @@ export const WALKWAY_PATHS: WalkwayPath[] = [
   { id: 'bedroom_bathroom', label: 'Bedroom → Bathroom', x: 215, y: 380, width: 90, height: 100 },
 ];
 
+/**
+ * Slim walkway rectangle representing the main unit corridor
+ * extending from the Front Entrance Door (y=880cm) up to the Bedrooms entrance (y=340cm).
+ */
+export const MAIN_ENTRY_WALKWAY_RECT: WalkwayPath = {
+  id: 'main_entry_walkway',
+  label: 'Main Walkway Corridor',
+  x: 215,
+  y: 340,
+  width: 80,
+  height: 540, // Spans from y=340 (bedroom entrance) to y=880 (front door)
+};
+
+export function isItemInMainWalkway(item: FurnitureItem): boolean {
+  const b = toBounds(item);
+  const pathMinX = MAIN_ENTRY_WALKWAY_RECT.x / 100;
+  const pathMaxX = (MAIN_ENTRY_WALKWAY_RECT.x + MAIN_ENTRY_WALKWAY_RECT.width) / 100;
+  const pathMinZ = MAIN_ENTRY_WALKWAY_RECT.y / 100;
+  const pathMaxZ = (MAIN_ENTRY_WALKWAY_RECT.y + MAIN_ENTRY_WALKWAY_RECT.height) / 100;
+
+  const overlapX = Math.min(b.maxX, pathMaxX) - Math.max(b.minX, pathMinX);
+  const overlapZ = Math.min(b.maxZ, pathMaxZ) - Math.max(b.minZ, pathMinZ);
+
+  return overlapX > 0.01 && overlapZ > 0.01;
+}
+
+
 export interface WalkwayStatus {
   id: string;
   label: string;

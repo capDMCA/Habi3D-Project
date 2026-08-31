@@ -18,7 +18,7 @@ import {
   roomIdForItem,
   withMovedItem,
 } from '../components/floorPlanDrag';
-import { computeWalkways } from '../engine/walkways';
+import { computeWalkways, isItemInMainWalkway } from '../engine/walkways';
 import type { FurnitureItem } from '../types';
 
 // ─── Normalization & Initialization ─────────────────────────────────────────
@@ -326,7 +326,9 @@ export default function WorkspaceScreen() {
       const rehomed = { ...item, roomId: newRoomId };
       const layout = settled.map((it) => (it.id === draggedId ? rehomed : it));
 
-      if (newRoomId !== (item.roomId ?? null)) {
+      if (isItemInMainWalkway(rehomed)) {
+        showToast(`⚠️ Notice: ${item.label} is placed on the main walkway corridor.`);
+      } else if (newRoomId !== (item.roomId ?? null)) {
         const roomLabel = CONDO_ROOMS.find((r) => r.id === newRoomId)?.label;
         if (roomLabel) showToast(`${item.label} moved to ${roomLabel}.`);
       }
