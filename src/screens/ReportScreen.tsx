@@ -101,12 +101,12 @@ export default function ReportScreen() {
       ? 'Everything already fit comfortably'
       : resolvedCount > 0
         ? `You made ${resolvedCount} spot${resolvedCount === 1 ? '' : 's'} more comfortable`
-        : 'No tight spots were resolved this session';
+        : 'Current room layout reviewed and preserved';
 
   // Fixed, not conditional on outcome — a calm fact rather than a verdict,
   // shown whether the session ends comfortable, tight, or unchanged.
   const acknowledgement =
-    'Some tightness is normal in a real room — you can always come back and keep adjusting.';
+    'Your furniture arrangement has been saved. Every room is unique — you can always come back and keep adjusting anytime.';
 
   return (
     <div className="screen" style={{ maxWidth: 640, padding: '24px 16px', margin: '0 auto' }}>
@@ -131,7 +131,7 @@ export default function ReportScreen() {
         style={{
           ...cardStyle,
           ...fadeInStyle(0),
-          borderLeft: `5px solid ${redRemaining ? t.attentionFg : yellowRemaining ? t.tightFg : t.comfortFg}`,
+          borderLeft: `5px solid ${redRemaining ? t.brand : yellowRemaining ? t.tightFg : t.comfortFg}`,
         }}
       >
         <span style={stepBadgeStyle}>Summary</span>
@@ -233,17 +233,17 @@ export default function ReportScreen() {
 
 function RoomStatusRow({ label, status }: { label: string; status: RoomStatus }) {
   const wordFor: Record<RoomStatus, string> = {
-    RED: 'Needs attention',
+    RED: 'Extra space suggested',
     YELLOW: 'A bit tight',
     GREEN: 'Comfortable',
   };
   const colorFor: Record<RoomStatus, string> = {
-    RED: t.attentionFg,
+    RED: t.brand,
     YELLOW: t.tightFg,
     GREEN: t.comfortFg,
   };
   const bgFor: Record<RoomStatus, string> = {
-    RED: t.attentionBg,
+    RED: t.brandTint,
     YELLOW: t.tightBg,
     GREEN: t.comfortBg,
   };

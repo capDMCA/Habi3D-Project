@@ -57,7 +57,7 @@ function summariseItems(items: FurnitureItem[], violations: Violation[]): ItemSu
     );
     const classification: GapClassificationLevel = worst ?? 'GREEN';
     const statusWord =
-      classification === 'RED' ? 'Needs attention' : classification === 'YELLOW' ? 'A little tight' : 'Comfortable';
+      classification === 'RED' ? 'Extra space suggested' : classification === 'YELLOW' ? 'A little tight' : 'Comfortable';
     const leading = own.find((v) => v.furnitureId === item.id) ?? own[0];
     const description = leading ? findingConsequence(leading) : 'Good clearance on every side.';
     return { id: item.id, label: item.label, classification, statusWord, description };
@@ -84,12 +84,12 @@ function describeInstance(gc: GapClassification, items: FurnitureItem[]): string
 }
 
 const STATUS_FILL: Record<GapClassificationLevel, string> = {
-  RED: t.attentionBg,
+  RED: t.brandTint,
   YELLOW: t.tightBg,
   GREEN: t.comfortBg,
 };
 const STATUS_STROKE: Record<GapClassificationLevel, string> = {
-  RED: t.attentionFg,
+  RED: t.brand,
   YELLOW: t.tightFg,
   GREEN: t.comfortFg,
 };
@@ -370,7 +370,7 @@ export async function downloadRoomAssessmentPdf(params: PdfReportParams): Promis
   doc.setTextColor(100, 108, 124);
   doc.text(
     `${allClassifications.length} rule checks across your layout — ${greenChecks} comfortable, `
-      + `${yellowChecks} tight, ${redChecks} needing attention. Full breakdown on the pages that follow.`,
+      + `${yellowChecks} tight, ${redChecks} with suggested adjustments. Full breakdown on the pages that follow.`,
     margin,
     36,
     { maxWidth: contentW },
