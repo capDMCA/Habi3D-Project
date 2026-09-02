@@ -308,9 +308,7 @@ export default function FurnitureInputScreen() {
               <div>
                 <p className="card-title">Unit Confirmed</p>
                 <p className="card-subtitle">
-                  Living {roomDimensions.livingWidthCm} x {roomDimensions.livingDepthCm}cm
-                  {' | '}
-                  Dining {roomDimensions.diningWidthCm} x {roomDimensions.diningDepthCm}cm
+                  Mulberry Place — 2-Bedroom Unit
                 </p>
               </div>
             </div>

@@ -27,7 +27,7 @@ export interface StatusMeta {
 const META: Record<StatusKey, StatusMeta> = {
   comfortable: { key: 'comfortable', label: 'Comfortable', color: color.comfortFg, bg: color.comfortBg },
   tight: { key: 'tight', label: 'Tight', color: color.tightFg, bg: color.tightBg },
-  'needs-attention': { key: 'needs-attention', label: 'Needs attention', color: color.attentionFg, bg: color.attentionBg },
+  'needs-attention': { key: 'needs-attention', label: 'Extra space suggested', color: color.inkSoft, bg: color.brandTint },
 };
 
 export function statusMeta(key: StatusKey): StatusMeta {

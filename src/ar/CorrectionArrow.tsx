@@ -40,7 +40,7 @@ export default function CorrectionArrow({ violation, items }: CorrectionArrowPro
     [violation.fixDirectionLabel],
   );
   const length = Math.max(violation.fixDirectionCm / 100, 0.2);
-  const color = violation.classification === 'RED' ? 0xE24B4A : 0xF0A500;
+  const color = violation.classification === 'RED' ? 0x2563EB : 0xF0A500;
   const arrowRef = useRef<THREE.ArrowHelper | null>(null);
 
   const arrow = useMemo(() => {

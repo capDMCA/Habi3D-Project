@@ -104,7 +104,7 @@ function buildFurnitureGroups(violations: Violation[], skippedIds: Set<string>):
           word: directionWord(label),
           distanceCm: Math.max(...dvs.map((v) => v.fixDirectionCm)),
           violations: dvs.sort((a, b) => b.priorityScore - a.priorityScore),
-          color: dvs.some((v) => v.classification === 'RED') ? t.attentionFg : t.tightFg,
+          color: dvs.some((v) => v.classification === 'RED') ? t.brand : t.tightFg,
         }))
         .sort((a, b) => {
           const aRed = a.violations.some((v) => v.classification === 'RED') ? 1 : 0;
@@ -112,7 +112,7 @@ function buildFurnitureGroups(violations: Violation[], skippedIds: Set<string>):
           return bRed - aRed || b.distanceCm - a.distanceCm;
         });
 
-      const color = vs.some((v) => v.classification === 'RED') ? t.attentionFg : t.tightFg;
+      const color = vs.some((v) => v.classification === 'RED') ? t.brand : t.tightFg;
       return {
         furnitureId,
         furnitureLabel: vs[0].furnitureLabel,
@@ -337,13 +337,13 @@ export default function RecommendationScreen() {
   if (!currentGroup) {
     const stillTight = result.violations.filter((v) => v.classification === 'YELLOW').length;
     const stillAttention = result.violations.filter((v) => v.classification === 'RED').length;
-    const headColor = stillAttention > 0 ? t.attentionFg : stillTight > 0 ? t.tightFg : t.comfortFg;
-    const headBg = stillAttention > 0 ? t.attentionBg : stillTight > 0 ? t.tightBg : t.comfortBg;
+    const headColor = stillAttention > 0 ? t.brand : stillTight > 0 ? t.tightFg : t.comfortFg;
+    const headBg = stillAttention > 0 ? t.brandTint : stillTight > 0 ? t.tightBg : t.comfortBg;
     const body =
       stillAttention > 0
-        ? `${stillAttention} spot${stillAttention === 1 ? '' : 's'} could still use more room — you can go back and try again, or see the summary.`
+        ? `${stillAttention} area${stillAttention === 1 ? '' : 's'} can be adjusted for extra walkway space whenever you'd like. You can continue fine-tuning or view the summary.`
         : stillTight > 0
-          ? `${stillTight} spot${stillTight === 1 ? ' is' : 's are'} still a little tight, but nothing needs urgent room. You can leave ${stillTight === 1 ? 'it' : 'them'} as is or come back later.`
+          ? `${stillTight} area${stillTight === 1 ? ' has' : 's have'} a cozy fit. Feel free to keep this arrangement or adjust anytime.`
           : 'Every piece now has comfortable clearance.';
     return (
       <div className="screen" style={{ maxWidth: 640 }}>
@@ -379,7 +379,7 @@ export default function RecommendationScreen() {
   const showConfirm = settledState.isMoved && !settledState.isDragging && settledState.item !== null;
   const isAutoAdvancing = showConfirm && settledState.pieceWorstClassification === null;
   const confirmLabel =
-    settledState.pieceWorstClassification === 'RED' ? 'Keep it here anyway' : 'Looks good, keep it here';
+    settledState.pieceWorstClassification === 'RED' ? 'Keep this layout' : 'Looks good, keep it here';
 
   return (
     <div className="screen" style={{ maxWidth: 640, paddingBottom: 92 }}>
@@ -522,7 +522,7 @@ export default function RecommendationScreen() {
                     onClick={exitAR}
                     style={{
                       position: 'absolute', top: 16, right: 16,
-                      background: 'rgba(239,68,68,0.92)', color: 'white',
+                      background: 'rgba(31,56,100,0.92)', color: 'white',
                       border: 0, borderRadius: 12, padding: '12px 16px',
                       fontWeight: 700, fontSize: 14,
                       backdropFilter: 'blur(8px)', pointerEvents: 'auto',

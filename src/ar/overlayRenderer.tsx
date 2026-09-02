@@ -22,7 +22,7 @@ interface OverlayPlane {
 }
 
 const COLORS: Record<GapClassificationLevel, string> = {
-  RED: '#E24B4A',
+  RED: '#2563EB',
   YELLOW: '#BA7517',
   GREEN: '#639922',
 };

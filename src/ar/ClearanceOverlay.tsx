@@ -38,7 +38,7 @@ interface ZoneDefinition {
 }
 
 const ZONE_COLOR: Record<GapClassificationLevel, string> = {
-  RED:    '#E24B4A',
+  RED:    '#2563EB',
   YELLOW: '#F0A500',
   GREEN:  '#4CAF50',
 };

@@ -1,8 +1,33 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-08-25  
+**Last updated:** 2026-09-01  
 **Project phase:** Late Phase 2 → Phase 3 Readiness  
 **Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig)
+
+---
+
+## 0. Recent Updates & Change Log (Top Priority Summary)
+
+> [!NOTE]
+> **Latest Update (2026-09-01):** The codebase status has been updated with recent architectural improvements, 2D workspace walkway overlays, authentication flow refinements, and visual UI modernizations.
+
+### Key Recent Changes (August 24 – August 31, 2026)
+
+1. **2D Workspace Main Walkway Corridor Overlay & Real-Time Warning (`CondoFloorPlan.tsx`, `walkways.ts`, `WorkspaceScreen.tsx`)**
+   - **Walkway Corridor Geometry:** Defined `MAIN_ENTRY_WALKWAY_RECT` in [`walkways.ts`](file:///c:/Users/Dell/Habi3D-Project/src/engine/walkways.ts) spanning from the unit's front entrance door ($y=880\text{ cm}$) up to the bedroom hallway entrance ($y=340\text{ cm}$) with a width of $80\text{ cm}$ ($x=215\text{ cm}$ to $x=295\text{ cm}$).
+   - **SVG Visual Corridor Overlay:** Rendered a semi-transparent dashed corridor overlay (`<g>` element with `fill="rgba(43, 84, 154, 0.05)"`, `strokeDasharray="6 4"`, and rotated "MAIN WALKWAY" text label) directly onto [`CondoFloorPlan.tsx`](file:///c:/Users/Dell/Habi3D-Project/src/components/CondoFloorPlan.tsx) with `pointer-events: none`.
+   - **Real-Time Obstruction Warnings:** Created `isItemInMainWalkway()` bounds intersection check in [`walkways.ts`](file:///c:/Users/Dell/Habi3D-Project/src/engine/walkways.ts) and integrated real-time toast alerts (`⚠️ Notice: [Item] is placed on the main walkway corridor.`) in [`WorkspaceScreen.tsx`](file:///c:/Users/Dell/Habi3D-Project/src/screens/WorkspaceScreen.tsx) upon dropping furniture items on the corridor.
+
+2. **Authentication Flow Streamlining & Guest Mode Deprecation (`EntryScreen.tsx`, `sessionStore.ts`, `useAutosaveLayout.ts`)**
+   - Deprecated anonymous guest session ("Begin Session") mode on [`EntryScreen.tsx`](file:///c:/Users/Dell/Habi3D-Project/src/screens/EntryScreen.tsx) to ensure all active user sessions map cleanly to authenticated Supabase accounts using synthetic email mapping (`username@habi3d.local`).
+   - Enforced database persistence and Row-Level Security (`auth.uid() = user_id`) on the `saved_sessions` table across all active sessions.
+
+3. **System-Wide UI Modernization & Visual Polish (`App.css`, `EntryScreen.tsx`, `AuthScreen.tsx`, `FurnitureInputScreen.tsx`, `PositionMapScreen.tsx`, `WorkspaceScreen.tsx`, `ReportScreen.tsx`)**
+   - Redesigned visual aesthetics across all app screens with frosted glass card styling, brand gradient typography ("Habi3D"), responsive dark/light layouts, neutral workspace color tones, and tabular numerals (`tabular-nums`) for jitter-free live readouts.
+   - Introduced [`Spinner.tsx`](file:///c:/Users/Dell/Habi3D-Project/src/components/Spinner.tsx) component for loading feedback and produced comprehensive project audit documentation ([`METHODOLOGY.md`](file:///c:/Users/Dell/Habi3D-Project/METHODOLOGY.md), [`SUPABASE_TABLE_AUDIT.md`](file:///c:/Users/Dell/Habi3D-Project/SUPABASE_TABLE_AUDIT.md), [`WORKSPACE_VS_RECOMMENDATION_AUDIT.md`](file:///c:/Users/Dell/Habi3D-Project/WORKSPACE_VS_RECOMMENDATION_AUDIT.md)).
+
+4. **WebXR AR Spatial Calibration Retry Path (`PositionMapScreen.tsx`)**
+   - Implemented an interactive review modal and tap-retry path during 2-tap AR spatial calibration ($NW\text{ corner} + North\text{ wall vector}$), permitting re-tapping without destroying active WebXR camera sessions.
 
 ---
 
@@ -11,7 +36,7 @@
 Habi3D is a **Priority-Ranked Sequential Recommendation Tool** designed for condominium residents to configure, position, and validate furniture layouts against 10 interior design clearance rules (5 living room, 5 dining room) sourced from *Time-Saver Standards for Interior Design* (DeChiara, Panero & Zelnik, 2001, pp. 61–90).
 
 Key milestones and system capabilities include:
-1. **Interactive 2D Floor Plan Engine (`WorkspaceScreen` / `CondoFloorPlan`):** Free-movement physics drag system bound by unit outer walls, delta-based coordinate tracking, live tabular-numeral gap readouts, alignment guides, collision detection, 50-step undo stack, and automatic room re-homing.
+1. **Interactive 2D Floor Plan Engine (`WorkspaceScreen` / `CondoFloorPlan`):** Free-movement physics drag system bound by unit outer walls, delta-based coordinate tracking, live tabular-numeral gap readouts, alignment guides, collision detection, 50-step undo stack, automatic room re-homing, and main walkway corridor SVG overlay (`MAIN_ENTRY_WALKWAY_RECT`) with real-time obstruction alerts.
 2. **WebXR AR Placement & 2D Calibration (`PositionMapScreen` / `calibration.ts`):** Two-tap AR-to-2D spatial calibration matrix calculation (NW corner + North wall vector), 3D furniture placement with real-time spatial ghosts, and mid-session recalibration retry paths.
 3. **WebXR Camera Point-to-Point Measuring (`ARMeasureSession.tsx`):** AR camera measurement for physical furniture item dimensions and diameter calculations.
 4. **End-to-End Circular Furniture Support:** Native handling of round/circular tables and chairs across measuring, 2D floor plan SVG rendering (`<circle>`), rotation locks, and client-side PDF document generation.
@@ -69,8 +94,8 @@ src/
   * *Purpose:* Maps raw rule IDs to user-friendly plain-English descriptions, actionable fix recommendations ("DO THIS"), and metric ranges for visual clearance meters.
   * *Key Exports:* `ALL_RULE_GUIDANCE`, `bandLabel()`, `bandRanges()`.
 * **[walkways.ts](file:///c:/Users/Dell/Habi3D-Project/src/engine/walkways.ts):**
-  * *Purpose:* Calculates unobstructed pedestrian movement corridors between key unit doors (Entry, Living, Balcony, Dining, Kitchen) and flags furniture blockages.
-  * *Key Exports:* `computeWalkways()`.
+  * *Purpose:* Defines main unit corridor geometries (`MAIN_ENTRY_WALKWAY_RECT`), calculates unobstructed pedestrian movement corridors between key unit doors (Entry, Living, Balcony, Dining, Kitchen), detects main walkway furniture blockages (`isItemInMainWalkway`), and flags clearance statuses.
+  * *Key Exports:* `computeWalkways()`, `MAIN_ENTRY_WALKWAY_RECT`, `isItemInMainWalkway()`.
 * **[violationKey.ts](file:///c:/Users/Dell/Habi3D-Project/src/engine/violationKey.ts):**
   * *Purpose:* Generates deterministic, stable string keys for violations (`ruleCode:furnitureId:itemBId/wall`) to enable session diff tracking across layout edits.
   * *Key Exports:* `stableViolationKey()`.
@@ -185,7 +210,7 @@ Screen routing is controlled by `App.tsx` matching `sessionStore.currentScreen`.
 
 | Screen Name | File Path | Route Key | Status | Functionality & Key Features |
 | :--- | :--- | :--- | :--- | :--- |
-| **Landing / Entry** | `src/screens/EntryScreen.tsx` | `'entry'` | **Active** | Primary entry point. Two-tone gradient wordmark ("Habi3D"), frosted glass card, 3-tier action hierarchy: **Begin Session** (anonymous), **Create Account** (Auth), **Log In** (Auth text link). |
+| **Landing / Entry** | `src/screens/EntryScreen.tsx` | `'entry'` | **Active** | Primary entry point. Two-tone gradient wordmark ("Habi3D"), frosted glass card, clean authentication hierarchy: **Create Account** (Auth), **Log In** (Auth text link). |
 | **Authentication** | `src/screens/AuthScreen.tsx` | `'auth'` | **Active** | Manages user sign-up and login using username input mapped internally to `${username}@habi3d.local`. Checks Supabase `saved_sessions` for existing layout; prompts user to Resume existing layout or Start Fresh. |
 | **Furniture Input** | `src/screens/FurnitureInputScreen.tsx` | `'furnitureInput'` | **Active** | Step 1/2 of layout setup. Furniture item catalog selection (sofa, coffee table, dining set, cabinet, etc.), shape selection (rectangle, round, l-shape, oval), custom dimension entry, and WebXR point-to-point camera measurement tool. |
 | **AR Position Map** | `src/screens/PositionMapScreen.tsx` | `'positionMap'` | **Active** | Step 2/2 of layout setup. WebXR AR placement and spatial calibration screen. Executes 2-tap AR-to-2D calibration (`CalibrationScene`: NW corner + North wall tap), provides tap-retry modal review, places 3D furniture models (`PlacementScene`), and supports mid-session recalibration. |
@@ -413,6 +438,7 @@ Screen routing is controlled by `App.tsx` matching `sessionStore.currentScreen`.
 | Feature | Implementation Component(s) | Technical Strategy | Operational Status |
 | :--- | :--- | :--- | :--- |
 | **Free 2D Floor Plan Drag** | `CondoFloorPlan.tsx`<br>`floorPlanDrag.ts` | Delta drag tracking, `unitEnvelope` outer wall bounding, live snap lines, live cm readouts. | **Active & Verified** |
+| **Main Walkway Corridor Overlay** | `CondoFloorPlan.tsx`<br>`walkways.ts`<br>`WorkspaceScreen.tsx` | SVG dashed corridor overlay (`MAIN_ENTRY_WALKWAY_RECT`), bounds checking (`isItemInMainWalkway`), and live corridor placement warnings. | **Active & Verified** |
 | **Auto Room Assignment** | `floorPlanDrag.ts`<br>`condoLayout.ts` | Item center coordinate spatial lookup inside `CONDO_ROOMS` polygon boundaries on drop. | **Active & Verified** |
 | **Undo / Redo Stack** | `WorkspaceScreen.tsx` | 50-step state history stack recording position/rotation mutations. | **Active & Verified** |
 | **AR 2-Tap Spatial Calibration** | `calibration.ts`<br>`PositionMapScreen.tsx` | Rigid transformation matrix derivation (NW corner + North wall vector) mapping AR space to 2D plan. | **Active & Verified** |

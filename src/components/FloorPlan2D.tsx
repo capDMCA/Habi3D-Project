@@ -59,12 +59,12 @@ const NORTH_COLOR = color.inkMute;
 // Phase 1 tokens for selections and bounds
 const SEL_FILL = color.accentFill;
 const SEL_STROKE = color.accent;
-const BAD_FILL = color.attentionBg;
-const BAD_STROKE = color.attentionFg;
+const BAD_FILL = color.brandTint;
+const BAD_STROKE = color.inkSoft;
 
 // Clearance status colors for other items
 const STATUS_COLORS = {
-  RED: { fill: color.attentionBg, stroke: color.attentionFg },
+  RED: { fill: color.brandTint, stroke: color.inkSoft },
   YELLOW: { fill: color.tightBg, stroke: color.tightFg },
   GREEN: { fill: color.comfortBg, stroke: color.comfortFg },
 } as const;

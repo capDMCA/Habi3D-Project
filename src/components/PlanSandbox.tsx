@@ -219,7 +219,7 @@ export default function PlanSandbox({ baseItems, targetItemId, roomWidthCm, room
       <div style={controlsRow}>
         <p style={hintText}>
           {infeasible
-            ? "That spot doesn't fit — let go to snap back."
+            ? 'Outside room boundary — release to return to previous spot.'
             : 'Try dragging your furniture to a new spot.'}
         </p>
         <button type="button" onClick={rotate} style={rotateBtn}>
