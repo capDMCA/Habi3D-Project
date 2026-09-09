@@ -4,17 +4,16 @@ import { createXRStore, XR, XRDomOverlay, useXRHitTest, XROrigin } from '@react-
 import * as THREE from 'three';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import {
-  deriveCalibration,
   applyCalibration,
   invertCalibration,
   calibrationThetaRad,
-  type ArPoint,
   type CalibrationTransform,
 } from '../ar/calibration';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import Spinner from '../components/Spinner';
 import { fontFamily, numeric } from '../components/tokens';
+import { isFurnitureDimensionOversized, findOversizedFurniture } from '../utils/furnitureValidation';
 import type { FurnitureItem } from '../types';
 
 const xrPlacementStore = createXRStore({
@@ -213,77 +212,98 @@ function PlacementScene({
   );
 }
 
-/** A small marker at a calibration tap, so the user can see it registered
- *  while aiming the next tap or deciding whether to retap. Blue for the
- *  corner, green for the north-wall reference point — visually distinct so
- *  it's obvious which point a "Retap" action would discard. */
-function CalibrationMarker({ position, color = '#2563EB' }: { position: ArPoint; color?: string }) {
-  return (
-    <mesh position={[position.x, 0.02, position.z]}>
-      <sphereGeometry args={[0.05, 16, 16]} />
-      <meshStandardMaterial color={color} />
-    </mesh>
-  );
-}
+const alignNavBtnStyle: React.CSSProperties = {
+  background: 'rgba(255, 255, 255, 0.15)',
+  color: '#ffffff',
+  border: '1px solid rgba(255, 255, 255, 0.28)',
+  borderRadius: 8,
+  minHeight: 44,
+  padding: '0 16px',
+  fontWeight: 700,
+  fontSize: 13,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
 
 /**
- * Captures the two calibration taps before any furniture placement is
- * allowed. Structurally the same hit-test → pointerdown-tap pattern
- * PlacementScene uses below, just driving two reference points instead of
- * a furniture position.
- *
- * Once a wall point is tapped it's held for review (see `wallPoint` /
- * `pendingCalibration` in PositionMapScreen) rather than committed
- * immediately — so once `wallPoint` is non-null here, further taps are
- * ignored until the parent clears it (Retap) or commits it (confirm).
+ * Visual alignment guide for Mulberry Place 2BR Living & Dining area.
+ * Renders an architectural wireframe outline at ceiling level (2.4m)
+ * with corner drop lines to physical floor level, preventing furniture
+ * obstruction while aligning the predefined footprint.
  */
-function CalibrationScene({
-  step,
-  cornerPoint,
-  wallPoint,
-  onTapCorner,
-  onTapWall,
-}: {
-  step: 'corner' | 'wall';
-  cornerPoint: ArPoint | null;
-  wallPoint: ArPoint | null;
-  onTapCorner: (p: ArPoint) => void;
-  onTapWall: (p: ArPoint) => void;
-}) {
-  const latestHitRef = useRef<ArPoint | null>(null);
-
-  useXRHitTest(
-    useCallback((results, getWorldMatrix) => {
-      if (results.length === 0) return;
-      const hasMatrix = getWorldMatrix(hitMatrix, results[0]);
-      if (!hasMatrix) return;
-      const point = new THREE.Vector3().setFromMatrixPosition(hitMatrix);
-      latestHitRef.current = { x: point.x, z: point.z };
-    }, []),
-    'viewer',
-  );
-
-  useEffect(() => {
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('button, input, select, textarea')) return;
-      const hit = latestHitRef.current;
-      if (!hit) return;
-      if (step === 'corner') onTapCorner(hit);
-      else onTapWall(hit);
-    }
-
-    window.addEventListener('pointerdown', handlePointerDown);
-    return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [step, onTapCorner, onTapWall]);
+function RoomAlignmentScene({ calibration }: { calibration: CalibrationTransform }) {
+  const thetaRad = calibrationThetaRad(calibration);
+  const ceilingY = 2.4;
 
   return (
     <>
       <ambientLight intensity={1.4} />
       <directionalLight position={[3, 5, 3]} intensity={0.9} />
       <XROrigin />
-      {cornerPoint && <CalibrationMarker position={cornerPoint} />}
-      {wallPoint && <CalibrationMarker position={wallPoint} color="#22C55E" />}
+
+      <group position={[calibration.originX, ceilingY, calibration.originZ]} rotation={[0, thetaRad, 0]}>
+        {/* North boundary beam (z = 3.4, width = 2.6m) */}
+        <mesh position={[1.3, 0, 3.4]}>
+          <boxGeometry args={[2.6, 0.03, 0.03]} />
+          <meshStandardMaterial color="#38bdf8" roughness={0.2} emissive="#0284c7" emissiveIntensity={0.3} />
+        </mesh>
+
+        {/* South boundary beam (z = 8.8, width = 2.6m) */}
+        <mesh position={[1.3, 0, 8.8]}>
+          <boxGeometry args={[2.6, 0.03, 0.03]} />
+          <meshStandardMaterial color="#38bdf8" roughness={0.2} emissive="#0284c7" emissiveIntensity={0.3} />
+        </mesh>
+
+        {/* Living / Dining interior dividing beam (z = 7.0, width = 2.6m) */}
+        <mesh position={[1.3, 0, 7.0]}>
+          <boxGeometry args={[2.6, 0.02, 0.02]} />
+          <meshStandardMaterial color="#f59e0b" roughness={0.2} emissive="#d97706" emissiveIntensity={0.3} />
+        </mesh>
+
+        {/* West outer boundary beam (x = 0, depth = 5.4m) */}
+        <mesh position={[0, 0, 6.1]}>
+          <boxGeometry args={[0.03, 0.03, 5.4]} />
+          <meshStandardMaterial color="#38bdf8" roughness={0.2} emissive="#0284c7" emissiveIntensity={0.3} />
+        </mesh>
+
+        {/* East outer boundary beam (x = 2.6, depth = 5.4m) */}
+        <mesh position={[2.6, 0, 6.1]}>
+          <boxGeometry args={[0.03, 0.03, 5.4]} />
+          <meshStandardMaterial color="#38bdf8" roughness={0.2} emissive="#0284c7" emissiveIntensity={0.3} />
+        </mesh>
+
+        {/* 4 Corner Drop Lines from ceiling to floor (2.4m) for wall visual reference */}
+        {/* NW corner (0, 3.4) */}
+        <mesh position={[0, -1.2, 3.4]}>
+          <boxGeometry args={[0.02, 2.4, 0.02]} />
+          <meshStandardMaterial color="#38bdf8" transparent opacity={0.65} />
+        </mesh>
+        {/* NE corner (2.6, 3.4) */}
+        <mesh position={[2.6, -1.2, 3.4]}>
+          <boxGeometry args={[0.02, 2.4, 0.02]} />
+          <meshStandardMaterial color="#38bdf8" transparent opacity={0.65} />
+        </mesh>
+        {/* SE corner (2.6, 8.8) */}
+        <mesh position={[2.6, -1.2, 8.8]}>
+          <boxGeometry args={[0.02, 2.4, 0.02]} />
+          <meshStandardMaterial color="#38bdf8" transparent opacity={0.65} />
+        </mesh>
+        {/* SW corner (0, 8.8) */}
+        <mesh position={[0, -1.2, 8.8]}>
+          <boxGeometry args={[0.02, 2.4, 0.02]} />
+          <meshStandardMaterial color="#38bdf8" transparent opacity={0.65} />
+        </mesh>
+
+        {/* Floating Zone Name Labels */}
+        <group position={[1.3, 0, 5.2]}>
+          <FloatingLabel label="Living Room" y={0.25} />
+        </group>
+        <group position={[1.3, 0, 7.9]}>
+          <FloatingLabel label="Dining Area" y={0.25} />
+        </group>
+      </group>
     </>
   );
 }
@@ -305,112 +325,69 @@ export default function PositionMapScreen() {
   // blank wait with no feedback until the AR overlay suddenly appeared.
   const [arInitializing, setArInitializing] = useState(false);
 
-  // Calibration — once per AR session (see the subscribe effect below,
-  // which clears all of this the moment the session ends). Placement is
-  // gated on `calibration` being non-null; see the render below.
+  // Room Calibration — once per AR session.
+  // Instead of physical corner/wall tapping, residents align a ceiling-height
+  // wireframe guide of the Living & Dining footprint.
   const [calibration, setCalibration] = useState<CalibrationTransform | null>(null);
-  const [calibrationStep, setCalibrationStep] = useState<'corner' | 'wall'>('corner');
-  const [cornerPoint, setCornerPoint] = useState<ArPoint | null>(null);
-  // The second (north-wall) tap, held for review rather than committed
-  // immediately — `pendingCalibration` is the transform derived from it,
-  // computed eagerly so the too-close rejection still gives instant
-  // feedback, but not written into `calibration` (and so not usable for
-  // placement) until the user explicitly confirms it. This is what makes a
-  // "Retap" control possible before the tap is ever committed.
-  const [wallPoint, setWallPoint] = useState<ArPoint | null>(null);
-  const [pendingCalibration, setPendingCalibration] = useState<CalibrationTransform | null>(null);
-  const [calibrationError, setCalibrationError] = useState('');
-  // Recalibrating (Task 3) mid-session — asking for confirmation only when
-  // there's something to lose (an item already placed under the transform
-  // being discarded).
+  const [alignmentOffset, setAlignmentOffset] = useState<{ x: number; z: number }>({ x: 0, z: -3.5 });
+  const [alignmentYawDeg, setAlignmentYawDeg] = useState(0);
   const [recalibrateConfirmPending, setRecalibrateConfirmPending] = useState(false);
+
+  // Derived live calibration transform from current visual guide alignment
+  const currentCalibration: CalibrationTransform = useMemo(() => {
+    const theta = (alignmentYawDeg * Math.PI) / 180;
+    const cosTheta = Math.cos(theta);
+    const sinTheta = Math.sin(theta);
+    // Center of predefined Living (260cm x 360cm at y:340..700) + Dining (260cm x 180cm at y:700..880)
+    // in 2D plan coordinates is X: 1.3m, Z: 6.1m
+    const xc = 1.3;
+    const zc = 6.1;
+    const originX = alignmentOffset.x - (xc * cosTheta + zc * sinTheta);
+    const originZ = alignmentOffset.z - (-xc * sinTheta + zc * cosTheta);
+    return { originX, originZ, cosTheta, sinTheta };
+  }, [alignmentOffset.x, alignmentOffset.z, alignmentYawDeg]);
+
+  const [oversizedWarningItem, setOversizedWarningItem] = useState<FurnitureItem | null>(null);
 
   useEffect(() => {
     return xrPlacementStore.subscribe((state, prevState) => {
       if (state.session === prevState.session) return;
       setArActive(state.session != null);
       if (state.session == null) {
-        // Session ended — its reference space is gone with it. Next entry
-        // is a fresh session with an unrelated origin/heading, so
-        // calibration must run again before any placement is allowed.
         setCalibration(null);
-        setCalibrationStep('corner');
-        setCornerPoint(null);
-        setWallPoint(null);
-        setPendingCalibration(null);
-        setCalibrationError('');
+        setAlignmentOffset({ x: 0, z: -3.5 });
+        setAlignmentYawDeg(0);
         setRecalibrateConfirmPending(false);
+        setOversizedWarningItem(null);
       }
     });
   }, []);
 
-  const handleTapCorner = useCallback((p: ArPoint) => {
-    setCornerPoint(p);
-    setCalibrationStep('wall');
-  }, []);
-
-  const handleTapWall = useCallback(
-    (p: ArPoint) => {
-      // A point is already pending review — ignore further taps until the
-      // user retaps (clearing it) or confirms (committing it).
-      if (!cornerPoint || pendingCalibration) return;
-      const transform = deriveCalibration(cornerPoint, p);
-      if (!transform) {
-        setCalibrationError("That's too close to the corner — step further along the north wall and tap again.");
-        return;
-      }
-      setCalibrationError('');
-      setWallPoint(p);
-      setPendingCalibration(transform);
-    },
-    [cornerPoint, pendingCalibration],
-  );
-
-  /** Tap 2's "Retap" — discards the pending point, stays on the wall step
-   *  ready for a new tap. Tap 1 (cornerPoint) is left untouched. */
-  function retapWallPoint() {
-    setWallPoint(null);
-    setPendingCalibration(null);
-    setCalibrationError('');
+  function handleReviewDimensions() {
+    setOversizedWarningItem(null);
+    if (arActive) {
+      stopAR();
+    }
+    navigateTo('furnitureInput');
   }
 
-  /** Tap 2's confirm — this is the actual commit moment: only now does
-   *  `calibration` become non-null and placement become possible. */
-  function confirmWallPoint() {
-    if (!pendingCalibration) return;
-    setCalibration(pendingCalibration);
-    setWallPoint(null);
-    setPendingCalibration(null);
+  function handleCancelOversized() {
+    setOversizedWarningItem(null);
   }
 
-  /** Tap 1's "Retap" — discards the corner and returns to the first step.
-   *  No other state (items, active placement) is touched. */
-  function retryCalibration() {
-    setCalibrationStep('corner');
-    setCornerPoint(null);
-    setWallPoint(null);
-    setPendingCalibration(null);
-    setCalibrationError('');
+  function handleProceedToAnalysis() {
+    const oversized = findOversizedFurniture(items);
+    if (oversized) {
+      setOversizedWarningItem(oversized);
+      return;
+    }
+    navigateTo('analysis');
   }
 
-  /** Task 3 — redo the whole calibration after it's already committed and
-   *  placement has started. Purely local React state: doesn't end the XR
-   *  session (confirmed safe — session lifecycle and calibration state are
-   *  fully decoupled) and doesn't touch `items` — already-placed furniture
-   *  keeps its stored plan-frame position exactly as it was. See the
-   *  warning copy below for why that's surfaced explicitly rather than
-   *  silently assumed. Also leaves any in-progress placement (activeItemId/
-   *  lockedPosition/previewPosition) alone: those are raw AR-local
-   *  coordinates, unaffected by which calibration transform is active, so
-   *  the in-progress item's ghost doesn't jump — it's simply re-mapped
-   *  through the new transform whenever the user next confirms it. */
   function recalibrate() {
     setCalibration(null);
-    setCalibrationStep('corner');
-    setCornerPoint(null);
-    setWallPoint(null);
-    setPendingCalibration(null);
-    setCalibrationError('');
+    setAlignmentOffset({ x: 0, z: -3.5 });
+    setAlignmentYawDeg(0);
     setRecalibrateConfirmPending(false);
   }
 
@@ -475,6 +452,12 @@ export default function PositionMapScreen() {
 
   function confirmPlacement() {
     if (!activeItem || !lockedPosition || !calibration) return;
+
+    // Dimension sanity check before completing placement
+    if (isFurnitureDimensionOversized(activeItem)) {
+      setOversizedWarningItem(activeItem);
+      return;
+    }
 
     // The write path: lockedPosition/rotationY are this session's raw
     // AR-local values (correct for what the live ghost mesh showed) —
@@ -551,9 +534,58 @@ export default function PositionMapScreen() {
                 <p className="card-subtitle">Positions and rotations are stored for analysis.</p>
               </div>
             </div>
-            <button className="btn btn-primary" onClick={() => navigateTo('analysis')}>
+            <button className="btn btn-primary" onClick={handleProceedToAnalysis}>
               Analyse layout
             </button>
+          </div>
+        )}
+
+        {/* 2D Oversized Furniture Warning Modal */}
+        {oversizedWarningItem && !arActive && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10000,
+              background: 'rgba(0, 0, 0, 0.65)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+            }}
+          >
+            <div className="card" style={{ maxWidth: 440, width: '100%', margin: 0, boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
+              <div className="card-header">
+                <div className="card-icon card-icon-warning">⚠️</div>
+                <div>
+                  <h3 className="card-title" style={{ fontSize: 18, margin: 0 }}>Check Furniture Size</h3>
+                </div>
+              </div>
+              <p style={{ margin: '10px 0 8px', fontSize: 14, lineHeight: 1.5, color: 'var(--text-primary)' }}>
+                This furniture appears unusually large for the Living/Dining area.
+                Please review its dimensions.
+              </p>
+              <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted)' }}>
+                <strong>{oversizedWarningItem.label}</strong> ({oversizedWarningItem.lengthCm} × {oversizedWarningItem.widthCm} × {oversizedWarningItem.heightCm} cm)
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleCancelOversized}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleReviewDimensions}
+                >
+                  Review Dimensions
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -621,13 +653,7 @@ export default function PositionMapScreen() {
                 calibration={calibration}
               />
             ) : (
-              <CalibrationScene
-                step={calibrationStep}
-                cornerPoint={cornerPoint}
-                wallPoint={wallPoint}
-                onTapCorner={handleTapCorner}
-                onTapWall={handleTapWall}
-              />
+              <RoomAlignmentScene calibration={currentCalibration} />
             )}
 
             <XRDomOverlay>
@@ -670,22 +696,11 @@ export default function PositionMapScreen() {
                           ? 'Move your phone until the preview sits on the real furniture position, then tap the floor.'
                           : 'Adjust rotation to match the real furniture, then confirm placement.'}
                       </>
-                    ) : pendingCalibration ? (
-                      <>
-                        <strong>Reference point set</strong>
-                        <br />
-                        Retap if that didn't land where you meant, or confirm below to lock it in.
-                      </>
                     ) : (
                       <>
-                        <strong>{calibrationStep === 'corner' ? 'Step 1 of 2 — Set the corner' : 'Step 2 of 2 — Set north'}</strong>
+                        <strong>Align Room</strong>
                         <br />
-                        {calibrationStep === 'corner'
-                          ? "Stand at the unit's northwest corner — where the two outer walls meet — and tap the floor right at the corner."
-                          : 'Now walk a few steps along the north wall and tap the floor again, to show which way is east.'}
-                        {calibrationError && (
-                          <div style={{ marginTop: 6, color: '#fca5a5', fontWeight: 700 }}>{calibrationError}</div>
-                        )}
+                        Align the Living and Dining outline with your room, then tap Confirm. You can fine-tune individual furniture positions later.
                       </>
                     )}
                   </div>
@@ -732,76 +747,106 @@ export default function PositionMapScreen() {
                   </div>
                 </div>
 
-                {!calibration && calibrationStep === 'wall' && !pendingCalibration && (
+                {!calibration && (
                   <div
                     style={{
                       position: 'absolute',
                       left: 16,
                       right: 16,
                       bottom: 24,
-                      pointerEvents: 'auto',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={retryCalibration}
-                      style={{
-                        width: '100%',
-                        background: 'rgba(17, 24, 39, 0.86)',
-                        color: 'white',
-                        border: 0,
-                        borderRadius: 8,
-                        padding: '12px 14px',
-                        fontWeight: 700,
-                      }}
-                    >
-                      Start over from the corner
-                    </button>
-                  </div>
-                )}
-
-                {!calibration && pendingCalibration && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 16,
-                      right: 16,
-                      bottom: 24,
-                      background: 'rgba(255, 255, 255, 0.94)',
-                      color: '#111827',
-                      borderRadius: 8,
+                      background: 'rgba(17, 24, 39, 0.94)',
+                      backdropFilter: 'blur(10px)',
+                      color: '#ffffff',
+                      borderRadius: 14,
                       padding: 14,
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
                       pointerEvents: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 10,
                     }}
                   >
-                    <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>
-                      Reference point set — retap if it's off, or confirm to continue.
-                    </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <button type="button" className="btn btn-secondary" onClick={retapWallPoint} style={{ minHeight: 46 }}>
-                        Retap
+                    {/* Directional Nudge (Forward, Backward, Left, Right) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => setAlignmentOffset((prev) => ({ ...prev, z: Number((prev.z - 0.1).toFixed(3)) }))}
+                        style={alignNavBtnStyle}
+                        aria-label="Move Forward"
+                      >
+                        Move Forward ↑
                       </button>
-                      <button type="button" className="btn btn-primary" onClick={confirmWallPoint} style={{ minHeight: 46 }}>
-                        Use this point
+                      <div style={{ display: 'flex', gap: 14 }}>
+                        <button
+                          type="button"
+                          onClick={() => setAlignmentOffset((prev) => ({ ...prev, x: Number((prev.x - 0.1).toFixed(3)) }))}
+                          style={alignNavBtnStyle}
+                          aria-label="Move Left"
+                        >
+                          ← Left
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAlignmentOffset((prev) => ({ ...prev, x: Number((prev.x + 0.1).toFixed(3)) }))}
+                          style={alignNavBtnStyle}
+                          aria-label="Move Right"
+                        >
+                          Right →
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAlignmentOffset((prev) => ({ ...prev, z: Number((prev.z + 0.1).toFixed(3)) }))}
+                        style={alignNavBtnStyle}
+                        aria-label="Move Backward"
+                      >
+                        Move Backward ↓
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={retryCalibration}
-                      style={{
-                        width: '100%',
-                        marginTop: 10,
-                        background: 'none',
-                        border: 0,
-                        color: '#6B7280',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        textDecoration: 'underline',
-                      }}
-                    >
-                      Or start over from the corner
-                    </button>
+
+                    {/* Rotation (Yaw) Controls */}
+                    <div style={{ display: 'flex', gap: 10, width: '100%' }}>
+                      <button
+                        type="button"
+                        onClick={() => setAlignmentYawDeg((prev) => (prev - 5 + 360) % 360)}
+                        style={{ ...alignNavBtnStyle, flex: 1 }}
+                        aria-label="Rotate Left"
+                      >
+                        ↺ Rotate Left
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAlignmentYawDeg((prev) => (prev + 5) % 360)}
+                        style={{ ...alignNavBtnStyle, flex: 1 }}
+                        aria-label="Rotate Right"
+                      >
+                        Rotate Right ↻
+                      </button>
+                    </div>
+
+                    {/* Actions: Reset & Confirm */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, width: '100%', marginTop: 2 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setAlignmentOffset({ x: 0, z: -3.5 });
+                          setAlignmentYawDeg(0);
+                        }}
+                        style={{ minHeight: 46 }}
+                      >
+                        Reset Alignment
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => setCalibration(currentCalibration)}
+                        style={{ minHeight: 46 }}
+                      >
+                        Confirm Alignment
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -892,6 +937,70 @@ export default function PositionMapScreen() {
                         style={{ minHeight: 46 }}
                       >
                         Confirm placement
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* AR Oversized Furniture Warning Dialog */}
+                {oversizedWarningItem && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 16,
+                      right: 16,
+                      bottom: 24,
+                      background: 'rgba(10, 22, 44, 0.96)',
+                      backdropFilter: 'blur(12px)',
+                      color: '#ffffff',
+                      borderRadius: 16,
+                      padding: 18,
+                      boxShadow: '0 12px 36px rgba(0,0,0,0.5)',
+                      pointerEvents: 'auto',
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      zIndex: 100,
+                    }}
+                  >
+                    <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: '#f59e0b' }}>
+                      Check Furniture Size
+                    </p>
+                    <p style={{ margin: '0 0 8px', fontSize: 13, lineHeight: 1.45, color: 'rgba(255,255,255,0.9)' }}>
+                      This furniture appears unusually large for the Living/Dining area.
+                      Please review its dimensions.
+                    </p>
+                    <p style={{ margin: '0 0 16px', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+                      <strong>{oversizedWarningItem.label}</strong>: {oversizedWarningItem.lengthCm} × {oversizedWarningItem.widthCm} × {oversizedWarningItem.heightCm} cm
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={handleCancelOversized}
+                        style={{
+                          minHeight: 46,
+                          borderRadius: 12,
+                          border: '1px solid rgba(255,255,255,0.25)',
+                          background: 'rgba(255,255,255,0.12)',
+                          color: '#ffffff',
+                          fontWeight: 700,
+                          fontSize: 14,
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleReviewDimensions}
+                        style={{
+                          minHeight: 46,
+                          borderRadius: 12,
+                          border: 'none',
+                          background: '#0284c7',
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          fontSize: 14,
+                        }}
+                      >
+                        Review Dimensions
                       </button>
                     </div>
                   </div>

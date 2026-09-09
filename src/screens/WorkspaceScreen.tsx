@@ -349,6 +349,11 @@ export default function WorkspaceScreen() {
       const placed = clampToUnit(target, target.posX, target.posZ);
       const moved = { ...current, posX: placed.posX, posZ: placed.posZ };
 
+      if (moved.posX === current.posX && moved.posZ === current.posZ) {
+        showToast(`${current.label} has reached the unit boundary.`);
+        return;
+      }
+
       if (overlappingItemIds(moved, previewRef.current).length > 0) {
         showToast(`${current.label} is blocked in that direction.`);
         return;
@@ -357,7 +362,12 @@ export default function WorkspaceScreen() {
       historyRef.current.push(previewRef.current);
       if (historyRef.current.length > 50) historyRef.current.shift();
 
-      const rehomed = { ...moved, roomId: roomIdForItem(moved) };
+      const rehomed: FurnitureItem = {
+        ...current,
+        posX: moved.posX,
+        posZ: moved.posZ,
+        roomId: roomIdForItem(moved),
+      };
       commitLayout(
         previewRef.current.map((it) => (it.id === rehomed.id ? rehomed : it)),
         rehomed,
@@ -442,7 +452,23 @@ export default function WorkspaceScreen() {
     historyRef.current.push(previewRef.current);
     if (historyRef.current.length > 50) historyRef.current.shift();
 
-    const rehomed = { ...target, roomId: roomIdForItem(target) };
+    // Safe Reset (Task 4): Mutate ONLY placement-related fields (posX, posZ, rotationY, roomId).
+    // Furniture dimensions (widthCm, lengthCm, heightCm, shape, category, label)
+    // are strictly immutable during reset operations.
+    const rehomed: FurnitureItem = {
+      id: selectedItem.id,
+      label: selectedItem.label,
+      category: selectedItem.category,
+      shape: selectedItem.shape,
+      lengthCm: selectedItem.lengthCm,
+      widthCm: selectedItem.widthCm,
+      heightCm: selectedItem.heightCm,
+      posX: target.posX,
+      posZ: target.posZ,
+      rotationY: target.rotationY,
+      roomId: roomIdForItem(target),
+    };
+
     commitLayout(
       previewRef.current.map((it) => (it.id === rehomed.id ? rehomed : it)),
       rehomed,
@@ -563,6 +589,54 @@ export default function WorkspaceScreen() {
                   : undefined
               }
             />
+
+            {/* Fine Position Control (Task 2) — 1 cm / tap nudge */}
+            {selectedItem && (
+              <div style={finePositionCard} aria-label="Fine Position Controls">
+                <span style={finePositionTitle}>Fine Position</span>
+                <div style={finePositionGrid}>
+                  <button
+                    type="button"
+                    style={fineNudgeBtn}
+                    onClick={() => nudgeSelected(0, -1)}
+                    aria-label="Move 1 cm North"
+                    title="Move 1 cm North (Up)"
+                  >
+                    ↑
+                  </button>
+                  <div style={{ display: 'flex', gap: 14 }}>
+                    <button
+                      type="button"
+                      style={fineNudgeBtn}
+                      onClick={() => nudgeSelected(-1, 0)}
+                      aria-label="Move 1 cm West"
+                      title="Move 1 cm West (Left)"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      style={fineNudgeBtn}
+                      onClick={() => nudgeSelected(1, 0)}
+                      aria-label="Move 1 cm East"
+                      title="Move 1 cm East (Right)"
+                    >
+                      →
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    style={fineNudgeBtn}
+                    onClick={() => nudgeSelected(0, 1)}
+                    aria-label="Move 1 cm South"
+                    title="Move 1 cm South (Down)"
+                  >
+                    ↓
+                  </button>
+                </div>
+                <span style={finePositionSub}>1 cm / tap</span>
+              </div>
+            )}
           </div>
 
           {/* Toast Warning */}
@@ -1023,6 +1097,61 @@ const planContainer: CSSProperties = {
   justifyContent: 'center',
   minHeight: 0,
   position: 'relative',
+};
+
+const finePositionCard: CSSProperties = {
+  position: 'absolute',
+  bottom: 12,
+  right: 12,
+  zIndex: 10,
+  background: t.ground,
+  border: `1px solid ${t.line}`,
+  borderRadius: radius.md,
+  padding: '8px 12px',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: 4,
+  boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+};
+
+const finePositionTitle: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 700,
+  color: t.inkMute,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+};
+
+const finePositionGrid: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: 4,
+};
+
+const fineNudgeBtn: CSSProperties = {
+  width: 36,
+  height: 36,
+  minHeight: 36,
+  borderRadius: '50%',
+  border: `1px solid ${t.line}`,
+  background: t.surface,
+  color: t.ink,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: 16,
+  fontWeight: 700,
+  cursor: 'pointer',
+  padding: 0,
+};
+
+const finePositionSub: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: t.inkSoft,
+  marginTop: 2,
 };
 
 // One slim row directly under the plan — caption on the left, Rotate/Undo/

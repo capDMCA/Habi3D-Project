@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -9,6 +9,7 @@ export type MeasurePhase = 'scanning' | 'ready' | 'placed' | 'done' | 'error';
 interface Props {
   onMeasured: (distanceCm: number) => void;
   onPhaseChange?: (phase: MeasurePhase, liveCm?: number) => void;
+  retakeTrigger?: number;
 }
 
 // ─── Module-level scratch objects (never recreated — no GC pressure) ──────────
@@ -18,11 +19,12 @@ const _hitPos = new THREE.Vector3();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Euclidean distance in the XZ floor plane, in centimetres. */
-function floorCm(a: THREE.Vector3, b: THREE.Vector3): number {
+/** Euclidean distance in the XZ floor plane, converted to centimetres (1 decimal place). */
+function floorDistanceCm(a: THREE.Vector3, b: THREE.Vector3): number {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
-  return Math.round(Math.sqrt(dx * dx + dz * dz) * 100);
+  const meters = Math.sqrt(dx * dx + dz * dz);
+  return Number((meters * 100).toFixed(1));
 }
 
 function setLinePoints(line: THREE.Line, a: THREE.Vector3, b: THREE.Vector3) {
@@ -35,7 +37,7 @@ function setLinePoints(line: THREE.Line, a: THREE.Vector3, b: THREE.Vector3) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ARMeasureSession({ onMeasured, onPhaseChange }: Props) {
+export default function ARMeasureSession({ onMeasured, onPhaseChange, retakeTrigger }: Props) {
   const { gl, scene } = useThree();
 
   // --- Stable refs — safe to read in useFrame without closure issues ---
@@ -53,8 +55,7 @@ export default function ARMeasureSession({ onMeasured, onPhaseChange }: Props) {
   // Keep callback ref current without adding it to effect deps
   useEffect(() => { cbRef.current = onPhaseChange; }, [onPhaseChange]);
 
-  // --- React state (only drives JSX — not touched in useFrame) ---
-  const [markerA, setMarkerA] = useState<THREE.Vector3 | null>(null);
+  const markerARef  = useRef<THREE.Mesh>(null);
 
   // Phase transition helper — throttles live-cm updates to ~10 fps
   function notify(phase: MeasurePhase, liveCm?: number) {
@@ -185,9 +186,20 @@ export default function ARMeasureSession({ onMeasured, onPhaseChange }: Props) {
     if (pA && line) {
       setLinePoints(line, pA, _hitPos);
       line.visible = true;
-      notify('placed', floorCm(pA, _hitPos));
+      notify('placed', floorDistanceCm(pA, _hitPos));
     }
   });
+
+  // ── Retake handler: clears points and restores scanning/ready state ────────
+  useEffect(() => {
+    if (retakeTrigger === undefined || retakeTrigger === 0) return;
+    pointA.current = null;
+    doneRef.current = false;
+    if (markerARef.current) markerARef.current.visible = false;
+    if (lineRef.current) lineRef.current.visible = false;
+    phaseRef.current = 'ready';
+    notify('ready');
+  }, [retakeTrigger]);
 
   // ── Tap handler ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -203,18 +215,20 @@ export default function ARMeasureSession({ onMeasured, onPhaseChange }: Props) {
         // ── First tap — place start marker ──
         const p = hit.clone();
         pointA.current = p;
-        setMarkerA(p);
+        if (markerARef.current) {
+          markerARef.current.position.set(p.x, p.y + 0.025, p.z);
+          markerARef.current.visible = true;
+        }
         phaseRef.current = 'placed';
         notify('placed', 0);
       } else {
         // ── Second tap — finalise ──
-        const dist = floorCm(pointA.current, hit);
+        const dist = floorDistanceCm(pointA.current, hit);
         doneRef.current = true;
         phaseRef.current = 'done';
         if (lineRef.current) lineRef.current.visible = false;
-        notify('done');
-        // Short delay so the user sees the "done" state before the session closes
-        setTimeout(() => onMeasured(dist), 450);
+        notify('done', dist);
+        onMeasured(dist);
       }
     }
 
@@ -258,12 +272,10 @@ export default function ARMeasureSession({ onMeasured, onPhaseChange }: Props) {
       </group>
 
       {/* Start-point marker (blue sphere, stays after first tap) */}
-      {markerA && (
-        <mesh position={[markerA.x, markerA.y + 0.025, markerA.z]}>
-          <sphereGeometry args={[0.025, 24, 16]} />
-          <meshStandardMaterial color="#3b82f6" roughness={0.3} metalness={0.1} />
-        </mesh>
-      )}
+      <mesh ref={markerARef} visible={false}>
+        <sphereGeometry args={[0.025, 24, 16]} />
+        <meshStandardMaterial color="#3b82f6" roughness={0.3} metalness={0.1} />
+      </mesh>
     </>
   );
 }

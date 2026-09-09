@@ -1,6 +1,6 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-09-01  
+**Last updated:** 2026-09-07  
 **Project phase:** Late Phase 2 → Phase 3 Readiness  
 **Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig)
 
@@ -9,9 +9,28 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-09-01):** The codebase status has been updated with recent architectural improvements, 2D workspace walkway overlays, authentication flow refinements, and visual UI modernizations.
+> **Latest Update (2026-09-07):** The codebase status has been updated with detailed specifications of the **Main Walkway Obstruction Warning System**, its multi-surface notification architecture, the complete **Walkway Functionality Testing Case Suite (`TC-WKSP-WALKWAY-001` through `005`)**, constructive reporting vocabulary reframing across `ReportScreen.tsx` and `pdfReport.ts`, and color harmonization.
 
-### Key Recent Changes (August 24 – August 31, 2026)
+### Key Recent Changes (September 1 – September 7, 2026)
+
+1. **Main Walkway Obstruction Notification Engine & Verification Suite (`walkways.ts`, `WorkspaceScreen.tsx`, `CondoFloorPlan.tsx`)**
+   - **Real-Time Warning Toast Alert:** Implemented dynamic toast notification (`⚠️ Notice: [Item Label] is placed on the main walkway corridor.`) triggered upon dropping any furniture piece intersecting the central entry-to-bedroom corridor. Rendered via a high-contrast floating dark banner (`top: 50px`, auto-dismiss after 2.5s).
+   - **Geometric Walkway Boundaries:** Defined `MAIN_ENTRY_WALKWAY_RECT` ($x=215\text{ cm}$ to $295\text{ cm}$, width $80\text{ cm}$; $y=340\text{ cm}$ to $880\text{ cm}$, height $540\text{ cm}$) in [`walkways.ts`](file:///c:/Users/Dell/Habi3D-Project/src/engine/walkways.ts). Overlap detection requires both $\text{overlap}_X > 0.01\text{m}$ and $\text{overlap}_Z > 0.01\text{m}$ to prevent false positives on adjacent edge alignment.
+   - **Multi-Corridor Clearance Computation:** `computeWalkways()` continuously evaluates 5 distinct unit pedestrian paths (`Living → Dining`, `Living → Balcony`, `Living → Bedroom`, `Dining → Kitchen`, `Bedroom → Bathroom`) against standard clearance thresholds ($<60\text{ cm}$ RED/Blocked, $60$–$90\text{ cm}$ YELLOW/Tight, $\ge 91\text{ cm}$ GREEN/Clear).
+   - **Multi-Surface UI Synchronization:** Walkway obstruction state immediately updates:
+     - **Canvas Header Pill:** Displays dynamic red counter badge `[N] Walkways Blocked` when any corridor clearance drops below $60\text{ cm}$.
+     - **Side Drawer "Walkway Access" List:** Renders per-corridor clearance badges (`Blocked`, `Tight`, `Clear`) with measured vs target ($91\text{ cm}$) clearance readouts.
+     - **Clearance Engine Integration:** Sits alongside Rule **L4** ("Main walkway width", DeChiara et al., 2001) which flags room-level circulation bottlenecks and generates actionable "DO THIS" fix cards.
+   - **Standardized Functionality Test Suite:** Authored formal test specifications (`TC-WKSP-WALKWAY-001` through `005`) covering nominal obstruction, boundary tolerance ($1\text{ cm}$ threshold), corridor evacuation, collision rollback precedence, and 50-step undo stack reversal.
+
+2. **Empathetic & Constructive Reporting Vocabulary Reframe (`ReportScreen.tsx`, `pdfReport.ts`, `statusVocabulary.ts`)**
+   - **Constructive Framing:** Replaced punitive and deficit-focused wording with positive, reassuring terminology:
+     - Replaced `"Needs attention"` with `"Extra space suggested"` for RED status items.
+     - Replaced `"No tight spots were resolved this session"` with `"Current room layout reviewed and preserved"`.
+     - Replaced ambiguous outcome messages with calm, affirming reassurance: *"Your furniture arrangement has been saved. Every room is unique — you can always come back and keep adjusting anytime."*
+   - **Visual Palette Harmonization:** Replaced harsh alert reds in summary cards and PDF vector reports with brand navy tones (`t.brand` / `t.brandTint`), maintaining clear visual categorization without inducing user anxiety.
+
+### Key Prior Changes (August 24 – August 31, 2026)
 
 1. **2D Workspace Main Walkway Corridor Overlay & Real-Time Warning (`CondoFloorPlan.tsx`, `walkways.ts`, `WorkspaceScreen.tsx`)**
    - **Walkway Corridor Geometry:** Defined `MAIN_ENTRY_WALKWAY_RECT` in [`walkways.ts`](file:///c:/Users/Dell/Habi3D-Project/src/engine/walkways.ts) spanning from the unit's front entrance door ($y=880\text{ cm}$) up to the bedroom hallway entrance ($y=340\text{ cm}$) with a width of $80\text{ cm}$ ($x=215\text{ cm}$ to $x=295\text{ cm}$).
@@ -94,8 +113,8 @@ src/
   * *Purpose:* Maps raw rule IDs to user-friendly plain-English descriptions, actionable fix recommendations ("DO THIS"), and metric ranges for visual clearance meters.
   * *Key Exports:* `ALL_RULE_GUIDANCE`, `bandLabel()`, `bandRanges()`.
 * **[walkways.ts](file:///c:/Users/Dell/Habi3D-Project/src/engine/walkways.ts):**
-  * *Purpose:* Defines main unit corridor geometries (`MAIN_ENTRY_WALKWAY_RECT`), calculates unobstructed pedestrian movement corridors between key unit doors (Entry, Living, Balcony, Dining, Kitchen), detects main walkway furniture blockages (`isItemInMainWalkway`), and flags clearance statuses.
-  * *Key Exports:* `computeWalkways()`, `MAIN_ENTRY_WALKWAY_RECT`, `isItemInMainWalkway()`.
+  * *Purpose:* Defines main unit corridor geometries (`MAIN_ENTRY_WALKWAY_RECT`: $x=215, y=340, w=80, h=540\text{ cm}$ spanning entrance $y=880$ to bedroom $y=340$), calculates unobstructed pedestrian movement corridors between key unit doors (5 paths in `WALKWAY_PATHS`: Living $\rightarrow$ Dining, Living $\rightarrow$ Balcony, Living $\rightarrow$ Bedroom, Dining $\rightarrow$ Kitchen, Bedroom $\rightarrow$ Bathroom), detects main walkway furniture blockages (`isItemInMainWalkway` with $>0.01\text{m}$ overlap threshold), and classifies clearance statuses (RED $<60\text{ cm}$, YELLOW $60$–$90\text{ cm}$, GREEN $\ge 91\text{ cm}$).
+  * *Key Exports:* `computeWalkways()`, `MAIN_ENTRY_WALKWAY_RECT`, `WALKWAY_PATHS`, `isItemInMainWalkway()`, `WalkwayPath`, `WalkwayStatus`.
 * **[violationKey.ts](file:///c:/Users/Dell/Habi3D-Project/src/engine/violationKey.ts):**
   * *Purpose:* Generates deterministic, stable string keys for violations (`ruleCode:furnitureId:itemBId/wall`) to enable session diff tracking across layout edits.
   * *Key Exports:* `stableViolationKey()`.
@@ -431,6 +450,50 @@ Screen routing is controlled by `App.tsx` matching `sessionStore.currentScreen`.
 4. **Dynamic Pagination:** `ensureSpace()` monitors Y-axis page usage, automatically emitting `addContinuationPage()` headers when content exceeds single-page boundaries.
 5. **Direct Download:** Triggers browser file download (`habi3d-layout-report.pdf`) directly on the client side without external server overhead.
 
+### 4.7 Process 7: Walkway Obstruction Monitoring & Multi-Surface Notification Lifecycle
+
+```
+[User Drags & Drops Furniture Item on 2D Plan]
+                        │
+                        ▼
+      [Execute handleDragEnd() in WorkspaceScreen]
+                        │
+                        ▼
+            [Overlaps Another Piece?]
+           ├── Yes ──► [Snap back to lastOkRef + Show Collision Toast]
+           └── No
+                        │
+                        ▼
+            [Check isItemInMainWalkway(rehomed)]
+           ├── Yes ──► [Trigger Toast: "⚠️ Notice: [Item] is placed on the main walkway corridor."]
+           └── No  ──► [Trigger Room Transition Toast if rehomed to new room]
+                        │
+                        ▼
+             [commitLayout() to furnitureStore]
+                        │
+                        ▼
+     [recompute walkwayStatuses = computeWalkways(preview)]
+                        │
+                        ▼
+    ┌───────────────────┴───────────────────┐
+    ▼                                       ▼
+[Header Pill Row Update]            [Side Drawer: Fixes Tab]
+If any corridor < 60cm:             Update "Walkway Access" cards:
+Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
+                                    - Yellow Badge: "Tight" (60-90cm)
+                                    - Green Badge: "Clear" (≥91cm)
+                                    - Measured vs Target (≥91cm)
+```
+
+1. **Drop Event Evaluation:** Pointer release triggers `handleDragEnd()`. Collision detection with existing pieces is checked first; if collision occurs, the piece reverts to `lastOkRef` with a collision notice (`"[Item] would overlap another piece — moved to the last clear spot."`), taking precedence over walkway checks.
+2. **Main Walkway Bounds Check (`isItemInMainWalkway`):** Evaluates if the dropped piece overlaps `MAIN_ENTRY_WALKWAY_RECT` ($x \in [2.15\text{m}, 2.95\text{m}]$, $z \in [3.40\text{m}, 8.80\text{m}]$) by $> 0.01\text{m}$ along both X and Z axes.
+3. **Toast Notification Trigger:** If obstructed, displays `⚠️ Notice: [Item Label] is placed on the main walkway corridor.` for 2.5 seconds via a top-centered floating banner (`#16203A`, rounded pill).
+4. **Multi-Corridor Recalculation (`computeWalkways`):** Assesses max protrusion into each of the 5 key corridors (`Living → Dining`, `Living → Balcony`, `Living → Bedroom`, `Dining → Kitchen`, `Bedroom → Bathroom`). Clearance is derived as $\max(0, \text{corridorWidth} - \text{maxOverlap})$.
+5. **Multi-Surface UI Synchronization:**
+   - **Header Pill Counter:** The top summary pill row dynamically displays the count of blocked corridors (`[N] Walkways Blocked`, $<60\text{ cm}$ clearance).
+   - **Drawer "Walkway Access" List:** The Fixes drawer updates status badges (`Blocked`, `Tight`, `Clear`) and exact gap readouts in real-time.
+   - **Clearance Engine Rule L4:** If the room's main path width falls below $91\text{ cm}$, Rule **L4** generates a priority-ranked clearance violation card with explicit remediation steps ("DO THIS: Move [direction] by [X] cm").
+
 ---
 
 ## 5. Detailed Feature Breakdown Matrix
@@ -438,7 +501,7 @@ Screen routing is controlled by `App.tsx` matching `sessionStore.currentScreen`.
 | Feature | Implementation Component(s) | Technical Strategy | Operational Status |
 | :--- | :--- | :--- | :--- |
 | **Free 2D Floor Plan Drag** | `CondoFloorPlan.tsx`<br>`floorPlanDrag.ts` | Delta drag tracking, `unitEnvelope` outer wall bounding, live snap lines, live cm readouts. | **Active & Verified** |
-| **Main Walkway Corridor Overlay** | `CondoFloorPlan.tsx`<br>`walkways.ts`<br>`WorkspaceScreen.tsx` | SVG dashed corridor overlay (`MAIN_ENTRY_WALKWAY_RECT`), bounds checking (`isItemInMainWalkway`), and live corridor placement warnings. | **Active & Verified** |
+| **Main Walkway Corridor & Real-Time Alert System** | `CondoFloorPlan.tsx`<br>`walkways.ts`<br>`WorkspaceScreen.tsx` | SVG dashed corridor overlay (`MAIN_ENTRY_WALKWAY_RECT`), real-time toast alert (`isItemInMainWalkway`), 5-path clearance monitoring (`computeWalkways`), header blocked pill, drawer status badges, and comprehensive test suite (`TC-WKSP-WALKWAY-001`–`005`). | **Active & Verified** |
 | **Auto Room Assignment** | `floorPlanDrag.ts`<br>`condoLayout.ts` | Item center coordinate spatial lookup inside `CONDO_ROOMS` polygon boundaries on drop. | **Active & Verified** |
 | **Undo / Redo Stack** | `WorkspaceScreen.tsx` | 50-step state history stack recording position/rotation mutations. | **Active & Verified** |
 | **AR 2-Tap Spatial Calibration** | `calibration.ts`<br>`PositionMapScreen.tsx` | Rigid transformation matrix derivation (NW corner + North wall vector) mapping AR space to 2D plan. | **Active & Verified** |
@@ -450,7 +513,7 @@ Screen routing is controlled by `App.tsx` matching `sessionStore.currentScreen`.
 | **CVD-Safe Clearance Meters** | `ClearanceMeter.tsx`<br>`ruleGuidance.ts` | Color-blindness safe visual meters encoding clearance using track position, shapes, and plain English. | **Active & Verified** |
 | **Synthetic Email Supabase Auth** | `supabase.ts`<br>`AuthScreen.tsx` | Real Supabase Auth mapping username input to `${username}@habi3d.local` with RLS (`auth.uid() = user_id`). | **Active & Verified** |
 | **Debounced Layout Autosave** | `useAutosaveLayout.ts`<br>`supabase.ts` | 1.5-second debounced layout JSON syncing to Supabase `saved_sessions` table. | **Active & Verified** |
-| **Session Progress Headline Diff** | `violationStore.ts`<br>`ReportScreen.tsx` | Progress computed via initial vs current finding key diffing ("You made N spots more comfortable"). | **Active & Verified** |
+| **Session Progress & Constructive Reporting** | `violationStore.ts`<br>`ReportScreen.tsx`<br>`pdfReport.ts` | Session progress computed via initial snapshot diffing ("You made N spots more comfortable"). Constructive phrasing ("Extra space suggested", "Layout preserved"), brand navy visual accents, and multi-page vector PDF download. | **Active & Verified** |
 | **Paginated Client PDF Export** | `pdfReport.ts`<br>`DownloadReportButton.tsx` | Pure client-side `jsPDF` vector report generation featuring floor plan drawing and 10-rule paginated detail tables. | **Active & Verified** |
 | **2D Plan Grid & Muting** | `gridOverlay.ts`<br>`CondoFloorPlan.tsx` | Unit-wide lettered/numbered wayfinding reference grid (A1-F8), muted shading for non-active room zones. | **Active & Verified** |
 | **Tabular Numbers Formatting** | `src/components/tokens/type.ts` | `font-variant-numeric: tabular-nums` applied to gap readouts, dimensions, and meters to eliminate digit jitter. | **Active & Verified** |
@@ -488,3 +551,15 @@ Screen routing is controlled by `App.tsx` matching `sessionStore.currentScreen`.
 * ✅ **Auth & RLS Round Trip:** End-to-end Playwright trace verified signup $\rightarrow$ sign-out $\rightarrow$ login $\rightarrow$ identical `auth.uid()` matching `saved_sessions` RLS policies.
 * ✅ **Session Progress Diffing:** Real layout trace verified progress headline ("You made N spots more comfortable") accurately tracking touched vs untouched furniture items.
 * ✅ **AR Calibration & Retry Logic:** Seeded state unit tests verified tap 1 retap, tap 2 review discard, commit, and recalibration leaving stored item coordinates byte-identical.
+* ✅ **Main Walkway Obstruction Suite:** 5/5 boundary, precedence, and notification test cases (`TC-WKSP-WALKWAY-001`–`005`) verified passing.
+
+### 7.1 Walkway Obstruction Functionality Test Matrix (TC-WKSP-WALKWAY-001 to 005)
+
+| Test Case ID | Test Scenario | Preconditions & Inputs | Expected System Notification & UI Reaction | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **`TC-WKSP-WALKWAY-001`** | **Nominal Walkway Placement & Multi-Surface Notification** | User drags an item (e.g. Sofa) into central entry corridor ($x \in [215, 295]\text{ cm}$, $y \in [340, 880]\text{ cm}$, overlap $>1\text{ cm}$) and drops. | 1. Toast banner appears: `⚠️ Notice: [Item] is placed on the main walkway corridor.`<br>2. Toast auto-dismisses after 2.5s.<br>3. Canvas header pill updates: `N Walkways Blocked` (red badge).<br>4. Drawer "Walkway Access" list flips affected path to `Blocked` (red) or `Tight` (yellow).<br>5. Rule **L4** generates clearance card if room circulation path $<91\text{ cm}$. | **Passed** |
+| **`TC-WKSP-WALKWAY-002`** | **Sub-Threshold Boundary Proximity** | User places item tangent to corridor boundary with overlap $\le 1\text{ cm}$ ($0.01\text{m}$ epsilon). | No walkway warning triggers; standard room move toast displayed. Walkway clearance remains classified as `Clear` ($\ge 91\text{ cm}$). | **Passed** |
+| **`TC-WKSP-WALKWAY-003`** | **Walkway Evacuation & Status Restoration** | User drags obstructed item out of corridor back into room interior. | Standard room toast appears (`"[Item] moved to Living Room"`). Walkway blockage pill decrements/disappears, and drawer badge returns to green `Clear`. | **Passed** |
+| **`TC-WKSP-WALKWAY-004`** | **Collision Precedence Over Walkway Warning** | User attempts to drop a piece overlapping another furniture piece within the walkway zone. | Collision protection takes precedence: piece reverts to last valid spot with toast `"[Item] would overlap another piece — moved to the last clear spot."` Walkway toast is suppressed. | **Passed** |
+| **`TC-WKSP-WALKWAY-005`** | **Undo Stack Reversion (`Ctrl+Z` / Undo Button)** | User places item on walkway, then triggers Undo. | Layout rolls back to prior history snapshot; blocked walkway count decrements immediately, restoring prior clearance state. | **Passed** |
+

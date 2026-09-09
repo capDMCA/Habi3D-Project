@@ -50,9 +50,15 @@ function createFurnitureId(): string {
   return `furniture-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function toPositiveInteger(value: string): number {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+function toPositiveNumber(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Number(parsed.toFixed(1)) : 0;
+}
+
+function sanitizeDecimal(value: string): string {
+  const digitsAndDot = value.replace(/[^0-9.]/g, '');
+  const parts = digitsAndDot.split('.');
+  return parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : digitsAndDot;
 }
 
 function ShapePreview({
@@ -179,13 +185,20 @@ export default function FurnitureInputScreen() {
     });
   }, []);
 
+  const [measurementReview, setMeasurementReview] = useState<{
+    rawCm: number;
+    valueToUse: string;
+    error: string;
+  } | null>(null);
+  const [retakeTrigger, setRetakeTrigger] = useState(0);
+
   const canAddItem = useMemo(
     () =>
       category !== '' &&
       shape !== '' &&
-      toPositiveInteger(lengthCm) > 0 &&
-      toPositiveInteger(widthCm) > 0 &&
-      toPositiveInteger(heightCm) > 0,
+      toPositiveNumber(lengthCm) > 0 &&
+      toPositiveNumber(widthCm) > 0 &&
+      toPositiveNumber(heightCm) > 0,
     [category, heightCm, lengthCm, shape, widthCm],
   );
 
@@ -210,6 +223,7 @@ export default function FurnitureInputScreen() {
     setMeasurePhase('scanning');
     setLiveCm(0);
     setMeasureTarget(target);
+    setMeasurementReview(null);
     setArInitializing(true);
     try {
       await xrMeasureStore.enterAR();
@@ -228,26 +242,46 @@ export default function FurnitureInputScreen() {
     setMeasureTarget(null);
     setMeasurePhase('scanning');
     setLiveCm(0);
+    setMeasurementReview(null);
   }
 
   function handleMeasured(distanceCm: number) {
+    setMeasurementReview({
+      rawCm: distanceCm,
+      valueToUse: String(distanceCm),
+      error: '',
+    });
+  }
+
+  function handleRetakeMeasurement() {
+    setMeasurementReview(null);
+    setRetakeTrigger((c) => c + 1);
+  }
+
+  function handleConfirmMeasurement() {
+    if (!measurementReview) return;
+    const num = Number.parseFloat(measurementReview.valueToUse);
+    if (!Number.isFinite(num) || num <= 0) {
+      setMeasurementReview((prev) =>
+        prev ? { ...prev, error: 'Please enter a valid positive measurement (e.g. 97.4).' } : null,
+      );
+      return;
+    }
+
+    const roundedVal = Number(num.toFixed(1));
+    const valStr = String(roundedVal);
+
     if (measureTarget === 'length') {
-      setLengthCm(String(distanceCm));
+      setLengthCm(valStr);
+    } else if (measureTarget === 'width') {
+      setWidthCm(valStr);
+    } else if (measureTarget === 'diameter') {
+      setLengthCm(valStr);
+      setWidthCm(valStr);
     }
 
-    if (measureTarget === 'width') {
-      setWidthCm(String(distanceCm));
-    }
-
-    if (measureTarget === 'diameter') {
-      // A round table's footprint is a square of side = diameter — the
-      // same value on both axes, so effectiveLengthCm/effectiveWidthCm in
-      // the clearance engine reads it as an exact bounding box.
-      setLengthCm(String(distanceCm));
-      setWidthCm(String(distanceCm));
-    }
-
-    window.setTimeout(stopMeasurement, 650);
+    setMeasurementReview(null);
+    stopMeasurement();
   }
 
   function resetForm() {
@@ -258,6 +292,7 @@ export default function FurnitureInputScreen() {
     setWidthCm('');
     setHeightCm('');
     setMeasureTarget(null);
+    setMeasurementReview(null);
     setArError('');
   }
 
@@ -269,9 +304,9 @@ export default function FurnitureInputScreen() {
       label: label.trim() || selectedCategoryLabel,
       category,
       shape,
-      lengthCm: toPositiveInteger(lengthCm),
-      widthCm: toPositiveInteger(widthCm),
-      heightCm: toPositiveInteger(heightCm),
+      lengthCm: toPositiveNumber(lengthCm),
+      widthCm: toPositiveNumber(widthCm),
+      heightCm: toPositiveNumber(heightCm),
       posX: 0,
       posZ: 0,
       rotationY: 0,
@@ -401,9 +436,9 @@ export default function FurnitureInputScreen() {
               <label className="form-label">Shape Preview</label>
               <ShapePreview
                 shape={shape}
-                lengthCm={toPositiveInteger(lengthCm)}
-                widthCm={toPositiveInteger(widthCm)}
-                heightCm={toPositiveInteger(heightCm)}
+                lengthCm={toPositiveNumber(lengthCm)}
+                widthCm={toPositiveNumber(widthCm)}
+                heightCm={toPositiveNumber(heightCm)}
               />
             </div>
 
@@ -420,12 +455,12 @@ export default function FurnitureInputScreen() {
                     id="diameter-cm"
                     className="form-input"
                     style={numeric}
-                    inputMode="numeric"
+                    inputMode="decimal"
                     value={lengthCm}
                     onChange={(event) => {
-                      const digits = event.target.value.replace(/\D/g, '');
-                      setLengthCm(digits);
-                      setWidthCm(digits);
+                      const sanitized = sanitizeDecimal(event.target.value);
+                      setLengthCm(sanitized);
+                      setWidthCm(sanitized);
                     }}
                     placeholder="Measure or enter"
                   />
@@ -451,9 +486,9 @@ export default function FurnitureInputScreen() {
                       id="length-cm"
                       className="form-input"
                       style={numeric}
-                      inputMode="numeric"
+                      inputMode="decimal"
                       value={lengthCm}
-                      onChange={(event) => setLengthCm(event.target.value.replace(/\D/g, ''))}
+                      onChange={(event) => setLengthCm(sanitizeDecimal(event.target.value))}
                       placeholder="Measure or enter"
                     />
                     <button
@@ -477,9 +512,9 @@ export default function FurnitureInputScreen() {
                       id="width-cm"
                       className="form-input"
                       style={numeric}
-                      inputMode="numeric"
+                      inputMode="decimal"
                       value={widthCm}
-                      onChange={(event) => setWidthCm(event.target.value.replace(/\D/g, ''))}
+                      onChange={(event) => setWidthCm(sanitizeDecimal(event.target.value))}
                       placeholder="Measure or enter"
                     />
                     <button
@@ -504,9 +539,9 @@ export default function FurnitureInputScreen() {
                 id="height-cm"
                 className="form-input"
                 style={numeric}
-                inputMode="numeric"
+                inputMode="decimal"
                 value={heightCm}
-                onChange={(event) => setHeightCm(event.target.value.replace(/\D/g, ''))}
+                onChange={(event) => setHeightCm(sanitizeDecimal(event.target.value))}
                 placeholder="Enter height"
               />
             </div>
@@ -546,6 +581,7 @@ export default function FurnitureInputScreen() {
             {measureTarget && (
               <ARMeasureSession
                 key={measureTarget}
+                retakeTrigger={retakeTrigger}
                 onMeasured={handleMeasured}
                 onPhaseChange={handlePhaseChange}
               />
@@ -561,11 +597,17 @@ export default function FurnitureInputScreen() {
                       {measurementTitle}
                     </p>
                     <p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,0.7)', fontSize: 12, lineHeight: 1.4 }}>
-                      {measurePhase === 'scanning' && 'Move your camera slowly over the floor to detect the surface.'}
-                      {measurePhase === 'ready'    && 'Floor detected. Tap to place the first point.'}
-                      {measurePhase === 'placed'   && 'First point set. Tap to place the second point.'}
-                      {measurePhase === 'done'     && 'Measurement complete!'}
-                      {measurePhase === 'error'    && 'Hit-test unavailable. Ensure ARCore is installed and lighting is good.'}
+                      {measurementReview
+                        ? 'Review or adjust the measurement before saving.'
+                        : measurePhase === 'scanning'
+                        ? 'Move your camera slowly over the floor to detect the surface.'
+                        : measurePhase === 'ready'
+                        ? 'Floor detected. Tap to place the first point.'
+                        : measurePhase === 'placed'
+                        ? 'First point set. Tap to place the second point.'
+                        : measurePhase === 'done'
+                        ? 'Measurement complete!'
+                        : 'Hit-test unavailable. Ensure ARCore is installed and lighting is good.'}
                     </p>
                   </div>
                   <button
@@ -578,29 +620,135 @@ export default function FurnitureInputScreen() {
                 </div>
 
                 {/* Phase status pill */}
-                <div style={{ position: 'absolute', top: 90, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    background: 'rgba(10,22,44,0.88)', backdropFilter: 'blur(8px)',
-                    borderRadius: 99, padding: '7px 16px',
-                  }}>
+                {!measurementReview && (
+                  <div style={{ position: 'absolute', top: 90, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
                     <div style={{
-                      width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
-                      background: measurePhase === 'scanning' ? '#f59e0b'
-                                : measurePhase === 'ready'    ? '#22c55e'
-                                : measurePhase === 'placed'   ? '#3b82f6'
-                                : measurePhase === 'done'     ? '#22c55e'
-                                : '#ef4444',
-                    }} />
-                    <span style={{ color: '#ffffff', fontSize: 13, fontWeight: 600 }}>
-                      {measurePhase === 'scanning' && 'Scanning…'}
-                      {measurePhase === 'ready'    && 'Floor detected'}
-                      {measurePhase === 'placed'   && (liveCm > 0 ? `${liveCm} cm` : 'Point 1 placed')}
-                      {measurePhase === 'done'     && 'Done'}
-                      {measurePhase === 'error'    && 'Not available'}
-                    </span>
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      background: 'rgba(10,22,44,0.88)', backdropFilter: 'blur(8px)',
+                      borderRadius: 99, padding: '7px 16px',
+                    }}>
+                      <div style={{
+                        width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+                        background: measurePhase === 'scanning' ? '#f59e0b'
+                                  : measurePhase === 'ready'    ? '#22c55e'
+                                  : measurePhase === 'placed'   ? '#3b82f6'
+                                  : measurePhase === 'done'     ? '#22c55e'
+                                  : '#ef4444',
+                      }} />
+                      <span style={{ color: '#ffffff', fontSize: 13, fontWeight: 600 }}>
+                        {measurePhase === 'scanning' && 'Scanning…'}
+                        {measurePhase === 'ready'    && 'Floor detected'}
+                        {measurePhase === 'placed'   && (liveCm > 0 ? `${liveCm} cm` : 'Point 1 placed')}
+                        {measurePhase === 'done'     && 'Done'}
+                        {measurePhase === 'error'    && 'Not available'}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Measurement Review & Confirmation Dialog */}
+                {measurementReview && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 16,
+                      right: 16,
+                      bottom: 24,
+                      background: 'rgba(10, 22, 44, 0.95)',
+                      backdropFilter: 'blur(12px)',
+                      color: '#ffffff',
+                      borderRadius: 16,
+                      padding: 18,
+                      boxShadow: '0 12px 36px rgba(0,0,0,0.45)',
+                      pointerEvents: 'auto',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: '#38bdf8' }}>
+                        Measurement Complete
+                      </span>
+                      <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)' }}>
+                        AR: {measurementReview.rawCm} cm
+                      </span>
+                    </div>
+
+                    {measureTarget === 'diameter' && (
+                      <p style={{ margin: '0 0 12px', fontSize: 12, color: '#fbbf24', lineHeight: 1.4 }}>
+                        Diameter measurement will be used for both length and width.
+                      </p>
+                    )}
+
+                    <div style={{ marginBottom: 14 }}>
+                      <label
+                        htmlFor="review-measurement-val"
+                        style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'rgba(255,255,255,0.9)' }}
+                      >
+                        Value to use (cm):
+                      </label>
+                      <input
+                        id="review-measurement-val"
+                        inputMode="decimal"
+                        value={measurementReview.valueToUse}
+                        onChange={(e) => {
+                          const val = sanitizeDecimal(e.target.value);
+                          setMeasurementReview((prev) => (prev ? { ...prev, valueToUse: val, error: '' } : null));
+                        }}
+                        style={{
+                          width: '100%',
+                          minHeight: 44,
+                          padding: '0 12px',
+                          borderRadius: 10,
+                          border: '1px solid rgba(255,255,255,0.25)',
+                          background: 'rgba(255,255,255,0.1)',
+                          color: '#ffffff',
+                          fontSize: 16,
+                          fontWeight: 700,
+                          boxSizing: 'border-box',
+                        }}
+                        placeholder="e.g. 97.4"
+                      />
+                      {measurementReview.error && (
+                        <p style={{ margin: '6px 0 0', color: '#ef4444', fontSize: 12 }}>
+                          {measurementReview.error}
+                        </p>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={handleRetakeMeasurement}
+                        style={{
+                          minHeight: 46,
+                          borderRadius: 12,
+                          border: '1px solid rgba(255,255,255,0.25)',
+                          background: 'rgba(255,255,255,0.12)',
+                          color: '#ffffff',
+                          fontWeight: 700,
+                          fontSize: 14,
+                        }}
+                      >
+                        Retake
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmMeasurement}
+                        style={{
+                          minHeight: 46,
+                          borderRadius: 12,
+                          border: 'none',
+                          background: '#0284c7',
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          fontSize: 14,
+                        }}
+                      >
+                        Confirm Measurement
+                      </button>
+                    </div>
+                  </div>
+                )}
 
               </div>
             </XRDomOverlay>
