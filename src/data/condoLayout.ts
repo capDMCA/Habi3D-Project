@@ -104,33 +104,24 @@ export const CONDO_ROOMS: RoomZone[] = [
 ];
 
 /**
- * Maps a furniture category and optionally its label to its allowed default room.
+ * Maps a furniture category and optionally its label to its allowed room in Habi3D.
+ * Furniture is restricted to the Living and Dining areas only.
  */
 export function getRoomForCategory(category: FurnitureCategory, label: string = ''): string {
   const normLabel = label.toLowerCase();
   
-  if (normLabel.includes('balcony')) return 'balcony';
-  if (normLabel.includes('storage') && category !== 'cabinet') return 'storage';
-  if (normLabel.includes('bath') || normLabel.includes('cr') || normLabel.includes('toilet')) return 'bathroom';
-  if (normLabel.includes('kitchen') || normLabel.includes('cook') || normLabel.includes('sink')) return 'kitchen';
   if (normLabel.includes('dining')) return 'dining';
-  if (normLabel.includes('bed 2') || normLabel.includes('bedroom 2')) return 'bedroom2';
-  if (normLabel.includes('bed 1') || normLabel.includes('bedroom 1') || normLabel.includes('bed') || normLabel.includes('wardrobe')) return 'bedroom1';
 
   switch (category) {
-    case 'sofa':
-    case 'coffee_table':
-    case 'tv_stand':
-      return 'living';
     case 'dining_table':
     case 'dining_chair':
       return 'dining';
-    case 'work_desk':
-      return 'bedroom1';
-    case 'side_table':
-      return 'bedroom2';
+    case 'sofa':
+    case 'coffee_table':
+    case 'tv_stand':
     case 'cabinet':
-      return 'living'; // Default cabinet to living
+    case 'work_desk':
+    case 'side_table':
     default:
       return 'living';
   }

@@ -322,6 +322,7 @@ export default function CondoFloorPlan({
           const isDropTarget = dropRoomId === room.id;
           const isDimmed = focusedRoomId && focusedRoomId !== room.id;
           const isRuleRoom = room.id === 'living' || room.id === 'dining';
+          const isBlockedDropTarget = isDropTarget && !isRuleRoom;
 
           const baseFillOpacity = isRuleRoom ? t.roomFillOpacityActive : t.roomFillOpacityMuted;
           // Label opacity is NOT reduced for muted rooms — a "Kitchen" label
@@ -333,8 +334,8 @@ export default function CondoFloorPlan({
           // background at ~0.25 opacity was functionally invisible.)
           const labelOpacity = isRoomActive ? t.roomLabelOpacityActive : 0.4;
 
-          const strokeColor = isDropTarget || isHighlighted ? t.ink : t.roomStroke;
-          const strokeW = isDropTarget ? 4 : isHighlighted ? 3 : 1.5;
+          const strokeColor = isBlockedDropTarget ? '#ef4444' : isDropTarget || isHighlighted ? t.ink : t.roomStroke;
+          const strokeW = isBlockedDropTarget ? 4 : isDropTarget ? 4 : isHighlighted ? 3 : 1.5;
 
           // Living's south wall and dining's north wall are the same
           // real-world wall (living ends at y=700, dining starts at
@@ -361,8 +362,8 @@ export default function CondoFloorPlan({
                 y={room.y}
                 width={room.width}
                 height={room.height}
-                fill={room.bgColor}
-                fillOpacity={isDropTarget ? 0.22 : baseFillOpacity}
+                fill={isBlockedDropTarget ? '#ef4444' : room.bgColor}
+                fillOpacity={isBlockedDropTarget ? 0.28 : isDropTarget ? 0.22 : baseFillOpacity}
                 stroke={omitEdge ? 'none' : strokeColor}
                 strokeWidth={strokeW}
                 style={{
@@ -478,6 +479,42 @@ export default function CondoFloorPlan({
             transform={`rotate(-90, ${MAIN_ENTRY_WALKWAY_RECT.x + MAIN_ENTRY_WALKWAY_RECT.width / 2}, ${MAIN_ENTRY_WALKWAY_RECT.y + MAIN_ENTRY_WALKWAY_RECT.height / 2})`}
           >
             MAIN WALKWAY
+          </text>
+        </g>
+
+        {/* 2B. BEDROOM BOUNDARY WALL BLOCKER (y = 340cm) */}
+        <g style={pointerNone}>
+          {/* Solid structural wall line separating Bedroom 2 and Living */}
+          <line
+            x1={0}
+            y1={340}
+            x2={260}
+            y2={340}
+            stroke="#0f172a"
+            strokeWidth={5}
+            strokeLinecap="round"
+          />
+          {/* Wall blocker pill badge */}
+          <rect
+            x={55}
+            y={328}
+            width={150}
+            height={24}
+            rx={12}
+            fill="#0f172a"
+            stroke="#ffffff"
+            strokeWidth={2}
+          />
+          <text
+            x={130}
+            y={344}
+            fontSize={9.5}
+            fontWeight={800}
+            fill="#f8fafc"
+            letterSpacing={0.6}
+            textAnchor="middle"
+          >
+            BEDROOM WALL BLOCKER
           </text>
         </g>
 

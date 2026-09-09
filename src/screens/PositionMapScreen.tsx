@@ -14,6 +14,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import Spinner from '../components/Spinner';
 import { fontFamily, numeric } from '../components/tokens';
 import { isFurnitureDimensionOversized, findOversizedFurniture } from '../utils/furnitureValidation';
+import { isItemInBedroom, roomIdForItem } from '../components/floorPlanDrag';
 import type { FurnitureItem } from '../types';
 
 const xrPlacementStore = createXRStore({
@@ -464,6 +465,25 @@ export default function PositionMapScreen() {
     // convert to the 2D plan's frame before it ever reaches furnitureStore.
     const planPosition = applyCalibration(lockedPosition, calibration);
     const planRotationY = rotationY + calibrationThetaRad(calibration);
+
+    const testItem: FurnitureItem = {
+      ...activeItem,
+      posX: planPosition.x,
+      posZ: planPosition.z,
+      rotationY: planRotationY,
+    };
+
+    if (isItemInBedroom(testItem)) {
+      setErrorMsg('⚠️ Furniture cannot be placed in the bedroom. Please place it in the Living or Dining area.');
+      return;
+    }
+
+    const testRoomId = roomIdForItem(testItem);
+    if (testRoomId !== 'living' && testRoomId !== 'dining') {
+      setErrorMsg('⚠️ Furniture must be placed in the Living or Dining area only.');
+      return;
+    }
+
     updatePosition(activeItem.id, planPosition.x, planPosition.z, planRotationY);
 
     const remainingAfterConfirm = items.filter(

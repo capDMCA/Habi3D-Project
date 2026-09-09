@@ -132,7 +132,38 @@ export function overlappingItemIds(item: FurnitureItem, items: FurnitureItem[]):
   return hits;
 }
 
-/** True when this one piece sits inside the unit and clear of every other piece. */
+/**
+ * Dividing wall separating the bedrooms and balcony (z < 3.40m / y < 340cm)
+ * from the Living and Dining areas.
+ */
+export const BEDROOM_DIVIDER_WALL_Z_M = 3.40;
+
+/**
+ * Checks whether an item's footprint crosses into the bedroom/balcony area.
+ * The bedroom wall barrier is at z = 3.40m (y = 340cm).
+ * Any item whose bounding box intrudes past this wall into the bedroom zone (z < 3.40m)
+ * or whose assigned room is bedroom1, bedroom2, or balcony is considered in the bedroom.
+ */
+export function isItemInBedroom(item: FurnitureItem): boolean {
+  const b = toBounds(item);
+  const epsilon = 0.01; // 1cm tolerance for touching the wall
+  if (b.minZ < BEDROOM_DIVIDER_WALL_Z_M - epsilon) {
+    return true;
+  }
+  const rId = roomIdForItem(item);
+  return rId === 'bedroom1' || rId === 'bedroom2' || rId === 'balcony';
+}
+
+/**
+ * Checks whether an item is placed strictly within the allowed Living or Dining rooms.
+ */
+export function isItemInLivingOrDining(item: FurnitureItem): boolean {
+  if (isItemInBedroom(item)) return false;
+  const rId = roomIdForItem(item);
+  return rId === 'living' || rId === 'dining';
+}
+
+/** True when this one piece sits inside the unit, not in a bedroom, and clear of every other piece. */
 export function canPlace(item: FurnitureItem, items: FurnitureItem[]): boolean {
   const b = toBounds(item);
   const epsilon = 0.01;
@@ -142,7 +173,7 @@ export function canPlace(item: FurnitureItem, items: FurnitureItem[]): boolean {
     b.maxX <= UNIT_WIDTH_CM / 100 + epsilon &&
     b.maxZ <= UNIT_HEIGHT_CM / 100 + epsilon;
 
-  return insideUnit && overlappingItemIds(item, items).length === 0;
+  return insideUnit && !isItemInBedroom(item) && overlappingItemIds(item, items).length === 0;
 }
 
 // ─── Snapping ─────────────────────────────────────────────────────────────────

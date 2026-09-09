@@ -13,6 +13,7 @@ import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import {
   canPlace,
   clampToUnit,
+  isItemInBedroom,
   overlappingItemIds,
   packItemsIntoRoom,
   roomIdForItem,
@@ -58,8 +59,8 @@ function normalizeFurniturePositions(items: FurnitureItem[]): FurnitureItem[] {
     const inX = rxCm >= room.x + padding && rxCm <= room.x + room.width - padding;
     const inZ = rzCm >= room.y + padding && rzCm <= room.y + room.height - padding;
 
-    // Already placed sensibly and not sitting on top of something else.
-    if (inX && inZ && overlappingItemIds(item, items).length === 0) {
+    // Already placed sensibly in living/dining and not sitting on top of something else.
+    if (!isItemInBedroom(item) && inX && inZ && overlappingItemIds(item, items).length === 0) {
       settled.push(item);
       return;
     }
@@ -286,7 +287,8 @@ export default function WorkspaceScreen() {
 
       const moved = next.find((it) => it.id === draggedId);
       if (moved) {
-        const clear = overlappingItemIds(moved, next).length === 0;
+        const inBedroom = isItemInBedroom(moved);
+        const clear = overlappingItemIds(moved, next).length === 0 && !inBedroom;
         okRef.current = clear;
         setInfeasible(!clear);
         if (clear) lastOkRef.current = { x: xm, z: zm };
@@ -305,6 +307,39 @@ export default function WorkspaceScreen() {
 
       setInfeasible(false);
 
+      // Blocker: Return if the user put it in the bedroom
+      if (isItemInBedroom(item)) {
+        const fallback = lastOkRef.current;
+        if (fallback) {
+          const reverted = withMovedItem(settled, draggedId, fallback.x, fallback.z);
+          const revertedItem = reverted.find((it) => it.id === draggedId)!;
+          const rehomed = { ...revertedItem, roomId: roomIdForItem(revertedItem) };
+          commitLayout(
+            reverted.map((it) => (it.id === draggedId ? rehomed : it)),
+            rehomed,
+          );
+          showToast(`⚠️ Furniture cannot be placed in the bedroom. Please place it in the Living or Dining area only.`);
+          return;
+        }
+      }
+
+      // Check if dropped outside Living and Dining
+      const newRoomId = roomIdForItem(item);
+      if (newRoomId !== 'living' && newRoomId !== 'dining') {
+        const fallback = lastOkRef.current;
+        if (fallback) {
+          const reverted = withMovedItem(settled, draggedId, fallback.x, fallback.z);
+          const revertedItem = reverted.find((it) => it.id === draggedId)!;
+          const rehomed = { ...revertedItem, roomId: roomIdForItem(revertedItem) };
+          commitLayout(
+            reverted.map((it) => (it.id === draggedId ? rehomed : it)),
+            rehomed,
+          );
+          showToast(`⚠️ Furniture must be placed in the Living or Dining area only.`);
+          return;
+        }
+      }
+
       // Only the dragged piece gates the drop. Overlaps elsewhere in the layout
       // are the user's business, not a reason to reject this move.
       if (overlappingItemIds(item, settled).length > 0) {
@@ -322,7 +357,6 @@ export default function WorkspaceScreen() {
         }
       }
 
-      const newRoomId = roomIdForItem(item);
       const rehomed = { ...item, roomId: newRoomId };
       const layout = settled.map((it) => (it.id === draggedId ? rehomed : it));
 
@@ -351,6 +385,17 @@ export default function WorkspaceScreen() {
 
       if (moved.posX === current.posX && moved.posZ === current.posZ) {
         showToast(`${current.label} has reached the unit boundary.`);
+        return;
+      }
+
+      if (isItemInBedroom(moved)) {
+        showToast(`⚠️ Furniture cannot be placed in the bedroom. It must remain in the Living or Dining area.`);
+        return;
+      }
+
+      const movedRoomId = roomIdForItem(moved);
+      if (movedRoomId !== 'living' && movedRoomId !== 'dining') {
+        showToast(`⚠️ Furniture must remain in the Living or Dining area.`);
         return;
       }
 
