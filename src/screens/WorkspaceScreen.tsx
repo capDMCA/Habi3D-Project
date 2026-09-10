@@ -14,6 +14,7 @@ import {
   canPlace,
   clampToUnit,
   isItemInBedroom,
+  isItemInKitchenOrBathroom,
   overlappingItemIds,
   packItemsIntoRoom,
   roomIdForItem,
@@ -60,7 +61,7 @@ function normalizeFurniturePositions(items: FurnitureItem[]): FurnitureItem[] {
     const inZ = rzCm >= room.y + padding && rzCm <= room.y + room.height - padding;
 
     // Already placed sensibly in living/dining and not sitting on top of something else.
-    if (!isItemInBedroom(item) && inX && inZ && overlappingItemIds(item, items).length === 0) {
+    if (!isItemInBedroom(item) && !isItemInKitchenOrBathroom(item) && inX && inZ && overlappingItemIds(item, items).length === 0) {
       settled.push(item);
       return;
     }
@@ -291,8 +292,8 @@ export default function WorkspaceScreen() {
 
       const moved = next.find((it) => it.id === draggedId);
       if (moved) {
-        const inBedroom = isItemInBedroom(moved);
-        const clear = overlappingItemIds(moved, next).length === 0 && !inBedroom;
+        const inBlocked = isItemInBedroom(moved) || isItemInKitchenOrBathroom(moved);
+        const clear = overlappingItemIds(moved, next).length === 0 && !inBlocked;
         okRef.current = clear;
         setInfeasible(!clear);
         if (clear) lastOkRef.current = { x: xm, z: zm };
@@ -311,8 +312,8 @@ export default function WorkspaceScreen() {
 
       setInfeasible(false);
 
-      // Blocker: Return if the user put it in the bedroom
-      if (isItemInBedroom(item)) {
+      // Blocker: Return if the user put it in the bedroom, kitchen, or bathroom
+      if (isItemInBedroom(item) || isItemInKitchenOrBathroom(item)) {
         const fallback = lastOkRef.current;
         if (fallback) {
           const reverted = withMovedItem(settled, draggedId, fallback.x, fallback.z);
@@ -322,7 +323,7 @@ export default function WorkspaceScreen() {
             reverted.map((it) => (it.id === draggedId ? rehomed : it)),
             rehomed,
           );
-          showToast(`⚠️ Furniture cannot be placed in the bedroom. Please place it in the Living or Dining area only.`);
+          showToast(`⚠️ Furniture cannot be placed here. Please place it in the Living or Dining area only.`);
           return;
         }
       }
@@ -339,7 +340,7 @@ export default function WorkspaceScreen() {
             reverted.map((it) => (it.id === draggedId ? rehomed : it)),
             rehomed,
           );
-          showToast(`⚠️ Furniture must be placed in the Living or Dining area only.`);
+          showToast(`⚠️ Furniture cannot be placed here. Please place it in the Living or Dining area only.`);
           return;
         }
       }
@@ -392,14 +393,14 @@ export default function WorkspaceScreen() {
         return;
       }
 
-      if (isItemInBedroom(moved)) {
-        showToast(`⚠️ Furniture cannot be placed in the bedroom. It must remain in the Living or Dining area.`);
+      if (isItemInBedroom(moved) || isItemInKitchenOrBathroom(moved)) {
+        showToast(`⚠️ Furniture cannot be placed here. Please place it in the Living or Dining area only.`);
         return;
       }
 
       const movedRoomId = roomIdForItem(moved);
       if (movedRoomId !== 'living' && movedRoomId !== 'dining') {
-        showToast(`⚠️ Furniture must remain in the Living or Dining area.`);
+        showToast(`⚠️ Furniture cannot be placed here. Please place it in the Living or Dining area only.`);
         return;
       }
 

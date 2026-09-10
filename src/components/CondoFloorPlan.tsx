@@ -9,6 +9,7 @@ import {
   clampToUnit,
   snapFree,
   edgeGaps,
+  itemIntersectsRoomZone,
   overlappingItemIds,
   roomIdForItem,
   UNIT_WIDTH_CM,
@@ -88,6 +89,7 @@ export default function CondoFloorPlan({
   const [activeGuides, setActiveGuides] = useState<AlignmentGuide[]>([]);
   const [collidingIds, setCollidingIds] = useState<string[]>([]);
   const [dropRoomId, setDropRoomId] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<FurnitureItem | null>(null);
 
   // Fresh refs for window listeners, which outlive any single render.
   const itemsRef = useRef(items);
@@ -235,6 +237,7 @@ export default function CondoFloorPlan({
       setActiveGuides(snapped.guides);
       setCollidingIds(overlappingItemIds(preview, itemsRef.current));
       setDropRoomId(roomIdForItem(preview));
+      setDragPreview(preview);
 
       interactiveRef.current?.onDragMove(drag.itemId, placed.posX, placed.posZ);
     };
@@ -250,6 +253,7 @@ export default function CondoFloorPlan({
       setActiveGuides([]);
       setCollidingIds([]);
       setDropRoomId(null);
+      setDragPreview(null);
       // Only a real drag (crossed the threshold, so onDragStart already
       // fired) reaches onDragEnd — a plain click never committed anything
       // to begin with, so there's nothing to finalize.
@@ -322,7 +326,10 @@ export default function CondoFloorPlan({
           const isDropTarget = dropRoomId === room.id;
           const isDimmed = focusedRoomId && focusedRoomId !== room.id;
           const isRuleRoom = room.id === 'living' || room.id === 'dining';
-          const isBlockedDropTarget = isDropTarget && !isRuleRoom;
+          const isOverlappedByDrag = dragPreview
+            ? itemIntersectsRoomZone(dragPreview, room.id)
+            : false;
+          const isBlockedDropTarget = !isRuleRoom && (dropRoomId === room.id || isOverlappedByDrag);
 
           const baseFillOpacity = isRuleRoom ? t.roomFillOpacityActive : t.roomFillOpacityMuted;
           // Label opacity is NOT reduced for muted rooms — a "Kitchen" label
@@ -515,6 +522,65 @@ export default function CondoFloorPlan({
             textAnchor="middle"
           >
             BEDROOM WALL BLOCKER
+          </text>
+        </g>
+
+        {/* 2C. KITCHEN & BATHROOM FIXED ZONE BLOCKERS */}
+        <g style={pointerNone}>
+          {/* Solid structural wall line separating Living/Dining from Bathroom and Kitchen */}
+          <line
+            x1={260}
+            y1={460}
+            x2={260}
+            y2={880}
+            stroke="#0f172a"
+            strokeWidth={5}
+            strokeLinecap="round"
+          />
+          {/* Bathroom fixed zone blocker badge */}
+          <rect
+            x={300}
+            y={568}
+            width={170}
+            height={24}
+            rx={12}
+            fill="#0f172a"
+            stroke="#ffffff"
+            strokeWidth={2}
+          />
+          <text
+            x={385}
+            y={584}
+            fontSize={9.5}
+            fontWeight={800}
+            fill="#f8fafc"
+            letterSpacing={0.6}
+            textAnchor="middle"
+          >
+            BATHROOM - FIXED ZONE
+          </text>
+
+          {/* Kitchen fixed zone blocker badge */}
+          <rect
+            x={305}
+            y={780}
+            width={160}
+            height={24}
+            rx={12}
+            fill="#0f172a"
+            stroke="#ffffff"
+            strokeWidth={2}
+          />
+          <text
+            x={385}
+            y={796}
+            fontSize={9.5}
+            fontWeight={800}
+            fill="#f8fafc"
+            letterSpacing={0.6}
+            textAnchor="middle"
+          >
+            KITCHEN - FIXED ZONE
           </text>
         </g>
 

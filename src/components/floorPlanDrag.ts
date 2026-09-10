@@ -155,15 +155,56 @@ export function isItemInBedroom(item: FurnitureItem): boolean {
 }
 
 /**
+ * Checks whether an item's footprint intersects a specific room zone based on CONDO_ROOMS layout data.
+ */
+export function itemIntersectsRoomZone(item: FurnitureItem, roomId: string, epsilon = 0.01): boolean {
+  const room = CONDO_ROOMS.find((r) => r.id === roomId);
+  if (!room) return false;
+  const b = toBounds(item);
+  const rMinX = room.x / 100;
+  const rMaxX = (room.x + room.width) / 100;
+  const rMinZ = room.y / 100;
+  const rMaxZ = (room.y + room.height) / 100;
+
+  const overlapX = Math.min(b.maxX, rMaxX) - Math.max(b.minX, rMinX);
+  const overlapZ = Math.min(b.maxZ, rMaxZ) - Math.max(b.minZ, rMinZ);
+  return overlapX > epsilon && overlapZ > epsilon;
+}
+
+/**
+ * Checks whether an item is inside or intersects the Kitchen zone (x: 260..510cm, y: 620..880cm).
+ */
+export function isItemInKitchen(item: FurnitureItem): boolean {
+  if (roomIdForItem(item) === 'kitchen') return true;
+  return itemIntersectsRoomZone(item, 'kitchen');
+}
+
+/**
+ * Checks whether an item is inside or intersects the Bathroom zone (x: 260..510cm, y: 460..620cm).
+ */
+export function isItemInBathroom(item: FurnitureItem): boolean {
+  if (roomIdForItem(item) === 'bathroom') return true;
+  return itemIntersectsRoomZone(item, 'bathroom');
+}
+
+/**
+ * Checks whether an item is inside or intersects the Kitchen or Bathroom zones.
+ */
+export function isItemInKitchenOrBathroom(item: FurnitureItem): boolean {
+  return isItemInKitchen(item) || isItemInBathroom(item);
+}
+
+/**
  * Checks whether an item is placed strictly within the allowed Living or Dining rooms.
  */
 export function isItemInLivingOrDining(item: FurnitureItem): boolean {
   if (isItemInBedroom(item)) return false;
+  if (isItemInKitchenOrBathroom(item)) return false;
   const rId = roomIdForItem(item);
   return rId === 'living' || rId === 'dining';
 }
 
-/** True when this one piece sits inside the unit, not in a bedroom, and clear of every other piece. */
+/** True when this one piece sits inside the unit, not in a bedroom or blocked zone, and clear of every other piece. */
 export function canPlace(item: FurnitureItem, items: FurnitureItem[]): boolean {
   const b = toBounds(item);
   const epsilon = 0.01;
@@ -173,7 +214,12 @@ export function canPlace(item: FurnitureItem, items: FurnitureItem[]): boolean {
     b.maxX <= UNIT_WIDTH_CM / 100 + epsilon &&
     b.maxZ <= UNIT_HEIGHT_CM / 100 + epsilon;
 
-  return insideUnit && !isItemInBedroom(item) && overlappingItemIds(item, items).length === 0;
+  return (
+    insideUnit &&
+    !isItemInBedroom(item) &&
+    !isItemInKitchenOrBathroom(item) &&
+    overlappingItemIds(item, items).length === 0
+  );
 }
 
 // ─── Snapping ─────────────────────────────────────────────────────────────────

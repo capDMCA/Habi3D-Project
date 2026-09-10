@@ -9,9 +9,20 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-09-10):** Restored AR Placement Routing & Initial Unpositioned Payload — Restored sequential routing in `FurnitureInputScreen.tsx` from `'workspace'` back to `'positionMap'` for both "Confirm Furniture Item" and the bottom navigation button. Preserved true-to-size dimensions (`lengthCm`, `widthCm`, `heightCm`) while registering pieces with unpositioned coordinates (`posX: 0, posZ: 0`), allowing items to appear in `PositionMapScreen.tsx` for real-time WebXR floor hit-test placement. In `furnitureStore.ts`, preserved `posX: 0, posZ: 0` without fallback to room center. Strictly maintained all SVG 1:1 first-render dimension fixes and the removal of the Reset button from `WorkspaceScreen.tsx`.
+> **Latest Update (2026-09-10):** Strict Confinement to Living & Dining with Kitchen & Bathroom Visual Blockers — Extended unit boundary protections beyond the Bedroom to strictly block the Kitchen and Bathroom zones. Added mathematical confinement functions (`itemIntersectsRoomZone`, `isItemInKitchen`, `isItemInBathroom`, `isItemInKitchenOrBathroom`) in `floorPlanDrag.ts`, updated `isItemInLivingOrDining` and `canPlace`, and ensured `handleDragEnd` in `WorkspaceScreen.tsx` instantly reverts illegal drops to `lastOkRef` with toast: `"⚠️ Furniture cannot be placed here. Please place it in the Living or Dining area only."`. In `CondoFloorPlan.tsx`, extended dynamic red warning highlights to illuminate Kitchen and Bathroom whenever dragged furniture overlaps them, and rendered static blocker badges (`"BATHROOM - FIXED ZONE"`, `"KITCHEN - FIXED ZONE"`) and dividing wall line matching the Bedroom Wall Blocker.
 
-### Key Recent Changes (September 10, 2026: AR Placement Routing & Unpositioned Payload Restoration)
+### Key Recent Changes (September 10, 2026: Strict Kitchen & Bathroom Confinement & Visual Blockers)
+
+1. **Strict Mathematical Confinement (`floorPlanDrag.ts`, `WorkspaceScreen.tsx`)**
+   - **Zone Intersection & Confinement Math:** In `floorPlanDrag.ts`, implemented `itemIntersectsRoomZone()`, `isItemInKitchen()`, `isItemInBathroom()`, and `isItemInKitchenOrBathroom()` checking against `CONDO_ROOMS` coordinates (Bathroom: $X=260..510\text{cm}, Y=460..620\text{cm}$; Kitchen: $X=260..510\text{cm}, Y=620..880\text{cm}$).
+   - **Confinement Integration:** Updated `isItemInLivingOrDining(item)` and `canPlace(item, items)` to actively reject any item intersecting Kitchen or Bathroom zones.
+   - **Instant Drop Reversion & Standard Toast:** In `WorkspaceScreen.tsx`, updated `handleDragEnd`, `handleDragMove`, `nudgeSelected`, and `normalizeFurniturePositions`. Any attempt to drop or nudge into the Bedroom, Kitchen, or Bathroom immediately reverts to `lastOkRef` and triggers the toast: `"⚠️ Furniture cannot be placed here. Please place it in the Living or Dining area only."`
+
+2. **Visual Blocker Graphics & Dynamic Red Warning (`CondoFloorPlan.tsx`)**
+   - **Dynamic Red Warning Highlighting:** Added `dragPreview` tracking so that dragging a piece over the Kitchen or Bathroom zones instantly triggers `isBlockedDropTarget = true`, illuminating the zone with a bold red fill (`#ef4444`, opacity $0.28$) and stroke ($4\text{px}$, `#ef4444`).
+   - **Static Blocker Badges & Structural Dividing Wall:** Rendered a solid structural wall line along $X=260\text{cm}$ ($Y=460..880\text{cm}$, stroke `#0f172a`, width $5\text{px}$) and static blocker pill badges (`"BATHROOM - FIXED ZONE"` at $Y=568\text{cm}$ and `"KITCHEN - FIXED ZONE"` at $Y=780\text{cm}$) using identical geometry, dark fill (`#0f172a`), white stroke ($2\text{px}$), and bold white typography as the `BEDROOM WALL BLOCKER`.
+
+### Prior Changes (September 10, 2026: AR Placement Routing & Unpositioned Payload Restoration)
 
 1. **Restored AR Placement Routing & Unpositioned Payload (`FurnitureInputScreen.tsx`, `furnitureStore.ts`)**
    - **AR Navigation Restored:** In `FurnitureInputScreen.tsx`, `handleAddItem` ("Confirm Furniture Item") and the bottom navigation button now route directly to `PositionMapScreen.tsx` (`navigateTo('positionMap')`).
