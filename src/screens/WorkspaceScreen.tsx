@@ -293,10 +293,10 @@ export default function WorkspaceScreen() {
       const moved = next.find((it) => it.id === draggedId);
       if (moved) {
         const inBlocked = isItemInBedroom(moved) || isItemInKitchenOrBathroom(moved);
-        const clear = overlappingItemIds(moved, next).length === 0 && !inBlocked;
-        okRef.current = clear;
-        setInfeasible(!clear);
-        if (clear) lastOkRef.current = { x: xm, z: zm };
+        const valid = !inBlocked;
+        okRef.current = valid;
+        setInfeasible(!valid);
+        if (valid) lastOkRef.current = { x: xm, z: zm };
       }
       return next;
     });
@@ -345,27 +345,13 @@ export default function WorkspaceScreen() {
         }
       }
 
-      // Only the dragged piece gates the drop. Overlaps elsewhere in the layout
-      // are the user's business, not a reason to reject this move.
-      if (overlappingItemIds(item, settled).length > 0) {
-        const fallback = lastOkRef.current;
-        if (fallback) {
-          const reverted = withMovedItem(settled, draggedId, fallback.x, fallback.z);
-          const revertedItem = reverted.find((it) => it.id === draggedId)!;
-          const rehomed = { ...revertedItem, roomId: roomIdForItem(revertedItem) };
-          commitLayout(
-            reverted.map((it) => (it.id === draggedId ? rehomed : it)),
-            rehomed,
-          );
-          showToast(`${item.label} would overlap another piece — moved to the last clear spot.`);
-          return;
-        }
-      }
-
       const rehomed = { ...item, roomId: newRoomId };
       const layout = settled.map((it) => (it.id === draggedId ? rehomed : it));
 
-      if (isItemInMainWalkway(rehomed)) {
+      const isOverlapping = overlappingItemIds(rehomed, layout).length > 0;
+      if (isOverlapping) {
+        showToast(`⚠️ Notice: Furniture pieces are overlapping.`);
+      } else if (isItemInMainWalkway(rehomed)) {
         showToast(`⚠️ Notice: ${item.label} is placed on the main walkway corridor.`);
       } else if (newRoomId !== (item.roomId ?? null)) {
         const roomLabel = CONDO_ROOMS.find((r) => r.id === newRoomId)?.label;
@@ -404,9 +390,10 @@ export default function WorkspaceScreen() {
         return;
       }
 
-      if (overlappingItemIds(moved, previewRef.current).length > 0) {
-        showToast(`${current.label} is blocked in that direction.`);
-        return;
+      const otherItems = previewRef.current.filter((it) => it.id !== moved.id);
+      const isOverlapping = overlappingItemIds(moved, otherItems).length > 0;
+      if (isOverlapping) {
+        showToast(`⚠️ Notice: Furniture pieces are overlapping.`);
       }
 
       historyRef.current.push(previewRef.current);
@@ -450,10 +437,14 @@ export default function WorkspaceScreen() {
     setCanUndo(true);
 
     const rehomed = { ...candidate, roomId: roomIdForItem(candidate) };
-    commitLayout(
-      preview.map((it) => (it.id === rehomed.id ? rehomed : it)),
-      rehomed,
-    );
+    const nextLayout = preview.map((it) => (it.id === rehomed.id ? rehomed : it));
+
+    const isOverlapping = overlappingItemIds(rehomed, nextLayout).length > 0;
+    if (isOverlapping) {
+      showToast(`⚠️ Notice: Furniture pieces are overlapping.`);
+    }
+
+    commitLayout(nextLayout, rehomed);
   }, [selectedItem, preview, commitLayout, showToast]);
 
   const handleUndo = useCallback(() => {

@@ -204,8 +204,8 @@ export function isItemInLivingOrDining(item: FurnitureItem): boolean {
   return rId === 'living' || rId === 'dining';
 }
 
-/** True when this one piece sits inside the unit, not in a bedroom or blocked zone, and clear of every other piece. */
-export function canPlace(item: FurnitureItem, items: FurnitureItem[]): boolean {
+/** True when this one piece sits inside the unit, not in a bedroom or blocked zone. Furniture overlaps are allowed as soft constraints. */
+export function canPlace(item: FurnitureItem, _items: FurnitureItem[] = []): boolean {
   const b = toBounds(item);
   const epsilon = 0.01;
   const insideUnit =
@@ -217,8 +217,7 @@ export function canPlace(item: FurnitureItem, items: FurnitureItem[]): boolean {
   return (
     insideUnit &&
     !isItemInBedroom(item) &&
-    !isItemInKitchenOrBathroom(item) &&
-    overlappingItemIds(item, items).length === 0
+    !isItemInKitchenOrBathroom(item)
   );
 }
 

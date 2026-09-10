@@ -9,9 +9,22 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-09-10):** Strict Confinement to Living & Dining with Kitchen & Bathroom Visual Blockers — Extended unit boundary protections beyond the Bedroom to strictly block the Kitchen and Bathroom zones. Added mathematical confinement functions (`itemIntersectsRoomZone`, `isItemInKitchen`, `isItemInBathroom`, `isItemInKitchenOrBathroom`) in `floorPlanDrag.ts`, updated `isItemInLivingOrDining` and `canPlace`, and ensured `handleDragEnd` in `WorkspaceScreen.tsx` instantly reverts illegal drops to `lastOkRef` with toast: `"⚠️ Furniture cannot be placed here. Please place it in the Living or Dining area only."`. In `CondoFloorPlan.tsx`, extended dynamic red warning highlights to illuminate Kitchen and Bathroom whenever dragged furniture overlaps them, and rendered static blocker badges (`"BATHROOM - FIXED ZONE"`, `"KITCHEN - FIXED ZONE"`) and dividing wall line matching the Bedroom Wall Blocker.
+> **Latest Update (2026-09-10):** Soft Furniture-to-Furniture Collisions & Unblocked Rotation — Converted furniture-to-furniture collisions into soft constraints to make the 2D workspace completely interactive. Removed collision rollback from `canPlace()` in `floorPlanDrag.ts`, `handleDragEnd`, and `handleRotate` in `WorkspaceScreen.tsx`. Pieces can now be freely dragged, dropped, and rotated even when visually clipping or overlapping another piece. Dropping or rotating into another item now commits to `furnitureStore` and triggers a soft warning toast: `"⚠️ Notice: Furniture pieces are overlapping."`, allowing the 10 Clearance Rules engine to detect the 0cm gap and flag it as a RED priority violation. Outer unit walls, Bedroom Wall Blocker ($Y=340\text{cm}$), and Kitchen/Bathroom zones remain strict hard constraints.
 
-### Key Recent Changes (September 10, 2026: Strict Kitchen & Bathroom Confinement & Visual Blockers)
+### Key Recent Changes (September 10, 2026: Soft Collisions & Unblocked Rotation/Drag Overlaps)
+
+1. **Unblocked Drag Overlaps & Free Rotation (`floorPlanDrag.ts`, `WorkspaceScreen.tsx`)**
+   - **Soft Collision Math:** In `floorPlanDrag.ts`, updated `canPlace()` to allow furniture-to-furniture overlaps while strictly preserving exterior wall boundary (`insideUnit`) and partition boundaries (`!isItemInBedroom(item)` and `!isItemInKitchenOrBathroom(item)`).
+   - **Unblocked `handleDragEnd`:** Removed the hard rollback to `lastOkRef` on furniture overlap. Overlapping drops now commit directly to `furnitureStore` and update `lastOkRef.current`.
+   - **Unblocked Rotation:** In `handleRotate`, pieces can now rotate 90° even when overlapping or clipping another piece, committing successfully to the layout.
+   - **Fluid Drag & Nudge:** In `handleDragMove` and `nudgeSelected`, movement through other furniture pieces is no longer blocked.
+
+2. **Converted Hard Revert to Soft Warning Toast (`WorkspaceScreen.tsx`)**
+   - **Soft Warning Toast Notification:** When an item is dropped or rotated into another piece of furniture, the UI displays a soft warning toast: `"⚠️ Notice: Furniture pieces are overlapping."`
+   - **Natural Clearance Engine Detection:** The 10 Clearance Rules engine naturally computes a $0\text{cm}$ gap between intersecting items, flagging affected pieces with RED status badges and generating actionable fix cards in the Recommendation drawer.
+   - **Strict Hard Constraint Preservation:** Outer unit walls, Bedroom Wall Blocker ($Y=340\text{cm}$), and Kitchen/Bathroom zones remain absolute hard constraints that reject drops and rollback immediately to `lastOkRef`.
+
+### Prior Changes (September 10, 2026: Strict Kitchen & Bathroom Confinement & Visual Blockers)
 
 1. **Strict Mathematical Confinement (`floorPlanDrag.ts`, `WorkspaceScreen.tsx`)**
    - **Zone Intersection & Confinement Math:** In `floorPlanDrag.ts`, implemented `itemIntersectsRoomZone()`, `isItemInKitchen()`, `isItemInBathroom()`, and `isItemInKitchenOrBathroom()` checking against `CONDO_ROOMS` coordinates (Bathroom: $X=260..510\text{cm}, Y=460..620\text{cm}$; Kitchen: $X=260..510\text{cm}, Y=620..880\text{cm}$).
