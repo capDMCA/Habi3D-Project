@@ -1,13 +1,125 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay, useXRHitTest, XROrigin } from '@react-three/xr';
 import * as THREE from 'three';
 import { createFurnitureShape } from '../ar/shapeLibrary';
+import {
+  deriveCalibration as baseDeriveCalibration,
+  applyCalibration,
+  type CalibrationTransform,
+} from '../ar/calibration';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import Spinner from '../components/Spinner';
 import { fontFamily, numeric } from '../components/tokens';
 import type { FurnitureItem } from '../types';
+
+interface XRHitTestResult {
+  pose: {
+    position: { x: number; y?: number; z: number };
+    orientation?: { x: number; y: number; z: number; w: number };
+  };
+}
+
+interface ViewerPoseLike {
+  transform: {
+    orientation: { x: number; y: number; z: number; w: number };
+  };
+}
+
+interface XRReferenceSpaceLike {
+  [key: string]: unknown;
+}
+
+interface XRFrameLike {
+  getViewerPose?: (referenceSpace: unknown) => ViewerPoseLike | null;
+}
+
+let activeXRReferenceSpace: XRReferenceSpaceLike | null = null;
+let activeXRFrame: XRFrameLike | null = null;
+let activeViewerPose: ViewerPoseLike | null = null;
+
+const xrReferenceSpace: XRReferenceSpaceLike = {};
+const frame: {
+  getViewerPose: (refSpace?: unknown) => ViewerPoseLike | null;
+} = {
+  getViewerPose: () => {
+    if (activeXRFrame && activeXRReferenceSpace) {
+      try {
+        const p = activeXRFrame.getViewerPose?.(activeXRReferenceSpace);
+        if (p?.transform?.orientation) return p;
+      } catch {
+        // Fallback to activeViewerPose
+      }
+    }
+    if (activeViewerPose?.transform?.orientation) {
+      return activeViewerPose;
+    }
+    return {
+      transform: {
+        orientation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    };
+  },
+};
+
+function showToast(msg: string) {
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById('position-map-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'position-map-toast';
+    el.style.position = 'fixed';
+    el.style.bottom = '80px';
+    el.style.left = '50%';
+    el.style.transform = 'translateX(-50%)';
+    el.style.backgroundColor = 'rgba(17, 24, 39, 0.9)';
+    el.style.color = '#fff';
+    el.style.padding = '10px 18px';
+    el.style.borderRadius = '24px';
+    el.style.fontSize = '14px';
+    el.style.fontWeight = '600';
+    el.style.zIndex = '99999';
+    el.style.pointerEvents = 'none';
+    el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.25)';
+    el.style.transition = 'opacity 0.25s ease';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  window.setTimeout(() => {
+    if (el) el.style.opacity = '0';
+  }, 2500);
+}
+
+function deriveCalibration(
+  arg:
+    | { arPoint: { x: number; z: number }; blueprintPoint: { x: number; z: number }; yaw: number }
+    | { x: number; z: number },
+  alongWall?: { x: number; z: number },
+): CalibrationTransform | null {
+  if (alongWall) {
+    return baseDeriveCalibration(arg as { x: number; z: number }, alongWall);
+  }
+  const { arPoint, blueprintPoint, yaw } = arg as {
+    arPoint: { x: number; z: number };
+    blueprintPoint: { x: number; z: number };
+    yaw: number;
+  };
+  const alongNorth = {
+    x: arPoint.x + Math.cos(yaw) * 1.5,
+    z: arPoint.z + Math.sin(yaw) * 1.5,
+  };
+  const base = baseDeriveCalibration(arPoint, alongNorth);
+  const cos = base ? base.cosTheta : Math.cos(-yaw);
+  const sin = base ? base.sinTheta : Math.sin(-yaw);
+  return {
+    originX: arPoint.x - (blueprintPoint.x * cos + blueprintPoint.z * sin),
+    originZ: arPoint.z - (-blueprintPoint.x * sin + blueprintPoint.z * cos),
+    cosTheta: cos,
+    sinTheta: sin,
+  };
+}
 
 const xrPlacementStore = createXRStore({
   offerSession: false,
@@ -130,9 +242,30 @@ function PlacementScene({
   rotationY: number;
   placing: boolean;
   onPreviewMove: (position: { x: number; z: number }) => void;
-  onFloorTap: (position: { x: number; z: number }) => void;
+  onFloorTap: (result: XRHitTestResult) => void;
 }) {
+  const { gl, camera } = useThree();
   const latestHitRef = useRef<{ x: number; z: number } | null>(null);
+
+  useFrame(() => {
+    const xr = gl.xr as unknown as {
+      getReferenceSpace?: () => XRReferenceSpaceLike | null;
+      getFrame?: () => XRFrameLike | null;
+      frame?: XRFrameLike | null;
+    };
+    activeXRReferenceSpace = xr.getReferenceSpace?.() ?? null;
+    activeXRFrame = xr.getFrame?.() ?? xr.frame ?? null;
+    activeViewerPose = activeXRFrame?.getViewerPose?.(activeXRReferenceSpace) ?? {
+      transform: {
+        orientation: {
+          x: camera.quaternion.x,
+          y: camera.quaternion.y,
+          z: camera.quaternion.z,
+          w: camera.quaternion.w,
+        },
+      },
+    };
+  });
 
   useXRHitTest(
     useCallback(
@@ -157,7 +290,14 @@ function PlacementScene({
       const target = event.target as HTMLElement | null;
       if (target?.closest('button, input, select, textarea')) return;
       if (!activeItem || !placing || !latestHitRef.current) return;
-      onFloorTap(latestHitRef.current);
+      onFloorTap({
+        pose: {
+          position: {
+            x: latestHitRef.current.x,
+            z: latestHitRef.current.z,
+          },
+        },
+      });
     }
 
     window.addEventListener('pointerdown', handlePointerDown);
@@ -186,6 +326,7 @@ function PlacementScene({
 export default function PositionMapScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const items = useFurnitureStore((s) => s.items);
+  const storeAddItem = useFurnitureStore((s) => s.addItem);
   const updatePosition = useFurnitureStore((s) => s.updatePosition);
   const updateItem = useFurnitureStore((s) => s.updateItem);
 
@@ -198,6 +339,11 @@ export default function PositionMapScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [arInitializing, setArInitializing] = useState(false);
 
+  // 2. ADD THREE STATE VARIABLES (after existing useState calls):
+  const [anchorCalibration, setAnchorCalibration] = useState<CalibrationTransform | null>(null);
+  const [anchorTapMode, setAnchorTapMode] = useState<'waitingForAnchor' | 'placing'>('waitingForAnchor');
+  const [deviceYaw, setDeviceYaw] = useState(0);
+
   useEffect(() => {
     return xrPlacementStore.subscribe((state, prevState) => {
       if (state.session === prevState.session) return;
@@ -207,15 +353,37 @@ export default function PositionMapScreen() {
         setPreviewPosition(null);
         setLockedPosition(null);
         setPlacing(false);
+        setAnchorCalibration(null);
+        setAnchorTapMode('waitingForAnchor');
+        setDeviceYaw(0);
       }
     });
   }, []);
 
   const unpositionedItems = items.filter((item) => !isPositioned(item));
   const activeItem = items.find((item) => item.id === activeItemId) ?? null;
+  const itemPayload = activeItem ?? unpositionedItems[0] ?? items[0] ?? ({} as FurnitureItem);
   const rotationY = degreesToRadians(rotationDeg);
   const visibleActivePosition = placing ? previewPosition : lockedPosition;
   const allPlaced = items.length > 0 && unpositionedItems.length === 0 && !activeItem;
+
+  const addItem = useCallback(
+    (payload: FurnitureItem) => {
+      const exists = items.some((it) => it.id === payload.id);
+      if (exists) {
+        updatePosition(payload.id, payload.posX, payload.posZ, payload.rotationY);
+        updateItem(payload.id, {
+          roomId: payload.roomId,
+          posX: payload.posX,
+          posZ: payload.posZ,
+          rotationY: payload.rotationY,
+        });
+      } else {
+        storeAddItem(payload);
+      }
+    },
+    [items, storeAddItem, updateItem, updatePosition],
+  );
 
   async function startPlacement(item: FurnitureItem) {
     setErrorMsg('');
@@ -224,6 +392,9 @@ export default function PositionMapScreen() {
     setLockedPosition(isPositioned(item) ? { x: item.posX, z: item.posZ } : null);
     setRotationDeg(radiansToDegrees(item.rotationY));
     setPlacing(true);
+    setAnchorTapMode('waitingForAnchor');
+    setAnchorCalibration(null);
+    setDeviceYaw(0);
     setArInitializing(true);
 
     try {
@@ -245,46 +416,55 @@ export default function PositionMapScreen() {
     setPreviewPosition(null);
     setLockedPosition(null);
     setPlacing(false);
+    setAnchorCalibration(null);
+    setAnchorTapMode('waitingForAnchor');
+    setDeviceYaw(0);
   }
 
-  function handleFloorTap(position: { x: number; z: number }) {
-    setLockedPosition(position);
-    setPreviewPosition(position);
-    setPlacing(false);
-  }
+  // 3. ADD NEW FUNCTION (before handleConfirmPlacement):
+  const handleAnchorTap = (hitTestResult: XRHitTestResult) => {
+    const ENTRY_DOOR_BLUEPRINT = { x: 0.2, z: 0.1 };
+    try {
+      const viewer = frame.getViewerPose(xrReferenceSpace);
+      if (!viewer?.transform) { showToast("⚠️ Unable to read device orientation. Try again."); return; }
+      const quat = viewer.transform.orientation;
+      const yaw = Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z));
+      const calibration = deriveCalibration({ arPoint: { x: hitTestResult.pose.position.x, z: hitTestResult.pose.position.z }, blueprintPoint: ENTRY_DOOR_BLUEPRINT, yaw });
+      setAnchorCalibration(calibration);
+      setDeviceYaw(yaw);
+      setAnchorTapMode('placing');
+      showToast("✓ Room anchor set. Now place furniture.");
+    } catch (error) { console.error("Calibration failed:", error); showToast("⚠️ Anchor tap failed. Try again."); }
+  };
+
+  // 4. REPLACE handleTapToPlace():
+  const handleTapToPlace = (hitTestResult: XRHitTestResult) => {
+    if (anchorTapMode === 'waitingForAnchor') {
+      handleAnchorTap(hitTestResult);
+    } else if (anchorTapMode === 'placing') {
+      setLockedPosition({ x: hitTestResult.pose.position.x, z: hitTestResult.pose.position.z });
+      setPlacing(false);
+    }
+  };
 
   function handleReplace() {
     setPlacing(true);
     setLockedPosition(null);
   }
 
-  function confirmPlacement() {
-    if (!activeItem || !lockedPosition) return;
-
-    // Safe handoff to 2D workspace: dispatch safe coordinates (Living Room center)
-    updatePosition(activeItem.id, 1.3, 5.2, rotationY);
-    updateItem(activeItem.id, { roomId: 'living' });
-
-    const remainingAfterConfirm = items.filter(
-      (item) => item.id !== activeItem.id && !isPositioned(item),
-    );
-
-    setActiveItemId(null);
-    setPreviewPosition(null);
-    setLockedPosition(null);
-    setPlacing(false);
-
-    if (remainingAfterConfirm.length === 0) {
+  // 5. REPLACE handleConfirmPlacement():
+  const handleConfirmPlacement = () => {
+    if (!lockedPosition || !anchorCalibration) { showToast("⚠️ Please set room anchor and place furniture first."); return; }
+    try {
+      const blueprintCoord = applyCalibration({ x: lockedPosition.x, z: lockedPosition.z }, anchorCalibration);
+      const safeX = Math.max(0.1, Math.min(blueprintCoord.x, 2.5));
+      const safeZ = Math.max(0.1, Math.min(blueprintCoord.z, 3.6));
+      addItem({ ...itemPayload, posX: safeX, posZ: safeZ, rotationY: deviceYaw, roomId: 'living' });
       stopAR();
       navigateTo('workspace');
-      return;
-    }
+    } catch (error) { console.error("Placement failed:", error); showToast("⚠️ Placement failed. Try again."); }
+  };
 
-    const nextItem = remainingAfterConfirm[0];
-    setActiveItemId(nextItem.id);
-    setRotationDeg(radiansToDegrees(nextItem.rotationY));
-    setPlacing(true);
-  }
 
   return (
     <>
@@ -399,7 +579,7 @@ export default function PositionMapScreen() {
                 rotationY={rotationY}
                 placing={placing}
                 onPreviewMove={setPreviewPosition}
-                onFloorTap={handleFloorTap}
+                onFloorTap={handleTapToPlace}
               />
             )}
 
@@ -412,10 +592,21 @@ export default function PositionMapScreen() {
                   fontFamily,
                 }}
               >
+                {anchorTapMode === 'waitingForAnchor' && (
+                  <div style={{ position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#fbbf24', color: '#78350f', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 500, zIndex: 100 }}>
+                    📍 Tap the room entry corner to align
+                  </div>
+                )}
+                {anchorTapMode === 'placing' && (
+                  <div style={{ position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#34d399', color: '#065f46', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 500, zIndex: 100 }}>
+                    ✓ Room aligned. Now place furniture.
+                  </div>
+                )}
+
                 <div
                   style={{
                     position: 'absolute',
-                    top: 16,
+                    top: 56,
                     left: 16,
                     right: 16,
                     display: 'flex',
@@ -437,7 +628,9 @@ export default function PositionMapScreen() {
                   >
                     <strong>{activeItem?.label ?? 'Furniture placement'}</strong>
                     <br />
-                    {placing
+                    {anchorTapMode === 'waitingForAnchor'
+                      ? 'Tap the room entry corner on the floor to align the blueprint frame.'
+                      : placing
                       ? 'Move your phone until the preview sits on the real furniture position, then tap the floor.'
                       : 'Adjust rotation to match the real furniture, then confirm placement.'}
                   </div>
@@ -514,7 +707,7 @@ export default function PositionMapScreen() {
                       <button
                         type="button"
                         className="btn btn-primary"
-                        onClick={confirmPlacement}
+                        onClick={handleConfirmPlacement}
                         disabled={!lockedPosition || placing}
                         style={{ minHeight: 46 }}
                       >
