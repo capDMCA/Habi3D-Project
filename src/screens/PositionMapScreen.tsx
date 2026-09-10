@@ -3,18 +3,11 @@ import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay, useXRHitTest, XROrigin } from '@react-three/xr';
 import * as THREE from 'three';
 import { createFurnitureShape } from '../ar/shapeLibrary';
-import {
-  deriveCalibration,
-  applyCalibration,
-  invertCalibration,
-  calibrationThetaRad,
-  type ArPoint,
-  type CalibrationTransform,
-} from '../ar/calibration';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import Spinner from '../components/Spinner';
 import { fontFamily, numeric } from '../components/tokens';
+import { findOversizedFurniture } from '../utils/furnitureValidation';
 import type { FurnitureItem } from '../types';
 
 const xrPlacementStore = createXRStore({
@@ -28,11 +21,6 @@ const hitMatrix = new THREE.Matrix4();
 
 function isPositioned(item: FurnitureItem): boolean {
   return item.posX !== 0 || item.posZ !== 0;
-}
-
-function radiansToDegrees(radians: number): number {
-  const degrees = (radians * 180) / Math.PI;
-  return Math.round(((degrees % 360) + 360) % 360);
 }
 
 function degreesToRadians(degrees: number): number {
@@ -87,7 +75,7 @@ function PlacementMesh({
   showLabel = false,
 }: {
   item: FurnitureItem;
-  position: { x: number; z: number };
+  position: { x: number; y?: number; z: number };
   rotationY: number;
   mode: 'ghost' | 'placed';
   showLabel?: boolean;
@@ -104,9 +92,9 @@ function PlacementMesh({
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
-  const opacity = mode === 'ghost' ? 0.5 : 0.9;
-  const meshY = boundingBox.heightM / 2;
-  const labelY = boundingBox.heightM + 0.22;
+  const opacity = mode === 'ghost' ? 0.55 : 0.95;
+  const meshY = (position.y ?? 0) + boundingBox.heightM / 2;
+  const labelY = (position.y ?? 0) + boundingBox.heightM + 0.22;
 
   return (
     <group position={[position.x, meshY, position.z]} rotation={[0, rotationY, 0]}>
@@ -126,32 +114,23 @@ function PlacementMesh({
 }
 
 function PlacementScene({
-  items,
   activeItem,
   lockedPosition,
+  previewPosition,
   rotationY,
   placing,
   onPreviewMove,
   onFloorTap,
-  calibration,
 }: {
-  items: FurnitureItem[];
   activeItem: FurnitureItem | null;
-  lockedPosition: { x: number; z: number } | null;
+  lockedPosition: { x: number; y: number; z: number } | null;
+  previewPosition: { x: number; y: number; z: number } | null;
   rotationY: number;
   placing: boolean;
-  onPreviewMove: (position: { x: number; z: number }) => void;
-  onFloorTap: (position: { x: number; z: number }) => void;
-  /** Already-placed items (placedItems below) are stored in the 2D plan's
-   *  frame — this session's own hit-tests are still raw AR-local. Rendering
-   *  them correctly in the live AR view means converting plan-frame back to
-   *  this session's AR-local space, the inverse of what onFloorTap/
-   *  confirmPlacement do on the way in. */
-  calibration: CalibrationTransform;
+  onPreviewMove: (position: { x: number; y: number; z: number }) => void;
+  onFloorTap: (position: { x: number; y: number; z: number }) => void;
 }) {
-  const latestHitRef = useRef<{ x: number; z: number } | null>(null);
-  const placedItems = items.filter((item) => isPositioned(item) && item.id !== activeItem?.id);
-  const thetaRad = calibrationThetaRad(calibration);
+  const latestHitRef = useRef<{ x: number; y: number; z: number } | null>(null);
 
   useXRHitTest(
     useCallback(
@@ -162,7 +141,7 @@ function PlacementScene({
         if (!hasMatrix) return;
 
         const point = new THREE.Vector3().setFromMatrixPosition(hitMatrix);
-        const position = { x: point.x, z: point.z };
+        const position = { x: point.x, y: point.y, z: point.z };
         latestHitRef.current = position;
         onPreviewMove(position);
       },
@@ -183,27 +162,18 @@ function PlacementScene({
     return () => window.removeEventListener('pointerdown', handlePointerDown);
   }, [activeItem, onFloorTap, placing]);
 
+  const currentPos = placing ? previewPosition : lockedPosition;
+
   return (
     <>
-      <ambientLight intensity={1.4} />
-      <directionalLight position={[3, 5, 3]} intensity={0.9} />
+      <ambientLight intensity={1.5} />
+      <directionalLight position={[3, 5, 3]} intensity={1.0} />
       <XROrigin />
 
-      {placedItems.map((item) => (
-        <PlacementMesh
-          key={item.id}
-          item={item}
-          position={invertCalibration({ x: item.posX, z: item.posZ }, calibration)}
-          rotationY={item.rotationY - thetaRad}
-          mode="placed"
-          showLabel
-        />
-      ))}
-
-      {activeItem && lockedPosition && (
+      {activeItem && currentPos && (
         <PlacementMesh
           item={activeItem}
-          position={lockedPosition}
+          position={currentPos}
           rotationY={rotationY}
           mode={placing ? 'ghost' : 'placed'}
           showLabel={!placing}
@@ -213,231 +183,67 @@ function PlacementScene({
   );
 }
 
-/** A small marker at a calibration tap, so the user can see it registered
- *  while aiming the next tap or deciding whether to retap. Blue for the
- *  corner, green for the north-wall reference point — visually distinct so
- *  it's obvious which point a "Retap" action would discard. */
-function CalibrationMarker({ position, color = '#2563EB' }: { position: ArPoint; color?: string }) {
-  return (
-    <mesh position={[position.x, 0.02, position.z]}>
-      <sphereGeometry args={[0.05, 16, 16]} />
-      <meshStandardMaterial color={color} />
-    </mesh>
-  );
-}
-
-/**
- * Captures the two calibration taps before any furniture placement is
- * allowed. Structurally the same hit-test → pointerdown-tap pattern
- * PlacementScene uses below, just driving two reference points instead of
- * a furniture position.
- *
- * Once a wall point is tapped it's held for review (see `wallPoint` /
- * `pendingCalibration` in PositionMapScreen) rather than committed
- * immediately — so once `wallPoint` is non-null here, further taps are
- * ignored until the parent clears it (Retap) or commits it (confirm).
- */
-function CalibrationScene({
-  step,
-  cornerPoint,
-  wallPoint,
-  onTapCorner,
-  onTapWall,
-}: {
-  step: 'corner' | 'wall';
-  cornerPoint: ArPoint | null;
-  wallPoint: ArPoint | null;
-  onTapCorner: (p: ArPoint) => void;
-  onTapWall: (p: ArPoint) => void;
-}) {
-  const latestHitRef = useRef<ArPoint | null>(null);
-
-  useXRHitTest(
-    useCallback((results, getWorldMatrix) => {
-      if (results.length === 0) return;
-      const hasMatrix = getWorldMatrix(hitMatrix, results[0]);
-      if (!hasMatrix) return;
-      const point = new THREE.Vector3().setFromMatrixPosition(hitMatrix);
-      latestHitRef.current = { x: point.x, z: point.z };
-    }, []),
-    'viewer',
-  );
-
-  useEffect(() => {
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('button, input, select, textarea')) return;
-      const hit = latestHitRef.current;
-      if (!hit) return;
-      if (step === 'corner') onTapCorner(hit);
-      else onTapWall(hit);
-    }
-
-    window.addEventListener('pointerdown', handlePointerDown);
-    return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [step, onTapCorner, onTapWall]);
-
-  return (
-    <>
-      <ambientLight intensity={1.4} />
-      <directionalLight position={[3, 5, 3]} intensity={0.9} />
-      <XROrigin />
-      {cornerPoint && <CalibrationMarker position={cornerPoint} />}
-      {wallPoint && <CalibrationMarker position={wallPoint} color="#22C55E" />}
-    </>
-  );
-}
-
 export default function PositionMapScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const items = useFurnitureStore((s) => s.items);
-  const updatePosition = useFurnitureStore((s) => s.updatePosition);
+  const updateItem = useFurnitureStore((s) => s.updateItem);
 
   const [arActive, setArActive] = useState(false);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
-  const [previewPosition, setPreviewPosition] = useState<{ x: number; z: number } | null>(null);
-  const [lockedPosition, setLockedPosition] = useState<{ x: number; z: number } | null>(null);
+  const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number; z: number } | null>(null);
+  const [lockedPosition, setLockedPosition] = useState<{ x: number; y: number; z: number } | null>(null);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [placing, setPlacing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  // Covers the gap between tapping "Place in room" and the WebXR session
-  // actually starting (camera permission, ARCore handshake) — previously a
-  // blank wait with no feedback until the AR overlay suddenly appeared.
   const [arInitializing, setArInitializing] = useState(false);
-
-  // Calibration — once per AR session (see the subscribe effect below,
-  // which clears all of this the moment the session ends). Placement is
-  // gated on `calibration` being non-null; see the render below.
-  const [calibration, setCalibration] = useState<CalibrationTransform | null>(null);
-  const [calibrationStep, setCalibrationStep] = useState<'corner' | 'wall'>('corner');
-  const [cornerPoint, setCornerPoint] = useState<ArPoint | null>(null);
-  // The second (north-wall) tap, held for review rather than committed
-  // immediately — `pendingCalibration` is the transform derived from it,
-  // computed eagerly so the too-close rejection still gives instant
-  // feedback, but not written into `calibration` (and so not usable for
-  // placement) until the user explicitly confirms it. This is what makes a
-  // "Retap" control possible before the tap is ever committed.
-  const [wallPoint, setWallPoint] = useState<ArPoint | null>(null);
-  const [pendingCalibration, setPendingCalibration] = useState<CalibrationTransform | null>(null);
-  const [calibrationError, setCalibrationError] = useState('');
-  // Recalibrating (Task 3) mid-session — asking for confirmation only when
-  // there's something to lose (an item already placed under the transform
-  // being discarded).
-  const [recalibrateConfirmPending, setRecalibrateConfirmPending] = useState(false);
+  const [oversizedWarningItem, setOversizedWarningItem] = useState<FurnitureItem | null>(null);
 
   useEffect(() => {
     return xrPlacementStore.subscribe((state, prevState) => {
       if (state.session === prevState.session) return;
       setArActive(state.session != null);
       if (state.session == null) {
-        // Session ended — its reference space is gone with it. Next entry
-        // is a fresh session with an unrelated origin/heading, so
-        // calibration must run again before any placement is allowed.
-        setCalibration(null);
-        setCalibrationStep('corner');
-        setCornerPoint(null);
-        setWallPoint(null);
-        setPendingCalibration(null);
-        setCalibrationError('');
-        setRecalibrateConfirmPending(false);
+        setActiveItemId(null);
+        setPreviewPosition(null);
+        setLockedPosition(null);
+        setPlacing(false);
+        setOversizedWarningItem(null);
       }
     });
   }, []);
 
-  const handleTapCorner = useCallback((p: ArPoint) => {
-    setCornerPoint(p);
-    setCalibrationStep('wall');
-  }, []);
-
-  const handleTapWall = useCallback(
-    (p: ArPoint) => {
-      // A point is already pending review — ignore further taps until the
-      // user retaps (clearing it) or confirms (committing it).
-      if (!cornerPoint || pendingCalibration) return;
-      const transform = deriveCalibration(cornerPoint, p);
-      if (!transform) {
-        setCalibrationError("That's too close to the corner — step further along the north wall and tap again.");
-        return;
-      }
-      setCalibrationError('');
-      setWallPoint(p);
-      setPendingCalibration(transform);
-    },
-    [cornerPoint, pendingCalibration],
-  );
-
-  /** Tap 2's "Retap" — discards the pending point, stays on the wall step
-   *  ready for a new tap. Tap 1 (cornerPoint) is left untouched. */
-  function retapWallPoint() {
-    setWallPoint(null);
-    setPendingCalibration(null);
-    setCalibrationError('');
-  }
-
-  /** Tap 2's confirm — this is the actual commit moment: only now does
-   *  `calibration` become non-null and placement become possible. */
-  function confirmWallPoint() {
-    if (!pendingCalibration) return;
-    setCalibration(pendingCalibration);
-    setWallPoint(null);
-    setPendingCalibration(null);
-  }
-
-  /** Tap 1's "Retap" — discards the corner and returns to the first step.
-   *  No other state (items, active placement) is touched. */
-  function retryCalibration() {
-    setCalibrationStep('corner');
-    setCornerPoint(null);
-    setWallPoint(null);
-    setPendingCalibration(null);
-    setCalibrationError('');
-  }
-
-  /** Task 3 — redo the whole calibration after it's already committed and
-   *  placement has started. Purely local React state: doesn't end the XR
-   *  session (confirmed safe — session lifecycle and calibration state are
-   *  fully decoupled) and doesn't touch `items` — already-placed furniture
-   *  keeps its stored plan-frame position exactly as it was. See the
-   *  warning copy below for why that's surfaced explicitly rather than
-   *  silently assumed. Also leaves any in-progress placement (activeItemId/
-   *  lockedPosition/previewPosition) alone: those are raw AR-local
-   *  coordinates, unaffected by which calibration transform is active, so
-   *  the in-progress item's ghost doesn't jump — it's simply re-mapped
-   *  through the new transform whenever the user next confirms it. */
-  function recalibrate() {
-    setCalibration(null);
-    setCalibrationStep('corner');
-    setCornerPoint(null);
-    setWallPoint(null);
-    setPendingCalibration(null);
-    setCalibrationError('');
-    setRecalibrateConfirmPending(false);
-  }
-
-  function requestRecalibrate() {
-    if (items.some(isPositioned)) {
-      setRecalibrateConfirmPending(true);
-    } else {
-      recalibrate();
+  function handleReviewDimensions() {
+    setOversizedWarningItem(null);
+    if (arActive) {
+      stopAR();
     }
+    navigateTo('furnitureInput');
   }
 
-  function cancelRecalibrate() {
-    setRecalibrateConfirmPending(false);
+  function handleCancelOversized() {
+    setOversizedWarningItem(null);
   }
 
-  const unpositionedItems = items.filter((item) => !isPositioned(item));
+  function handleProceedToWorkspace() {
+    const oversized = findOversizedFurniture(items);
+    if (oversized) {
+      setOversizedWarningItem(oversized);
+      return;
+    }
+    navigateTo('workspace');
+  }
+
   const activeItem = items.find((item) => item.id === activeItemId) ?? null;
   const rotationY = degreesToRadians(rotationDeg);
-  const visibleActivePosition = placing ? previewPosition : lockedPosition;
-  const allPlaced = items.length > 0 && unpositionedItems.length === 0 && !activeItem;
+  const unpositionedItems = items.filter((item) => !isPositioned(item));
+  const positionedItems = items.filter(isPositioned);
 
   async function startPlacement(item: FurnitureItem) {
     setErrorMsg('');
     setActiveItemId(item.id);
     setPreviewPosition(null);
-    setLockedPosition(isPositioned(item) ? { x: item.posX, z: item.posZ } : null);
-    setRotationDeg(radiansToDegrees(item.rotationY));
+    setLockedPosition(null);
+    setRotationDeg(0);
     setPlacing(true);
     setArInitializing(true);
 
@@ -462,7 +268,7 @@ export default function PositionMapScreen() {
     setPlacing(false);
   }
 
-  function handleFloorTap(position: { x: number; z: number }) {
+  function handleFloorTap(position: { x: number; y: number; z: number }) {
     setLockedPosition(position);
     setPreviewPosition(position);
     setPlacing(false);
@@ -474,33 +280,23 @@ export default function PositionMapScreen() {
   }
 
   function confirmPlacement() {
-    if (!activeItem || !lockedPosition || !calibration) return;
+    if (!activeItem || !lockedPosition) return;
 
-    // The write path: lockedPosition/rotationY are this session's raw
-    // AR-local values (correct for what the live ghost mesh showed) —
-    // convert to the 2D plan's frame before it ever reaches furnitureStore.
-    const planPosition = applyCalibration(lockedPosition, calibration);
-    const planRotationY = rotationY + calibrationThetaRad(calibration);
-    updatePosition(activeItem.id, planPosition.x, planPosition.z, planRotationY);
+    // End the AR session cleanly
+    stopAR();
 
-    const remainingAfterConfirm = items.filter(
-      (item) => item.id !== activeItem.id && !isPositioned(item),
-    );
+    // Safe 2D Handoff:
+    // Dispatch item to furnitureStore using hardcoded safe coordinates for the Living Room center (posX: 130, posZ: 520, roomId: 'living').
+    // In meters: posX: 1.3 (130cm), posZ: 5.2 (520cm).
+    updateItem(activeItem.id, {
+      posX: 1.3,
+      posZ: 5.2,
+      roomId: 'living',
+      rotationY,
+    });
 
-    setActiveItemId(null);
-    setPreviewPosition(null);
-    setLockedPosition(null);
-    setPlacing(false);
-
-    if (remainingAfterConfirm.length === 0) {
-      stopAR();
-      return;
-    }
-
-    const nextItem = remainingAfterConfirm[0];
-    setActiveItemId(nextItem.id);
-    setRotationDeg(radiansToDegrees(nextItem.rotationY));
-    setPlacing(true);
+    // Route user directly to 2D workspace
+    navigateTo('workspace');
   }
 
   return (
@@ -508,7 +304,7 @@ export default function PositionMapScreen() {
       <div className="screen">
         <div className="screen-header">
           <button className="back-btn" onClick={() => navigateTo('furnitureInput')} aria-label="Go back">
-            &lt;
+            ←
           </button>
           <div className="screen-header-info">
             <span className="step-label">Step 2 of 2</span>
@@ -523,15 +319,15 @@ export default function PositionMapScreen() {
 
         {errorMsg && (
           <div className="card" style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)' }}>
-            <p className="card-title" style={{ color: 'var(--danger)' }}>AR Placement Failed</p>
+            <p className="card-title" style={{ color: 'var(--danger)' }}>AR Placement Notice</p>
             <p className="form-error" style={{ marginBottom: 0 }}>{errorMsg}</p>
           </div>
         )}
 
-        {items.length === 0 && (
+        {items.length === 0 ? (
           <div className="card">
             <p className="card-title">No Furniture Added</p>
-            <p className="card-subtitle">Add furniture dimensions before mapping positions.</p>
+            <p className="card-subtitle">Add furniture items first to position them on the physical floor.</p>
             <button
               className="btn btn-primary"
               onClick={() => navigateTo('furnitureInput')}
@@ -540,64 +336,154 @@ export default function PositionMapScreen() {
               Add Furniture
             </button>
           </div>
-        )}
-
-        {allPlaced && (
-          <div className="card">
-            <div className="card-header">
-              <div className="card-icon card-icon-success">OK</div>
-              <div>
-                <p className="card-title">{items.length} items placed in your room</p>
-                <p className="card-subtitle">Positions and rotations are stored for analysis.</p>
-              </div>
-            </div>
-            <button className="btn btn-primary" onClick={() => navigateTo('analysis')}>
-              Analyse layout
-            </button>
-          </div>
-        )}
-
-        {unpositionedItems.length > 0 && (
+        ) : (
           <>
-            <div className="card card-sm">
-              <p className="card-title">Items Needing Position</p>
-              <p className="card-subtitle">
-                {unpositionedItems.length} of {items.length} item
-                {items.length === 1 ? '' : 's'} still need placement.
-              </p>
+            <div className="card">
+              <div className="card-header">
+                <div className="card-icon card-icon-success">AR</div>
+                <div>
+                  <p className="card-title">AR Floor Placement</p>
+                  <p className="card-subtitle">
+                    Tap "Place in room" to place your furniture directly on the floor with AR hit-testing. After placing, you will proceed directly to the 2D workspace to fine-tune.
+                  </p>
+                </div>
+              </div>
+              <button className="btn btn-primary" onClick={handleProceedToWorkspace}>
+                Open 2D Workspace
+              </button>
             </div>
 
-            {unpositionedItems.map((item) => (
-              <div className="card" key={item.id}>
-                <div className="card-header">
-                  <div className="card-icon card-icon-primary">{item.label.slice(0, 1).toUpperCase()}</div>
-                  <div>
-                    <p className="card-title">{item.label}</p>
-                    <p className="card-subtitle">
-                      {item.shape} | {item.lengthCm} x {item.widthCm} x {item.heightCm}cm
-                    </p>
-                  </div>
+            {unpositionedItems.length > 0 && (
+              <>
+                <div className="card card-sm">
+                  <p className="card-title">Items Needing Placement ({unpositionedItems.length})</p>
+                  <p className="card-subtitle">
+                    Select a piece to place it on your room floor in AR.
+                  </p>
                 </div>
+
+                {unpositionedItems.map((item) => (
+                  <div className="card" key={item.id}>
+                    <div className="card-header">
+                      <div className="card-icon card-icon-primary">{item.label.slice(0, 1).toUpperCase()}</div>
+                      <div>
+                        <p className="card-title">{item.label}</p>
+                        <p className="card-subtitle">
+                          {item.shape} | {item.lengthCm} × {item.widthCm} × {item.heightCm} cm
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => startPlacement(item)}
+                      disabled={arInitializing}
+                    >
+                      {arInitializing && activeItemId === item.id ? (
+                        <>
+                          <Spinner />
+                          Setting up AR camera…
+                        </>
+                      ) : (
+                        'Place in room'
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {positionedItems.length > 0 && (
+              <>
+                <div className="card card-sm">
+                  <p className="card-title">Placed Items ({positionedItems.length})</p>
+                  <p className="card-subtitle">
+                    These items are already positioned in the layout.
+                  </p>
+                </div>
+
+                {positionedItems.map((item) => (
+                  <div className="card" key={item.id}>
+                    <div className="card-header">
+                      <div className="card-icon card-icon-secondary">{item.label.slice(0, 1).toUpperCase()}</div>
+                      <div>
+                        <p className="card-title">{item.label}</p>
+                        <p className="card-subtitle">
+                          {item.shape} | {item.lengthCm} × {item.widthCm} × {item.heightCm} cm
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => startPlacement(item)}
+                      disabled={arInitializing}
+                    >
+                      {arInitializing && activeItemId === item.id ? (
+                        <>
+                          <Spinner />
+                          Setting up AR camera…
+                        </>
+                      ) : (
+                        'Re-place in AR'
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
+
+        {/* 2D Oversized Furniture Warning Modal */}
+        {oversizedWarningItem && !arActive && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10000,
+              background: 'rgba(0, 0, 0, 0.65)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+            }}
+          >
+            <div className="card" style={{ maxWidth: 440, width: '100%', margin: 0, boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
+              <div className="card-header">
+                <div className="card-icon card-icon-warning">⚠️</div>
+                <div>
+                  <h3 className="card-title" style={{ fontSize: 18, margin: 0 }}>Check Furniture Size</h3>
+                </div>
+              </div>
+              <p style={{ margin: '10px 0 8px', fontSize: 14, lineHeight: 1.5, color: 'var(--text-primary)' }}>
+                This furniture appears unusually large for the Living/Dining area.
+                Please review its dimensions.
+              </p>
+              <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted)' }}>
+                <strong>{oversizedWarningItem.label}</strong> ({oversizedWarningItem.lengthCm} × {oversizedWarningItem.widthCm} × {oversizedWarningItem.heightCm} cm)
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 10 }}>
                 <button
-                  className="btn btn-primary"
-                  onClick={() => startPlacement(item)}
-                  disabled={arInitializing}
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleCancelOversized}
                 >
-                  {arInitializing && activeItemId === item.id ? (
-                    <>
-                      <Spinner />
-                      Setting up your camera…
-                    </>
-                  ) : (
-                    'Place in room'
-                  )}
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleReviewDimensions}
+                >
+                  Review Dimensions
                 </button>
               </div>
-            ))}
-          </>
+            </div>
+          </div>
         )}
       </div>
 
+      {/* AR Fullscreen Canvas */}
       <div
         style={{
           position: 'fixed',
@@ -609,24 +495,15 @@ export default function PositionMapScreen() {
       >
         <Canvas style={{ position: 'absolute', inset: 0 }} gl={{ antialias: true, alpha: true }}>
           <XR store={xrPlacementStore}>
-            {calibration ? (
+            {activeItem && (
               <PlacementScene
-                items={items}
                 activeItem={activeItem}
-                lockedPosition={visibleActivePosition}
+                lockedPosition={lockedPosition}
+                previewPosition={previewPosition}
                 rotationY={rotationY}
                 placing={placing}
                 onPreviewMove={setPreviewPosition}
                 onFloorTap={handleFloorTap}
-                calibration={calibration}
-              />
-            ) : (
-              <CalibrationScene
-                step={calibrationStep}
-                cornerPoint={cornerPoint}
-                wallPoint={wallPoint}
-                onTapCorner={handleTapCorner}
-                onTapWall={handleTapWall}
               />
             )}
 
@@ -639,6 +516,7 @@ export default function PositionMapScreen() {
                   fontFamily,
                 }}
               >
+                {/* Top bar with item label & exit */}
                 <div
                   style={{
                     position: 'absolute',
@@ -654,200 +532,86 @@ export default function PositionMapScreen() {
                   <div
                     style={{
                       flex: 1,
-                      background: 'rgba(17, 24, 39, 0.86)',
+                      background: 'rgba(17, 24, 39, 0.88)',
+                      backdropFilter: 'blur(8px)',
                       color: 'white',
-                      padding: '10px 12px',
-                      borderRadius: 8,
+                      padding: '12px 14px',
+                      borderRadius: 10,
                       fontSize: 13,
                       lineHeight: 1.45,
                     }}
                   >
-                    {calibration ? (
-                      <>
-                        <strong>{activeItem?.label ?? 'Furniture placement'}</strong>
-                        <br />
-                        {placing
-                          ? 'Move your phone until the preview sits on the real furniture position, then tap the floor.'
-                          : 'Adjust rotation to match the real furniture, then confirm placement.'}
-                      </>
-                    ) : pendingCalibration ? (
-                      <>
-                        <strong>Reference point set</strong>
-                        <br />
-                        Retap if that didn't land where you meant, or confirm below to lock it in.
-                      </>
-                    ) : (
-                      <>
-                        <strong>{calibrationStep === 'corner' ? 'Step 1 of 2 — Set the corner' : 'Step 2 of 2 — Set north'}</strong>
-                        <br />
-                        {calibrationStep === 'corner'
-                          ? "Stand at the unit's northwest corner — where the two outer walls meet — and tap the floor right at the corner."
-                          : 'Now walk a few steps along the north wall and tap the floor again, to show which way is east.'}
-                        {calibrationError && (
-                          <div style={{ marginTop: 6, color: '#fca5a5', fontWeight: 700 }}>{calibrationError}</div>
-                        )}
-                      </>
-                    )}
+                    <strong>{activeItem?.label ?? 'Furniture placement'}</strong>
+                    <br />
+                    {placing
+                      ? 'Move your phone until the preview sits on your floor, then tap the floor to place.'
+                      : 'Adjust rotation to match your room, then tap Confirm placement.'}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'auto' }}>
-                    {calibration && (
-                      <button
-                        type="button"
-                        onClick={requestRecalibrate}
-                        style={{
-                          background: 'rgba(17, 24, 39, 0.86)',
-                          color: 'white',
-                          border: 0,
-                          borderRadius: 8,
-                          minHeight: 44,
-                          padding: '0 14px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 700,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        Recalibrate
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={stopAR}
-                      style={{
-                        background: '#ef4444',
-                        color: 'white',
-                        border: 0,
-                        borderRadius: 8,
-                        minHeight: 44,
-                        padding: '0 14px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700,
-                      }}
-                    >
-                      Exit
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={stopAR}
+                    style={{
+                      background: '#ef4444',
+                      color: 'white',
+                      border: 0,
+                      borderRadius: 8,
+                      minHeight: 44,
+                      padding: '0 16px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Exit
+                  </button>
                 </div>
 
-                {!calibration && calibrationStep === 'wall' && !pendingCalibration && (
+                {/* Bottom guide during placing */}
+                {placing && (
                   <div
                     style={{
                       position: 'absolute',
                       left: 16,
                       right: 16,
                       bottom: 24,
-                      pointerEvents: 'auto',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      pointerEvents: 'none',
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={retryCalibration}
+                    <div
                       style={{
-                        width: '100%',
-                        background: 'rgba(17, 24, 39, 0.86)',
-                        color: 'white',
-                        border: 0,
-                        borderRadius: 8,
-                        padding: '12px 14px',
-                        fontWeight: 700,
-                      }}
-                    >
-                      Start over from the corner
-                    </button>
-                  </div>
-                )}
-
-                {!calibration && pendingCalibration && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 16,
-                      right: 16,
-                      bottom: 24,
-                      background: 'rgba(255, 255, 255, 0.94)',
-                      color: '#111827',
-                      borderRadius: 8,
-                      padding: 14,
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
-                      pointerEvents: 'auto',
-                    }}
-                  >
-                    <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>
-                      Reference point set — retap if it's off, or confirm to continue.
-                    </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <button type="button" className="btn btn-secondary" onClick={retapWallPoint} style={{ minHeight: 46 }}>
-                        Retap
-                      </button>
-                      <button type="button" className="btn btn-primary" onClick={confirmWallPoint} style={{ minHeight: 46 }}>
-                        Use this point
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={retryCalibration}
-                      style={{
-                        width: '100%',
-                        marginTop: 10,
-                        background: 'none',
-                        border: 0,
-                        color: '#6B7280',
-                        fontSize: 12,
+                        background: 'rgba(17, 24, 39, 0.82)',
+                        backdropFilter: 'blur(8px)',
+                        color: '#ffffff',
+                        padding: '10px 18px',
+                        borderRadius: 20,
+                        fontSize: 13,
                         fontWeight: 600,
-                        textDecoration: 'underline',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
                       }}
                     >
-                      Or start over from the corner
-                    </button>
-                  </div>
-                )}
-
-                {calibration && recalibrateConfirmPending && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 16,
-                      right: 16,
-                      bottom: 24,
-                      background: 'rgba(255, 255, 255, 0.94)',
-                      color: '#111827',
-                      borderRadius: 8,
-                      padding: 14,
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
-                      pointerEvents: 'auto',
-                    }}
-                  >
-                    <p style={{ margin: '0 0 12px', fontSize: 13, lineHeight: 1.5 }}>
-                      <strong>Recalibrate?</strong> You've already placed{' '}
-                      {items.filter(isPositioned).length} item{items.filter(isPositioned).length === 1 ? '' : 's'}. Recalibrating won't
-                      move them — they'll keep their current positions and may look misaligned until you re-place them.
-                    </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <button type="button" className="btn btn-secondary" onClick={cancelRecalibrate} style={{ minHeight: 46 }}>
-                        Cancel
-                      </button>
-                      <button type="button" className="btn btn-primary" onClick={recalibrate} style={{ minHeight: 46 }}>
-                        Recalibrate anyway
-                      </button>
+                      Tap the physical floor to place
                     </div>
                   </div>
                 )}
 
-                {calibration && activeItem && !recalibrateConfirmPending && (
+                {/* Bottom control: Rotation & Confirmation when locked */}
+                {!placing && lockedPosition && (
                   <div
                     style={{
                       position: 'absolute',
                       left: 16,
                       right: 16,
                       bottom: 24,
-                      background: 'rgba(255, 255, 255, 0.94)',
-                      color: '#111827',
-                      borderRadius: 8,
-                      padding: 14,
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
+                      background: 'rgba(17, 24, 39, 0.94)',
+                      backdropFilter: 'blur(10px)',
+                      color: '#ffffff',
+                      borderRadius: 14,
+                      padding: 16,
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
                       pointerEvents: 'auto',
                     }}
                   >
@@ -862,7 +626,7 @@ export default function PositionMapScreen() {
                       }}
                     >
                       Rotation
-                      <span style={numeric}>{rotationDeg} deg</span>
+                      <span style={numeric}>{rotationDeg}°</span>
                     </label>
                     <input
                       id="rotation-slider"
@@ -872,14 +636,13 @@ export default function PositionMapScreen() {
                       step="1"
                       value={rotationDeg}
                       onChange={(event) => setRotationDeg(Number(event.target.value))}
-                      style={{ width: '100%', marginBottom: 12 }}
+                      style={{ width: '100%', marginBottom: 14 }}
                     />
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       <button
                         type="button"
                         className="btn btn-secondary"
                         onClick={handleReplace}
-                        disabled={placing}
                         style={{ minHeight: 46 }}
                       >
                         Re-place
@@ -888,7 +651,7 @@ export default function PositionMapScreen() {
                         type="button"
                         className="btn btn-primary"
                         onClick={confirmPlacement}
-                        disabled={!lockedPosition || placing}
+                        disabled={!lockedPosition}
                         style={{ minHeight: 46 }}
                       >
                         Confirm placement
