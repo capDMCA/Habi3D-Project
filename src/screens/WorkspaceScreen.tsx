@@ -92,6 +92,8 @@ export default function WorkspaceScreen() {
   const items = useFurnitureStore((s) => s.items);
   const updateItem = useFurnitureStore((s) => s.updateItem);
   const updatePosition = useFurnitureStore((s) => s.updatePosition);
+  const removeItem = useFurnitureStore((s) => s.removeItem);
+  const setItems = useFurnitureStore((s) => s.setItems);
   const refreshViolations = useViolationStore((s) => s.refreshViolations);
   const setSpaceScoreBefore = useViolationStore((s) => s.setSpaceScoreBefore);
   const setSpaceScoreAfter = useViolationStore((s) => s.setSpaceScoreAfter);
@@ -120,6 +122,7 @@ export default function WorkspaceScreen() {
   const okRef = useRef(true);
   // Layout snapshots taken before each committed change, for undo.
   const historyRef = useRef<FurnitureItem[][]>([]);
+  const [canUndo, setCanUndo] = useState(false);
 
   // Width/height from store/constants
   const roomWidthCm = 510;
@@ -273,6 +276,7 @@ export default function WorkspaceScreen() {
     // spot the user actually dragged through rather than the origin.
     historyRef.current.push(previewRef.current);
     if (historyRef.current.length > 50) historyRef.current.shift();
+    setCanUndo(true);
     lastOkRef.current = { x: it.posX, z: it.posZ };
     okRef.current = true;
     setInfeasible(false);
@@ -406,6 +410,7 @@ export default function WorkspaceScreen() {
 
       historyRef.current.push(previewRef.current);
       if (historyRef.current.length > 50) historyRef.current.shift();
+      setCanUndo(true);
 
       const rehomed: FurnitureItem = {
         ...current,
@@ -441,6 +446,7 @@ export default function WorkspaceScreen() {
 
     historyRef.current.push(previewRef.current);
     if (historyRef.current.length > 50) historyRef.current.shift();
+    setCanUndo(true);
 
     const rehomed = { ...candidate, roomId: roomIdForItem(candidate) };
     commitLayout(
@@ -451,20 +457,39 @@ export default function WorkspaceScreen() {
 
   const handleUndo = useCallback(() => {
     const previous = historyRef.current.pop();
+    setCanUndo(historyRef.current.length > 0);
     if (!previous) {
       showToast('Nothing to undo.');
       return;
     }
+    setItems(previous);
     previewRef.current = previous;
     setPreview(previous);
     previous.forEach((it) => {
       updateItem(it.id, { roomId: it.roomId });
       updatePosition(it.id, it.posX, it.posZ, it.rotationY);
     });
-    const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
+    const fresh = runClearanceAnalysis(previous, roomWidthCm, roomLengthCm);
     refreshViolations(fresh.violations);
     setSpaceScoreAfter(fresh.spaceScoreBefore);
-  }, [roomWidthCm, roomLengthCm, updateItem, updatePosition, refreshViolations, setSpaceScoreAfter, showToast]);
+    showToast('Action undone.');
+  }, [setItems, updateItem, updatePosition, roomWidthCm, roomLengthCm, refreshViolations, setSpaceScoreAfter, showToast]);
+
+  const handleDelete = useCallback(() => {
+    if (!selectedItem) return;
+    historyRef.current.push(previewRef.current);
+    if (historyRef.current.length > 50) historyRef.current.shift();
+    setCanUndo(true);
+    const remaining = previewRef.current.filter((it) => it.id !== selectedItem.id);
+    removeItem(selectedItem.id);
+    previewRef.current = remaining;
+    setPreview(remaining);
+    setSelectedId(remaining[0]?.id ?? null);
+    const fresh = runClearanceAnalysis(remaining, roomWidthCm, roomLengthCm);
+    refreshViolations(fresh.violations);
+    setSpaceScoreAfter(fresh.spaceScoreBefore);
+    showToast(`${selectedItem.label} deleted.`);
+  }, [selectedItem, removeItem, roomWidthCm, roomLengthCm, refreshViolations, setSpaceScoreAfter, showToast]);
 
   // Send a piece back to its category's home room, into the first free slot
   // there rather than onto whatever already occupies the centre.
@@ -496,6 +521,7 @@ export default function WorkspaceScreen() {
 
     historyRef.current.push(previewRef.current);
     if (historyRef.current.length > 50) historyRef.current.shift();
+    setCanUndo(true);
 
     // Safe Reset (Task 4): Mutate ONLY placement-related fields (posX, posZ, rotationY, roomId).
     // Furniture dimensions (widthCm, lengthCm, heightCm, shape, category, label)
@@ -635,66 +661,13 @@ export default function WorkspaceScreen() {
               }
             />
 
-            {/* Fine Position Control (Task 2) — 1 cm / tap nudge */}
-            {selectedItem && (
-              <div style={finePositionCard} aria-label="Fine Position Controls">
-                <span style={finePositionTitle}>Fine Position</span>
-                <div style={finePositionGrid}>
-                  <button
-                    type="button"
-                    style={fineNudgeBtn}
-                    onClick={() => nudgeSelected(0, -1)}
-                    aria-label="Move 1 cm North"
-                    title="Move 1 cm North (Up)"
-                  >
-                    ↑
-                  </button>
-                  <div style={{ display: 'flex', gap: 14 }}>
-                    <button
-                      type="button"
-                      style={fineNudgeBtn}
-                      onClick={() => nudgeSelected(-1, 0)}
-                      aria-label="Move 1 cm West"
-                      title="Move 1 cm West (Left)"
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      style={fineNudgeBtn}
-                      onClick={() => nudgeSelected(1, 0)}
-                      aria-label="Move 1 cm East"
-                      title="Move 1 cm East (Right)"
-                    >
-                      →
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    style={fineNudgeBtn}
-                    onClick={() => nudgeSelected(0, 1)}
-                    aria-label="Move 1 cm South"
-                    title="Move 1 cm South (Down)"
-                  >
-                    ↓
-                  </button>
-                </div>
-                <span style={finePositionSub}>1 cm / tap</span>
-              </div>
-            )}
           </div>
 
           {/* Toast Warning */}
           {toast && <div style={toastBanner}>{toast}</div>}
 
-          {/* Slim toolbar row directly under the plan — status caption on
-              the left, compact icon buttons on the right. Replaces both the
-              old full-width text-button footer AND the floating cluster
-              that used to sit on top of the canvas (moved here so it never
-              covers the plan). Same three handlers as before
-              (handleRotate/handleUndo/handleResetPosition) and the keyboard
-              shortcuts are still wired independently via the window keydown
-              listener above — placement/visual change only. */}
+          {/* Item toolbar row directly under the plan — status caption on
+              the left, responsive text action buttons on the right. */}
           <div style={planToolbar}>
             <span style={planCaption}>
               {infeasible ? (
@@ -707,37 +680,48 @@ export default function WorkspaceScreen() {
                 'Tap a piece to select it'
               )}
             </span>
-            <div style={toolbarIconRow}>
+            <div style={toolbarTextRow}>
               {selectedItem?.shape !== 'round' && (
                 <button
-                  className="wksp-icon-btn"
-                  style={iconBtn(!selectedItem)}
+                  className="wksp-text-btn"
+                  style={textToolbarBtn(!selectedItem)}
                   onClick={handleRotate}
                   disabled={!selectedItem}
                   aria-label="Rotate 90 degrees"
                   title="Rotate 90° (R)"
                 >
-                  ↻
+                  Rotate
                 </button>
               )}
               <button
-                className="wksp-icon-btn"
-                style={iconBtn(false)}
-                onClick={handleUndo}
-                aria-label="Undo"
-                title="Undo (Ctrl/Cmd+Z)"
-              >
-                ↶
-              </button>
-              <button
-                className="wksp-icon-btn"
-                style={iconBtn(!selectedItem)}
+                className="wksp-text-btn"
+                style={textToolbarBtn(!selectedItem)}
                 onClick={handleResetPosition}
                 disabled={!selectedItem}
                 aria-label="Reset position"
                 title="Reset position"
               >
-                ⟲
+                Reset
+              </button>
+              <button
+                className="wksp-text-btn"
+                style={textToolbarBtn(!canUndo)}
+                onClick={handleUndo}
+                disabled={!canUndo}
+                aria-label="Undo"
+                title="Undo (Ctrl/Cmd+Z)"
+              >
+                Undo
+              </button>
+              <button
+                className="wksp-text-btn wksp-text-btn-danger"
+                style={textToolbarBtn(!selectedItem, 'danger')}
+                onClick={handleDelete}
+                disabled={!selectedItem}
+                aria-label="Delete item"
+                title="Delete item"
+              >
+                Delete
               </button>
             </div>
           </div>
@@ -1144,64 +1128,7 @@ const planContainer: CSSProperties = {
   position: 'relative',
 };
 
-const finePositionCard: CSSProperties = {
-  position: 'absolute',
-  bottom: 12,
-  right: 12,
-  zIndex: 10,
-  background: t.ground,
-  border: `1px solid ${t.line}`,
-  borderRadius: radius.md,
-  padding: '8px 12px',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 4,
-  boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-};
-
-const finePositionTitle: CSSProperties = {
-  fontSize: 10,
-  fontWeight: 700,
-  color: t.inkMute,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-};
-
-const finePositionGrid: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 4,
-};
-
-const fineNudgeBtn: CSSProperties = {
-  width: 36,
-  height: 36,
-  minHeight: 36,
-  borderRadius: '50%',
-  border: `1px solid ${t.line}`,
-  background: t.surface,
-  color: t.ink,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontSize: 16,
-  fontWeight: 700,
-  cursor: 'pointer',
-  padding: 0,
-};
-
-const finePositionSub: CSSProperties = {
-  fontSize: 10,
-  fontWeight: 600,
-  color: t.inkSoft,
-  marginTop: 2,
-};
-
-// One slim row directly under the plan — caption on the left, Rotate/Undo/
-// Reset on the right. Replaces the earlier floating-over-the-canvas cluster,
-// which could sit on top of the plan itself; this keeps the canvas clear.
+// One slim row directly under the plan — caption on the left, text buttons on the right.
 const planToolbar: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -1211,28 +1138,32 @@ const planToolbar: CSSProperties = {
   paddingTop: 10,
   borderTop: `1px solid ${t.line}`,
   flexShrink: 0,
+  flexWrap: 'wrap',
 };
 
-const toolbarIconRow: CSSProperties = {
+const toolbarTextRow: CSSProperties = {
   display: 'flex',
   gap: 8,
-  flexShrink: 0,
+  flexWrap: 'wrap',
+  alignItems: 'center',
 };
 
-const iconBtn = (disabled: boolean): CSSProperties => ({
-  width: 44,
-  height: 44,
-  borderRadius: '50%',
-  border: `1px solid ${t.line}`,
-  background: t.ground,
-  color: disabled ? t.inkMute : t.ink,
-  display: 'flex',
+const textToolbarBtn = (disabled: boolean, variant: 'default' | 'danger' = 'default'): CSSProperties => ({
+  minHeight: 36,
+  padding: '0 14px',
+  borderRadius: 8,
+  border: `1px solid ${variant === 'danger' ? 'rgba(239, 68, 68, 0.4)' : t.line}`,
+  background: variant === 'danger' ? 'rgba(239, 68, 68, 0.08)' : t.ground,
+  color: disabled ? t.inkMute : variant === 'danger' ? '#dc2626' : t.ink,
+  display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  fontSize: 18,
-  fontWeight: 700,
+  fontSize: 13,
+  fontWeight: 600,
   cursor: disabled ? 'not-allowed' : 'pointer',
-  opacity: disabled ? 0.5 : 1,
+  opacity: disabled ? 0.45 : 1,
+  whiteSpace: 'nowrap',
+  transition: 'all 0.15s ease',
 });
 
 const planCaption: CSSProperties = {

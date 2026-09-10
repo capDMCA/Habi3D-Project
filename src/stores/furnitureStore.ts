@@ -13,10 +13,26 @@ interface FurnitureState {
   setItems: (items: FurnitureItem[]) => void;
 }
 
+/** Center of the Living Room polygon (X: 0..2.60m, Z: 3.40..7.00m) */
+export const LIVING_ROOM_CENTER_POS = {
+  posX: 1.3,
+  posZ: 5.2,
+};
+
 export const useFurnitureStore = create<FurnitureState>((set) => ({
   items: [],
   addItem: (item) =>
-    set((state) => ({ items: [...state.items, item] })),
+    set((state) => ({
+      items: [
+        ...state.items,
+        {
+          ...item,
+          posX: LIVING_ROOM_CENTER_POS.posX,
+          posZ: LIVING_ROOM_CENTER_POS.posZ,
+          roomId: item.roomId ?? 'living',
+        },
+      ],
+    })),
   updateItem: (id, updates) =>
     set((state) => ({
       items: state.items.map((item) =>

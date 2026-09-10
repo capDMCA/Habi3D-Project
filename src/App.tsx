@@ -20,6 +20,7 @@ export default function App() {
       return <FurnitureInputScreen />;
     case 'positionMap':
       return <PositionMapScreen />;
+    case 'workspace':
     case 'analysis':
     case 'recommendations':
     case 'recommendation':

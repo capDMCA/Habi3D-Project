@@ -3,6 +3,7 @@ export type ScreenName =
   | 'auth'
   | 'furnitureInput'
   | 'positionMap'
+  | 'workspace'
   | 'analysis'
   | 'recommendations'
   | 'recommendation'

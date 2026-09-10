@@ -63,6 +63,21 @@
   transform: scale(0.94);
 }
 
+.wksp-text-btn {
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+.wksp-text-btn:hover:not(:disabled) {
+  background: #EEF2F7;
+  border-color: #94A3B8;
+}
+.wksp-text-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.wksp-text-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: #ef4444 !important;
+}
+
 .wksp-solid-btn {
   transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
 }
