@@ -9,15 +9,15 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-09-10):** Initialization Bug Fix & UI Streamlining — Fixed the furniture initialization bug where pieces rendered at small fallback sizes upon injection. Ensured `FurnitureInputScreen.tsx` and `furnitureStore.ts` pass exact user-entered `lengthCm`, `widthCm`, `heightCm` with direct 2D injection coordinates (`posX: 130, posZ: 520`). Removed all hardcoded dimension fallbacks from `floorPlanGeometry.ts` and `CondoFloorPlan.tsx` so SVG `<rect>` and `<circle>` read directly from pristine store state on the first render cycle. Completely removed the "Reset" button and `handleResetPosition` from `WorkspaceScreen.tsx`, keeping the text toolbar ("Rotate", "Undo", "Delete") responsive and cleanly aligned.
+> **Latest Update (2026-09-10):** Restored AR Placement Routing & Initial Unpositioned Payload — Restored sequential routing in `FurnitureInputScreen.tsx` from `'workspace'` back to `'positionMap'` for both "Confirm Furniture Item" and the bottom navigation button. Preserved true-to-size dimensions (`lengthCm`, `widthCm`, `heightCm`) while registering pieces with unpositioned coordinates (`posX: 0, posZ: 0`), allowing items to appear in `PositionMapScreen.tsx` for real-time WebXR floor hit-test placement. In `furnitureStore.ts`, preserved `posX: 0, posZ: 0` without fallback to room center. Strictly maintained all SVG 1:1 first-render dimension fixes and the removal of the Reset button from `WorkspaceScreen.tsx`.
 
-### Key Recent Changes (September 10, 2026: Furniture Initialization Bug Fix & UI Streamlining)
+### Key Recent Changes (September 10, 2026: AR Placement Routing & Unpositioned Payload Restoration)
 
-1. **Initial `addItem` Payload & Direct 2D Injection (`FurnitureInputScreen.tsx`, `furnitureStore.ts`)**
-   - **Explicit User Dimension Passing:** When confirming a piece in `FurnitureInputScreen.tsx`, `addItem()` passes exact `lengthCm`, `widthCm`, and `heightCm` parsed directly from user inputs.
-   - **Direct 2D Injection Coordinates:** Configured direct 2D injection spawning at `posX: 130` ($1.3\text{m}$), `posZ: 520` ($5.2\text{m}$), `rotationY: 0`, and `roomId: 'living'`.
-   - **Direct Routing to Workspace:** Successfully routed both "Confirm Furniture Item" and the bottom navigation button to `'workspace'`, ensuring zero coordinate loss.
-   - **Dimension Protection in Store:** In `furnitureStore.ts`, explicitly preserved `lengthCm`, `widthCm`, `heightCm` in `addItem()` and `updateItem()`. Coordinates $>10\text{ cm}$ are normalized to meters ($130 \to 1.3$, $520 \to 5.2$) without overwriting or stripping user dimensions.
+1. **Restored AR Placement Routing & Unpositioned Payload (`FurnitureInputScreen.tsx`, `furnitureStore.ts`)**
+   - **AR Navigation Restored:** In `FurnitureInputScreen.tsx`, `handleAddItem` ("Confirm Furniture Item") and the bottom navigation button now route directly to `PositionMapScreen.tsx` (`navigateTo('positionMap')`).
+   - **Unpositioned Coordinates:** Initial furniture payload dispatches `posX: 0, posZ: 0` alongside exact user-entered `lengthCm`, `widthCm`, and `heightCm`.
+   - **AR Placement Detection:** In `furnitureStore.ts`, `addItem` preserves `posX: 0, posZ: 0`, enabling `PositionMapScreen.tsx` to detect pieces via `!isPositioned(item)` and list them under "Items Needing Position".
+   - **Strict Dimension & UI Preservation:** Kept all 1:1 SVG dimension fixes, zero-fallback projection logic in `floorPlanGeometry.ts` and `CondoFloorPlan.tsx`, and the clean removal of the Reset button from `WorkspaceScreen.tsx`. No calibration math was restored.
 
 2. **Removal of First-Render SVG Fallbacks (`floorPlanGeometry.ts`, `CondoFloorPlan.tsx`)**
    - **Pristine Dimension Projection:** In `src/components/floorPlanGeometry.ts`, updated `projectItems()` so `wCm` and `hCm` are derived directly from `item.widthCm` and `item.lengthCm` with rotation orientation, eliminating arbitrary fallback dimensions (such as `|| 50`).

@@ -24,17 +24,17 @@ export const useFurnitureStore = create<FurnitureState>((set) => ({
   addItem: (item) =>
     set((state) => {
       const posX =
-        item.posX !== undefined && item.posX !== 0
+        item.posX !== undefined
           ? item.posX > 10
             ? item.posX / 100
             : item.posX
-          : LIVING_ROOM_CENTER_POS.posX;
+          : 0;
       const posZ =
-        item.posZ !== undefined && item.posZ !== 0
+        item.posZ !== undefined
           ? item.posZ > 10
             ? item.posZ / 100
             : item.posZ
-          : LIVING_ROOM_CENTER_POS.posZ;
+          : 0;
       return {
         items: [
           ...state.items,

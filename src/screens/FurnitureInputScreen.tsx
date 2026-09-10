@@ -311,14 +311,14 @@ export default function FurnitureInputScreen() {
       lengthCm: parsedLength,
       widthCm: parsedWidth,
       heightCm: parsedHeight,
-      posX: 130,
-      posZ: 520,
+      posX: 0,
+      posZ: 0,
       rotationY: 0,
       roomId: 'living',
     });
 
     resetForm();
-    navigateTo('workspace');
+    navigateTo('positionMap');
   }
 
   return (
@@ -565,10 +565,10 @@ export default function FurnitureInputScreen() {
         {items.length > 0 && (
           <button
             className="btn btn-primary"
-            onClick={() => navigateTo('workspace')}
+            onClick={() => navigateTo('positionMap')}
             style={{ marginBottom: 'var(--space-sm)' }}
           >
-            Go to Workspace ({items.length} item{items.length === 1 ? '' : 's'})
+            Position Furniture ({items.length} item{items.length === 1 ? '' : 's'})
           </button>
         )}
       </div>
