@@ -125,7 +125,7 @@ function FurnitureAddedPanel({
         <div>
           <p className="card-title">Furniture added</p>
           <p className="card-subtitle">
-            {items.length} item{items.length === 1 ? '' : 's'} added to layout
+            {items.length} item{items.length === 1 ? '' : 's'} ready for position mapping
           </p>
         </div>
         <span style={countBadgeStyle}>{items.length}</span>
@@ -307,14 +307,14 @@ export default function FurnitureInputScreen() {
       lengthCm: toPositiveNumber(lengthCm),
       widthCm: toPositiveNumber(widthCm),
       heightCm: toPositiveNumber(heightCm),
-      posX: 1.3,
-      posZ: 5.2,
+      posX: 0,
+      posZ: 0,
       rotationY: 0,
       roomId: 'living',
     });
 
     resetForm();
-    navigateTo('workspace');
+    navigateTo('positionMap');
   }
 
   return (
@@ -561,10 +561,10 @@ export default function FurnitureInputScreen() {
         {items.length > 0 && (
           <button
             className="btn btn-primary"
-            onClick={() => navigateTo('workspace')}
+            onClick={() => navigateTo('positionMap')}
             style={{ marginBottom: 'var(--space-sm)' }}
           >
-            Go to Workspace ({items.length} item{items.length === 1 ? '' : 's'})
+            Position Furniture ({items.length} item{items.length === 1 ? '' : 's'})
           </button>
         )}
       </div>

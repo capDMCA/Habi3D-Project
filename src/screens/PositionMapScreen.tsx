@@ -1,21 +1,31 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { createXRStore, XR, XRDomOverlay, XROrigin } from '@react-three/xr';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { createXRStore, XR, XRDomOverlay, useXRHitTest, XROrigin } from '@react-three/xr';
 import * as THREE from 'three';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import Spinner from '../components/Spinner';
-import { fontFamily } from '../components/tokens';
+import { fontFamily, numeric } from '../components/tokens';
 import { findOversizedFurniture } from '../utils/furnitureValidation';
 import type { FurnitureItem } from '../types';
 
 const xrPlacementStore = createXRStore({
   offerSession: false,
   emulate: false,
-  hitTest: false,
+  hitTest: true,
   domOverlay: true,
 });
+
+const hitMatrix = new THREE.Matrix4();
+
+function isPositioned(item: FurnitureItem): boolean {
+  return item.posX !== 0 || item.posZ !== 0;
+}
+
+function degreesToRadians(degrees: number): number {
+  return (degrees * Math.PI) / 180;
+}
 
 function makeLabelTexture(label: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -57,21 +67,19 @@ function FloatingLabel({
   );
 }
 
-/**
- * AR 1:1 Scale Visualizer Scene.
- * Spawns the 3D furniture model statically 1.5 meters directly in front of the active camera.
- * AR no longer dictates 2D placement; it acts solely as a 1:1 scale visualizer.
- */
-function ARVisualizerScene({
+function PlacementMesh({
   item,
+  position,
+  rotationY,
+  mode,
+  showLabel = false,
 }: {
   item: FurnitureItem;
+  position: { x: number; y?: number; z: number };
+  rotationY: number;
+  mode: 'ghost' | 'placed';
+  showLabel?: boolean;
 }) {
-  const [spawnedTransform, setSpawnedTransform] = useState<{
-    position: [number, number, number];
-    rotationY: number;
-  } | null>(null);
-
   const { geometry, boundingBox } = useMemo(
     () =>
       createFurnitureShape(item.shape, {
@@ -84,23 +92,77 @@ function ARVisualizerScene({
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
-  // Capture active camera pose on first valid frame and spawn 1.5m directly in front
-  useFrame(({ camera }) => {
-    if (spawnedTransform) return;
+  const opacity = mode === 'ghost' ? 0.55 : 0.95;
+  const meshY = (position.y ?? 0) + boundingBox.heightM / 2;
+  const labelY = (position.y ?? 0) + boundingBox.heightM + 0.22;
 
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir);
-    if (dir.lengthSq() < 0.001) return;
+  return (
+    <group position={[position.x, meshY, position.z]} rotation={[0, rotationY, 0]}>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial
+          color={mode === 'ghost' ? '#38bdf8' : '#2B4E8C'}
+          roughness={0.45}
+          metalness={0.05}
+          transparent={mode === 'ghost'}
+          opacity={opacity}
+          depthWrite={mode !== 'ghost'}
+        />
+      </mesh>
+      {showLabel && <FloatingLabel label={item.label} y={labelY} />}
+    </group>
+  );
+}
 
-    // Spawn 1.5 meters directly in front of the active camera
-    const spawnPos = camera.position.clone().add(dir.multiplyScalar(1.5));
-    const yaw = Math.atan2(dir.x, dir.z);
+function PlacementScene({
+  activeItem,
+  lockedPosition,
+  previewPosition,
+  rotationY,
+  placing,
+  onPreviewMove,
+  onFloorTap,
+}: {
+  activeItem: FurnitureItem | null;
+  lockedPosition: { x: number; y: number; z: number } | null;
+  previewPosition: { x: number; y: number; z: number } | null;
+  rotationY: number;
+  placing: boolean;
+  onPreviewMove: (position: { x: number; y: number; z: number }) => void;
+  onFloorTap: (position: { x: number; y: number; z: number }) => void;
+}) {
+  const latestHitRef = useRef<{ x: number; y: number; z: number } | null>(null);
 
-    setSpawnedTransform({
-      position: [spawnPos.x, spawnPos.y, spawnPos.z],
-      rotationY: yaw,
-    });
-  });
+  useXRHitTest(
+    useCallback(
+      (results, getWorldMatrix) => {
+        if (!activeItem || !placing || results.length === 0) return;
+
+        const hasMatrix = getWorldMatrix(hitMatrix, results[0]);
+        if (!hasMatrix) return;
+
+        const point = new THREE.Vector3().setFromMatrixPosition(hitMatrix);
+        const position = { x: point.x, y: point.y, z: point.z };
+        latestHitRef.current = position;
+        onPreviewMove(position);
+      },
+      [activeItem, onPreviewMove, placing],
+    ),
+    'viewer',
+  );
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('button, input, select, textarea')) return;
+      if (!activeItem || !placing || !latestHitRef.current) return;
+      onFloorTap(latestHitRef.current);
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [activeItem, onFloorTap, placing]);
+
+  const currentPos = placing ? previewPosition : lockedPosition;
 
   return (
     <>
@@ -108,20 +170,14 @@ function ARVisualizerScene({
       <directionalLight position={[3, 5, 3]} intensity={1.0} />
       <XROrigin />
 
-      {spawnedTransform && (
-        <group
-          position={spawnedTransform.position}
-          rotation={[0, spawnedTransform.rotationY, 0]}
-        >
-          <mesh geometry={geometry}>
-            <meshStandardMaterial
-              color="#2B4E8C"
-              roughness={0.45}
-              metalness={0.05}
-            />
-          </mesh>
-          <FloatingLabel label={item.label} y={boundingBox.heightM / 2 + 0.22} />
-        </group>
+      {activeItem && currentPos && (
+        <PlacementMesh
+          item={activeItem}
+          position={currentPos}
+          rotationY={rotationY}
+          mode={placing ? 'ghost' : 'placed'}
+          showLabel={!placing}
+        />
       )}
     </>
   );
@@ -130,10 +186,14 @@ function ARVisualizerScene({
 export default function PositionMapScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const items = useFurnitureStore((s) => s.items);
+  const updateItem = useFurnitureStore((s) => s.updateItem);
 
   const [arActive, setArActive] = useState(false);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
-  const [recenterTrigger, setRecenterTrigger] = useState(0);
+  const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number; z: number } | null>(null);
+  const [lockedPosition, setLockedPosition] = useState<{ x: number; y: number; z: number } | null>(null);
+  const [rotationDeg, setRotationDeg] = useState(0);
+  const [placing, setPlacing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [arInitializing, setArInitializing] = useState(false);
   const [oversizedWarningItem, setOversizedWarningItem] = useState<FurnitureItem | null>(null);
@@ -144,6 +204,9 @@ export default function PositionMapScreen() {
       setArActive(state.session != null);
       if (state.session == null) {
         setActiveItemId(null);
+        setPreviewPosition(null);
+        setLockedPosition(null);
+        setPlacing(false);
         setOversizedWarningItem(null);
       }
     });
@@ -171,10 +234,17 @@ export default function PositionMapScreen() {
   }
 
   const activeItem = items.find((item) => item.id === activeItemId) ?? null;
+  const rotationY = degreesToRadians(rotationDeg);
+  const unpositionedItems = items.filter((item) => !isPositioned(item));
+  const positionedItems = items.filter(isPositioned);
 
-  async function startVisualizer(item: FurnitureItem) {
+  async function startPlacement(item: FurnitureItem) {
     setErrorMsg('');
     setActiveItemId(item.id);
+    setPreviewPosition(null);
+    setLockedPosition(null);
+    setRotationDeg(0);
+    setPlacing(true);
     setArInitializing(true);
 
     try {
@@ -183,6 +253,7 @@ export default function PositionMapScreen() {
       const message = err instanceof Error ? err.message : String(err);
       setErrorMsg(message);
       setActiveItemId(null);
+      setPlacing(false);
     } finally {
       setArInitializing(false);
     }
@@ -192,6 +263,40 @@ export default function PositionMapScreen() {
     xrPlacementStore.getState().session?.end();
     setArActive(false);
     setActiveItemId(null);
+    setPreviewPosition(null);
+    setLockedPosition(null);
+    setPlacing(false);
+  }
+
+  function handleFloorTap(position: { x: number; y: number; z: number }) {
+    setLockedPosition(position);
+    setPreviewPosition(position);
+    setPlacing(false);
+  }
+
+  function handleReplace() {
+    setPlacing(true);
+    setLockedPosition(null);
+  }
+
+  function confirmPlacement() {
+    if (!activeItem || !lockedPosition) return;
+
+    // End the AR session cleanly
+    stopAR();
+
+    // Safe 2D Handoff:
+    // Dispatch item to furnitureStore using hardcoded safe coordinates for the Living Room center (posX: 130, posZ: 520, roomId: 'living').
+    // In meters: posX: 1.3 (130cm), posZ: 5.2 (520cm).
+    updateItem(activeItem.id, {
+      posX: 1.3,
+      posZ: 5.2,
+      roomId: 'living',
+      rotationY,
+    });
+
+    // Route user directly to 2D workspace
+    navigateTo('workspace');
   }
 
   return (
@@ -199,17 +304,22 @@ export default function PositionMapScreen() {
       <div className="screen">
         <div className="screen-header">
           <button className="back-btn" onClick={() => navigateTo('furnitureInput')} aria-label="Go back">
-            &lt;
+            ←
           </button>
           <div className="screen-header-info">
-            <span className="step-label">1:1 AR Visualizer</span>
-            <h2>Furniture Visualizer</h2>
+            <span className="step-label">Step 2 of 2</span>
+            <h2>Position Furniture</h2>
           </div>
+        </div>
+
+        <div className="progress-bar">
+          <div className="progress-step completed" />
+          <div className="progress-step active" />
         </div>
 
         {errorMsg && (
           <div className="card" style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)' }}>
-            <p className="card-title" style={{ color: 'var(--danger)' }}>AR Session Notice</p>
+            <p className="card-title" style={{ color: 'var(--danger)' }}>AR Placement Notice</p>
             <p className="form-error" style={{ marginBottom: 0 }}>{errorMsg}</p>
           </div>
         )}
@@ -217,7 +327,7 @@ export default function PositionMapScreen() {
         {items.length === 0 ? (
           <div className="card">
             <p className="card-title">No Furniture Added</p>
-            <p className="card-subtitle">Add furniture items to preview them in 1:1 scale AR or arrange them in 2D.</p>
+            <p className="card-subtitle">Add furniture items first to position them on the physical floor.</p>
             <button
               className="btn btn-primary"
               onClick={() => navigateTo('furnitureInput')}
@@ -232,9 +342,9 @@ export default function PositionMapScreen() {
               <div className="card-header">
                 <div className="card-icon card-icon-success">AR</div>
                 <div>
-                  <p className="card-title">1:1 Scale Visualizer</p>
+                  <p className="card-title">AR Floor Placement</p>
                   <p className="card-subtitle">
-                    Spawn any 3D furniture piece 1.5 meters in front of your camera to inspect real-world proportions.
+                    Tap "Place in room" to place your furniture directly on the floor with AR hit-testing. After placing, you will proceed directly to the 2D workspace to fine-tune.
                   </p>
                 </div>
               </div>
@@ -243,40 +353,83 @@ export default function PositionMapScreen() {
               </button>
             </div>
 
-            <div className="card card-sm">
-              <p className="card-title">Furniture Pieces ({items.length})</p>
-              <p className="card-subtitle">
-                Tap an item to preview its full 1:1 physical volume in AR.
-              </p>
-            </div>
-
-            {items.map((item) => (
-              <div className="card" key={item.id}>
-                <div className="card-header">
-                  <div className="card-icon card-icon-primary">{item.label.slice(0, 1).toUpperCase()}</div>
-                  <div>
-                    <p className="card-title">{item.label}</p>
-                    <p className="card-subtitle">
-                      {item.shape} | {item.lengthCm} × {item.widthCm} × {item.heightCm} cm
-                    </p>
-                  </div>
+            {unpositionedItems.length > 0 && (
+              <>
+                <div className="card card-sm">
+                  <p className="card-title">Items Needing Placement ({unpositionedItems.length})</p>
+                  <p className="card-subtitle">
+                    Select a piece to place it on your room floor in AR.
+                  </p>
                 </div>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => startVisualizer(item)}
-                  disabled={arInitializing}
-                >
-                  {arInitializing && activeItemId === item.id ? (
-                    <>
-                      <Spinner />
-                      Starting AR camera…
-                    </>
-                  ) : (
-                    'Preview 1:1 in AR'
-                  )}
-                </button>
-              </div>
-            ))}
+
+                {unpositionedItems.map((item) => (
+                  <div className="card" key={item.id}>
+                    <div className="card-header">
+                      <div className="card-icon card-icon-primary">{item.label.slice(0, 1).toUpperCase()}</div>
+                      <div>
+                        <p className="card-title">{item.label}</p>
+                        <p className="card-subtitle">
+                          {item.shape} | {item.lengthCm} × {item.widthCm} × {item.heightCm} cm
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => startPlacement(item)}
+                      disabled={arInitializing}
+                    >
+                      {arInitializing && activeItemId === item.id ? (
+                        <>
+                          <Spinner />
+                          Setting up AR camera…
+                        </>
+                      ) : (
+                        'Place in room'
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {positionedItems.length > 0 && (
+              <>
+                <div className="card card-sm">
+                  <p className="card-title">Placed Items ({positionedItems.length})</p>
+                  <p className="card-subtitle">
+                    These items are already positioned in the layout.
+                  </p>
+                </div>
+
+                {positionedItems.map((item) => (
+                  <div className="card" key={item.id}>
+                    <div className="card-header">
+                      <div className="card-icon card-icon-secondary">{item.label.slice(0, 1).toUpperCase()}</div>
+                      <div>
+                        <p className="card-title">{item.label}</p>
+                        <p className="card-subtitle">
+                          {item.shape} | {item.lengthCm} × {item.widthCm} × {item.heightCm} cm
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => startPlacement(item)}
+                      disabled={arInitializing}
+                    >
+                      {arInitializing && activeItemId === item.id ? (
+                        <>
+                          <Spinner />
+                          Setting up AR camera…
+                        </>
+                      ) : (
+                        'Re-place in AR'
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
           </>
         )}
 
@@ -343,9 +496,14 @@ export default function PositionMapScreen() {
         <Canvas style={{ position: 'absolute', inset: 0 }} gl={{ antialias: true, alpha: true }}>
           <XR store={xrPlacementStore}>
             {activeItem && (
-              <ARVisualizerScene
-                key={`${activeItem.id}-${recenterTrigger}`}
-                item={activeItem}
+              <PlacementScene
+                activeItem={activeItem}
+                lockedPosition={lockedPosition}
+                previewPosition={previewPosition}
+                rotationY={rotationY}
+                placing={placing}
+                onPreviewMove={setPreviewPosition}
+                onFloorTap={handleFloorTap}
               />
             )}
 
@@ -383,9 +541,11 @@ export default function PositionMapScreen() {
                       lineHeight: 1.45,
                     }}
                   >
-                    <strong>{activeItem?.label ?? 'Furniture Visualizer'}</strong> (1:1 Scale)
+                    <strong>{activeItem?.label ?? 'Furniture placement'}</strong>
                     <br />
-                    Spawned statically 1.5m in front of camera. Walk around to inspect physical scale.
+                    {placing
+                      ? 'Move your phone until the preview sits on your floor, then tap the floor to place.'
+                      : 'Adjust rotation to match your room, then tap Confirm placement.'}
                   </div>
                   <button
                     type="button"
@@ -408,33 +568,97 @@ export default function PositionMapScreen() {
                   </button>
                 </div>
 
-                {/* Bottom control: Re-center */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 24,
-                    left: 16,
-                    right: 16,
-                    display: 'flex',
-                    justifyContent: 'center',
-                    pointerEvents: 'auto',
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => setRecenterTrigger((c) => c + 1)}
+                {/* Bottom guide during placing */}
+                {placing && (
+                  <div
                     style={{
-                      maxWidth: 280,
-                      width: '100%',
-                      minHeight: 46,
-                      borderRadius: 10,
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                      position: 'absolute',
+                      left: 16,
+                      right: 16,
+                      bottom: 24,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      pointerEvents: 'none',
                     }}
                   >
-                    Re-center in Front of Me
-                  </button>
-                </div>
+                    <div
+                      style={{
+                        background: 'rgba(17, 24, 39, 0.82)',
+                        backdropFilter: 'blur(8px)',
+                        color: '#ffffff',
+                        padding: '10px 18px',
+                        borderRadius: 20,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                      }}
+                    >
+                      Tap the physical floor to place
+                    </div>
+                  </div>
+                )}
+
+                {/* Bottom control: Rotation & Confirmation when locked */}
+                {!placing && lockedPosition && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 16,
+                      right: 16,
+                      bottom: 24,
+                      background: 'rgba(17, 24, 39, 0.94)',
+                      backdropFilter: 'blur(10px)',
+                      color: '#ffffff',
+                      borderRadius: 14,
+                      padding: 16,
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                      pointerEvents: 'auto',
+                    }}
+                  >
+                    <label
+                      htmlFor="rotation-slider"
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Rotation
+                      <span style={numeric}>{rotationDeg}°</span>
+                    </label>
+                    <input
+                      id="rotation-slider"
+                      type="range"
+                      min="0"
+                      max="360"
+                      step="1"
+                      value={rotationDeg}
+                      onChange={(event) => setRotationDeg(Number(event.target.value))}
+                      style={{ width: '100%', marginBottom: 14 }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={handleReplace}
+                        style={{ minHeight: 46 }}
+                      >
+                        Re-place
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={confirmPlacement}
+                        disabled={!lockedPosition}
+                        style={{ minHeight: 46 }}
+                      >
+                        Confirm placement
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </XRDomOverlay>
           </XR>
