@@ -33,13 +33,16 @@ export interface PlanRect {
 export function projectItems(items: FurnitureItem[]): PlanRect[] {
   return items.map((item) => {
     const b = toBounds(item);
+    const isRotated90 = Math.abs(Math.sin(item.rotationY)) > 0.5;
+    const directW = isRotated90 ? item.widthCm : item.lengthCm;
+    const directH = isRotated90 ? item.lengthCm : item.widthCm;
     return {
       id: item.id,
       label: item.label,
       xCm: b.minX * 100,
       yCm: b.minZ * 100,
-      wCm: (b.maxX - b.minX) * 100,
-      hCm: (b.maxZ - b.minZ) * 100,
+      wCm: directW,
+      hCm: directH,
       lengthCm: item.lengthCm,
       widthCm: item.widthCm,
       shape: item.shape,

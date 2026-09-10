@@ -5,7 +5,7 @@ import ClearanceMeter, { BandGlyph } from '../components/ClearanceMeter';
 import { color as t, radius, fontFamily } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
-import { useFurnitureStore, LIVING_ROOM_CENTER_POS } from '../stores/furnitureStore';
+import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { useAutosaveLayout } from '../stores/useAutosaveLayout';
@@ -491,61 +491,6 @@ export default function WorkspaceScreen() {
     showToast(`${selectedItem.label} deleted.`);
   }, [selectedItem, removeItem, roomWidthCm, roomLengthCm, refreshViolations, setSpaceScoreAfter, showToast]);
 
-  // Send a piece back to its category's home room, into the first free slot
-  // there rather than onto whatever already occupies the centre.
-  const handleResetPosition = useCallback(() => {
-    if (!selectedItem) return;
-    const homeRoomId = getRoomForCategory(selectedItem.category, selectedItem.label);
-    const room = CONDO_ROOMS.find((r) => r.id === homeRoomId);
-    if (!room) return;
-
-    const others = previewRef.current.filter((it) => it.id !== selectedItem.id);
-    const upright = { ...selectedItem, rotationY: 0 };
-    const [packed] = packItemsIntoRoom([upright], room);
-
-    // Walk the room on a coarse lattice until the piece lands somewhere clear.
-    let target = packed;
-    if (overlappingItemIds(packed, others).length > 0) {
-      const step = 0.2;
-      search: for (let z = room.y / 100; z < (room.y + room.height) / 100; z += step) {
-        for (let x = room.x / 100; x < (room.x + room.width) / 100; x += step) {
-          const placed = clampToUnit(upright, x, z);
-          const trial = { ...upright, posX: placed.posX, posZ: placed.posZ };
-          if (overlappingItemIds(trial, others).length === 0) {
-            target = trial;
-            break search;
-          }
-        }
-      }
-    }
-
-    historyRef.current.push(previewRef.current);
-    if (historyRef.current.length > 50) historyRef.current.shift();
-    setCanUndo(true);
-
-    // Safe Reset: Mutate ONLY placement-related fields (posX, posZ, rotationY, roomId).
-    // Furniture dimensions (widthCm, lengthCm, heightCm, shape, category, label)
-    // are strictly preserved using the spread operator (...selectedItem).
-    const posX = target?.posX ?? LIVING_ROOM_CENTER_POS.posX;
-    const posZ = target?.posZ ?? LIVING_ROOM_CENTER_POS.posZ;
-    const rotationY = 0;
-    const roomId = (target ? roomIdForItem(target) : null) ?? homeRoomId;
-
-    const rehomed: FurnitureItem = {
-      ...selectedItem,
-      posX,
-      posZ,
-      rotationY,
-      roomId,
-    };
-
-    updateItem(rehomed.id, { ...rehomed });
-
-    commitLayout(
-      previewRef.current.map((it) => (it.id === rehomed.id ? rehomed : it)),
-      rehomed,
-    );
-  }, [selectedItem, commitLayout, updateItem]);
 
   // ── Keyboard: arrow nudge, R rotate, Ctrl/Cmd+Z undo ──────────────────────
   useEffect(() => {
@@ -694,16 +639,6 @@ export default function WorkspaceScreen() {
                   Rotate
                 </button>
               )}
-              <button
-                className="wksp-text-btn"
-                style={textToolbarBtn(!selectedItem)}
-                onClick={handleResetPosition}
-                disabled={!selectedItem}
-                aria-label="Reset position"
-                title="Reset position"
-              >
-                Reset
-              </button>
               <button
                 className="wksp-text-btn"
                 style={textToolbarBtn(!canUndo)}

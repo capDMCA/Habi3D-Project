@@ -589,11 +589,11 @@ export default function CondoFloorPlan({
             }
           }
 
-          // Direct 1:1 real-world centimetre dimensions
+          // Direct 1:1 real-world centimetre dimensions from pristine furnitureStore state
           const isRotated90 = Math.abs(Math.sin(item.rotationY)) > 0.5;
           const directWidthCm = isRotated90 ? item.widthCm : item.lengthCm;
           const directHeightCm = isRotated90 ? item.lengthCm : item.widthCm;
-          const directRadiusCm = (item.widthCm || item.lengthCm) / 2;
+          const directRadiusCm = item.widthCm / 2;
 
           return (
             <g

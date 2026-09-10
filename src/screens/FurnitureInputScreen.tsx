@@ -299,22 +299,26 @@ export default function FurnitureInputScreen() {
   function handleAddItem() {
     if (!canAddItem || category === '' || shape === '') return;
 
+    const parsedLength = toPositiveNumber(lengthCm);
+    const parsedWidth = toPositiveNumber(widthCm);
+    const parsedHeight = toPositiveNumber(heightCm);
+
     addItem({
       id: createFurnitureId(),
       label: label.trim() || selectedCategoryLabel,
       category,
       shape,
-      lengthCm: toPositiveNumber(lengthCm),
-      widthCm: toPositiveNumber(widthCm),
-      heightCm: toPositiveNumber(heightCm),
-      posX: 0,
-      posZ: 0,
+      lengthCm: parsedLength,
+      widthCm: parsedWidth,
+      heightCm: parsedHeight,
+      posX: 130,
+      posZ: 520,
       rotationY: 0,
       roomId: 'living',
     });
 
     resetForm();
-    navigateTo('positionMap');
+    navigateTo('workspace');
   }
 
   return (
@@ -561,10 +565,10 @@ export default function FurnitureInputScreen() {
         {items.length > 0 && (
           <button
             className="btn btn-primary"
-            onClick={() => navigateTo('positionMap')}
+            onClick={() => navigateTo('workspace')}
             style={{ marginBottom: 'var(--space-sm)' }}
           >
-            Position Furniture ({items.length} item{items.length === 1 ? '' : 's'})
+            Go to Workspace ({items.length} item{items.length === 1 ? '' : 's'})
           </button>
         )}
       </div>

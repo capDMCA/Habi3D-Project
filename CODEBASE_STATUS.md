@@ -9,9 +9,27 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-09-10):** Direct AR Floor Hit-Test Placement with Safe 2D Handoff — Removed the 2-point calibration step (northwest corner and north wall taps), restored real-time WebXR floor plane hit-testing in `PositionMapScreen.tsx`, implemented safe handoff dispatching confirmed placements to the Living Room center ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$) before routing directly to `WorkspaceScreen.tsx`. In `FurnitureInputScreen.tsx`, reverted confirmation routing back to `'positionMap'` with initial unpositioned state (`posX: 0, posZ: 0`). In `furnitureStore.ts`, added automatic coordinate normalization (converting $>10$ cm values to meters) to protect layout bounds. In `WorkspaceScreen.tsx`, preserved the responsive text-based toolbar ("Rotate", "Reset", "Undo", "Delete"), borders, free-movement dragging, and complete removal of the 4-way D-Pad. Strictly preserved `clearance.ts`, `rules.ts`, `floorPlanDrag.ts`, and all 10 clearance rules.
+> **Latest Update (2026-09-10):** Initialization Bug Fix & UI Streamlining — Fixed the furniture initialization bug where pieces rendered at small fallback sizes upon injection. Ensured `FurnitureInputScreen.tsx` and `furnitureStore.ts` pass exact user-entered `lengthCm`, `widthCm`, `heightCm` with direct 2D injection coordinates (`posX: 130, posZ: 520`). Removed all hardcoded dimension fallbacks from `floorPlanGeometry.ts` and `CondoFloorPlan.tsx` so SVG `<rect>` and `<circle>` read directly from pristine store state on the first render cycle. Completely removed the "Reset" button and `handleResetPosition` from `WorkspaceScreen.tsx`, keeping the text toolbar ("Rotate", "Undo", "Delete") responsive and cleanly aligned.
 
-### Key Recent Changes (September 10, 2026: Direct AR Floor Hit-Test Placement with Safe 2D Handoff)
+### Key Recent Changes (September 10, 2026: Furniture Initialization Bug Fix & UI Streamlining)
+
+1. **Initial `addItem` Payload & Direct 2D Injection (`FurnitureInputScreen.tsx`, `furnitureStore.ts`)**
+   - **Explicit User Dimension Passing:** When confirming a piece in `FurnitureInputScreen.tsx`, `addItem()` passes exact `lengthCm`, `widthCm`, and `heightCm` parsed directly from user inputs.
+   - **Direct 2D Injection Coordinates:** Configured direct 2D injection spawning at `posX: 130` ($1.3\text{m}$), `posZ: 520` ($5.2\text{m}$), `rotationY: 0`, and `roomId: 'living'`.
+   - **Direct Routing to Workspace:** Successfully routed both "Confirm Furniture Item" and the bottom navigation button to `'workspace'`, ensuring zero coordinate loss.
+   - **Dimension Protection in Store:** In `furnitureStore.ts`, explicitly preserved `lengthCm`, `widthCm`, `heightCm` in `addItem()` and `updateItem()`. Coordinates $>10\text{ cm}$ are normalized to meters ($130 \to 1.3$, $520 \to 5.2$) without overwriting or stripping user dimensions.
+
+2. **Removal of First-Render SVG Fallbacks (`floorPlanGeometry.ts`, `CondoFloorPlan.tsx`)**
+   - **Pristine Dimension Projection:** In `src/components/floorPlanGeometry.ts`, updated `projectItems()` so `wCm` and `hCm` are derived directly from `item.widthCm` and `item.lengthCm` with rotation orientation, eliminating arbitrary fallback dimensions (such as `|| 50`).
+   - **Direct Store Binding on Mount:** In `CondoFloorPlan.tsx`, SVG `<rect>` (`width`, `height`) and `<circle>` (`r`, `cx`, `cy`) dimensions read directly from pristine `furnitureStore` state on the very first mount cycle with 1:1 cm scaling matching the SVG viewBox.
+
+3. **Complete Removal of Reset Button & Streamlined Toolbar (`WorkspaceScreen.tsx`)**
+   - **Purged `handleResetPosition`:** Deleted the `handleResetPosition` function and removed the unused `LIVING_ROOM_CENTER_POS` import.
+   - **Removed Reset UI Button:** Completely removed the `<button ...>Reset</button>` element from the text toolbar row.
+   - **Responsive Toolbar Alignment:** Retained the clean, responsive layout of the remaining toolbar buttons ("Rotate", "Undo", "Delete" with danger styling) within `toolbarTextRow`.
+   - **Preserved Core Clearance Engines:** Preserved `clearance.ts`, `rules.ts`, `floorPlanDrag.ts`, and all 10 clearance rules completely untouched.
+
+### Prior Changes (September 10, 2026: Direct AR Floor Hit-Test Placement & Safe 2D Handoff)
 
 1. **Clean Removal of 2-Point AR Calibration (`PositionMapScreen.tsx`)**
    - **Removed Calibration Step:** Completely eliminated the 2-point calibration requirement (northwest corner tap and north wall reference tap), purging `CalibrationScene`, `CalibrationMarker`, and all related state (`calibration`, `calibrationStep`, `cornerPoint`, `wallPoint`, `pendingCalibration`, `calibrationError`, `recalibrateConfirmPending`) along with their handlers (`handleTapCorner`, `handleTapWall`, `retapWallPoint`, `confirmWallPoint`, `retryCalibration`, `recalibrate`, `requestRecalibrate`, `cancelRecalibrate`).

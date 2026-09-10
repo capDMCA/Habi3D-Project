@@ -22,27 +22,34 @@ export const LIVING_ROOM_CENTER_POS = {
 export const useFurnitureStore = create<FurnitureState>((set) => ({
   items: [],
   addItem: (item) =>
-    set((state) => ({
-      items: [
-        ...state.items,
-        {
-          ...item,
-          posX:
-            item.posX !== undefined
-              ? item.posX > 10
-                ? item.posX / 100
-                : item.posX
-              : 0,
-          posZ:
-            item.posZ !== undefined
-              ? item.posZ > 10
-                ? item.posZ / 100
-                : item.posZ
-              : 0,
-          roomId: item.roomId ?? 'living',
-        },
-      ],
-    })),
+    set((state) => {
+      const posX =
+        item.posX !== undefined && item.posX !== 0
+          ? item.posX > 10
+            ? item.posX / 100
+            : item.posX
+          : LIVING_ROOM_CENTER_POS.posX;
+      const posZ =
+        item.posZ !== undefined && item.posZ !== 0
+          ? item.posZ > 10
+            ? item.posZ / 100
+            : item.posZ
+          : LIVING_ROOM_CENTER_POS.posZ;
+      return {
+        items: [
+          ...state.items,
+          {
+            ...item,
+            lengthCm: item.lengthCm,
+            widthCm: item.widthCm,
+            heightCm: item.heightCm,
+            posX,
+            posZ,
+            roomId: item.roomId ?? 'living',
+          },
+        ],
+      };
+    }),
   updateItem: (id, updates) =>
     set((state) => ({
       items: state.items.map((item) => {
@@ -59,7 +66,15 @@ export const useFurnitureStore = create<FurnitureState>((set) => ({
               ? updates.posZ / 100
               : updates.posZ
             : item.posZ;
-        return { ...item, ...updates, posX, posZ };
+        return {
+          ...item,
+          ...updates,
+          lengthCm: updates.lengthCm ?? item.lengthCm,
+          widthCm: updates.widthCm ?? item.widthCm,
+          heightCm: updates.heightCm ?? item.heightCm,
+          posX,
+          posZ,
+        };
       }),
     })),
   updatePosition: (id, x, z, rot) =>
