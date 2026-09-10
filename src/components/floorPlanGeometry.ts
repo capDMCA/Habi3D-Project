@@ -21,6 +21,9 @@ export interface PlanRect {
   yCm: number;
   wCm: number;
   hCm: number;
+  /** Direct 1:1 real-world centimetre dimensions */
+  lengthCm: number;
+  widthCm: number;
   /** Passed through from the source item so renderers (CondoFloorPlan,
    *  pdfReport) can draw a circle for round furniture without re-deriving
    *  it — one shape flag, read once, at the one place bounds are computed. */
@@ -37,6 +40,8 @@ export function projectItems(items: FurnitureItem[]): PlanRect[] {
       yCm: b.minZ * 100,
       wCm: (b.maxX - b.minX) * 100,
       hCm: (b.maxZ - b.minZ) * 100,
+      lengthCm: item.lengthCm,
+      widthCm: item.widthCm,
       shape: item.shape,
     };
   });

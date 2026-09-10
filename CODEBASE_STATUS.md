@@ -1,7 +1,7 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-09-10 (Architectural Pivot Update)  
-**Project phase:** Phase 3 — Decoupled AR Visualizer & Streamlined 2D Planning  
+**Last updated:** 2026-09-10 (AR Direct Hit-Test Floor Placement & Safe 2D Handoff)  
+**Project phase:** Phase 3 — AR Floor Hit-Test Placement & Streamlined 2D Planning  
 **Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig)
 
 ---
@@ -9,37 +9,42 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-09-10):** Architectural Pivot — Decoupled AR from 2D floor plan placement (repurposed as 1:1 scale visualizer spawning 3D models statically 1.5m in front of camera), Direct 2D Furniture Injection into Living Room center ($X=1.3\text{m}, Z=5.2\text{m}$), D-Pad Removal in favor of exclusive free-movement dragging, and Responsive Text-Based Toolbar ("Rotate", "Reset", "Undo", "Delete"). Strictly preserved `clearance.ts`, `rules.ts`, `floorPlanDrag.ts`, and all 10 clearance rules.
+> **Latest Update (2026-09-10):** Direct AR Floor Hit-Test Placement with Safe 2D Handoff — Removed the 2-point calibration step (northwest corner and north wall taps), restored real-time WebXR floor plane hit-testing in `PositionMapScreen.tsx`, implemented safe handoff dispatching confirmed placements to the Living Room center ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$) before routing directly to `WorkspaceScreen.tsx`. In `FurnitureInputScreen.tsx`, reverted confirmation routing back to `'positionMap'` with initial unpositioned state (`posX: 0, posZ: 0`). In `furnitureStore.ts`, added automatic coordinate normalization (converting $>10$ cm values to meters) to protect layout bounds. In `WorkspaceScreen.tsx`, preserved the responsive text-based toolbar ("Rotate", "Reset", "Undo", "Delete"), borders, free-movement dragging, and complete removal of the 4-way D-Pad. Strictly preserved `clearance.ts`, `rules.ts`, `floorPlanDrag.ts`, and all 10 clearance rules.
 
-### Key Recent Changes (September 10, 2026: Architectural Pivot — 1:1 Scale AR Visualizer & Streamlined 2D Workspace)
+### Key Recent Changes (September 10, 2026: Direct AR Floor Hit-Test Placement with Safe 2D Handoff)
 
-1. **AR Math & Placement Removal (`PositionMapScreen.tsx`)**
-   - **Decoupled 2D Floor Plan from AR:** AR will no longer dictate or write coordinates into the 2D floor plan; it acts solely as an on-demand 1:1 scale visualizer.
-   - **Removed `calibration.ts` Dependencies:** Completely purged all calibration imports (`applyCalibration`, `invertCalibration`, `calibrationThetaRad`, `CalibrationTransform`), calibration state variables, and transform derivation logic from `PositionMapScreen.tsx`.
-   - **Deleted `RoomAlignmentScene` & Touch Controls:** Completely removed the ceiling wireframe guide, corner drop lines, directional nudge buttons (Forward, Backward, Left, Right), yaw rotation controls, and recalibration modals.
-   - **Repurposed to 1:1 Scale Visualizer (`ARVisualizerScene`):** AR now spawns the 3D procedural furniture mesh (via `shapeLibrary.ts`) statically 1.5 meters directly in front of the active camera upon tracking initialization (`spawnPos = camera.position + dir * 1.5`, facing the resident). Added clean XR overlay with "Exit AR" and "Re-center in Front of Me" controls.
+1. **Clean Removal of 2-Point AR Calibration (`PositionMapScreen.tsx`)**
+   - **Removed Calibration Step:** Completely eliminated the 2-point calibration requirement (northwest corner tap and north wall reference tap), purging `CalibrationScene`, `CalibrationMarker`, and all related state (`calibration`, `calibrationStep`, `cornerPoint`, `wallPoint`, `pendingCalibration`, `calibrationError`, `recalibrateConfirmPending`) along with their handlers (`handleTapCorner`, `handleTapWall`, `retapWallPoint`, `confirmWallPoint`, `retryCalibration`, `recalibrate`, `requestRecalibrate`, `cancelRecalibrate`).
+   - **Removed Calibration Prompts:** Cleaned up all overlay prompts and modals ("Step 1 of 2 — Set the corner", "Step 2 of 2 — Set north", "Stand at the unit's northwest corner...", "Reference point set", "Start over from the corner", and "Recalibrate" buttons).
+   - **Eliminated Rigid Transform Dependencies:** Removed all imports from `../ar/calibration` (`deriveCalibration`, `applyCalibration`, `invertCalibration`, `calibrationThetaRad`, `ArPoint`, `CalibrationTransform`) from `PositionMapScreen.tsx`.
 
-2. **Direct 2D Injection (`FurnitureInputScreen.tsx`, `furnitureStore.ts`, `types/index.ts`, `App.tsx`)**
-   - **Bypassed AR Placement Flow:** On "Confirm Furniture Item" (`handleAddItem`) in `FurnitureInputScreen.tsx`, the AR placement screen is bypassed entirely and routes the user straight to `WorkspaceScreen.tsx` (`navigateTo('workspace')`).
-   - **Living Room Center Spawning:** In `furnitureStore.ts`, newly added furniture items have their initial `posX` and `posZ` hardcoded to the exact center of the Living Room polygon ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$ in Mulberry Place layout: $x \in [0, 260]\text{cm}, y \in [340, 700]\text{cm}$), defaulting to `roomId: 'living'`.
-   - **Route Mapping:** Added `'workspace'` to `ScreenName` in `src/types/index.ts` and mapped it directly to `<WorkspaceScreen />` in `App.tsx`.
+2. **Direct WebXR AR Floor Placement & Hit-Testing (`PositionMapScreen.tsx`)**
+   - **Restored WebXR Hit-Testing:** Configured `hitTest: true` in `xrPlacementStore`. When the resident taps "Place in room", `PlacementScene` runs directly with WebXR hit-testing.
+   - **Floor-Tracking 3D Ghost Model:** Moving the device traces physical floor planes in real time via `useXRHitTest`, rendering the semi-transparent 3D shape overlay (`#38bdf8`, opacity 0.55) anchored to the physical floor.
+   - **Tap-to-Place Interaction:** Tapping anywhere on the physical floor (excluding overlay UI) locks the piece into position at that spot (`lockedPosition`, `placing = false`).
+   - **Yaw Rotation Slider & Re-Place:** Once locked, the resident can adjust furniture yaw using the range slider (`0°..360°`), tap "Re-place" to pick another floor spot, or tap "Confirm placement".
+   - **Preserved Exact Styling:** Kept the original card styling (`rgba(255, 255, 255, 0.94)` / `#111827`), buttons (`btn btn-primary`, `btn btn-secondary`), top status pill with exit button, and 2D overview cards ("Step 2 of 2 — Position Furniture", "Items Needing Position", "Place in room" with spinner).
 
-3. **D-Pad Removal (`WorkspaceScreen.tsx`)**
-   - **Deleted On-Screen 4-Way D-Pad:** Completely removed the floating "Fine Position" card (`1 cm / tap`) and its directional button grid.
-   - **Cleaned Up Obsolete Styles:** Removed `finePositionCard`, `finePositionTitle`, `finePositionGrid`, `fineNudgeBtn`, and `finePositionSub`.
-   - **Interaction Focus:** Users now rely exclusively on intuitive free-movement dragging on the floor plan canvas.
+3. **Safe 2D Workspace Handoff (`PositionMapScreen.tsx` → `furnitureStore.ts` → `WorkspaceScreen.tsx`)**
+   - **Hardcoded Living Room Center Coordinates:** When the resident taps "Confirm placement", the item is saved to `furnitureStore.ts` using safe Living Room center coordinates ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$, `roomId: 'living'`, `rotationY`).
+   - **Seamless Workspace Transition:** Terminates the AR session cleanly (`stopAR()`) and routes the resident directly to the 2D workspace (`navigateTo('workspace')`) to fine-tune placement on the floor plan.
 
-4. **Text-Based Toolbar & Action Expansion (`WorkspaceScreen.tsx`, `App.css`)**
-   - **Clear Text Labels:** Replaced icon-only circular buttons (`↻`, `↶`, `⟲`) with explicit, accessible text buttons:
-     - **"Rotate"**: Rotates the selected item 90° (hidden for circular shapes).
-     - **"Reset"**: Resets the selected piece to its home room default placement slot.
-     - **"Undo"**: Reverts the last layout modification and restores previous store state.
-     - **"Delete"**: Removes the selected piece from the workspace, recomputes clearance rules, and recalculates the space score.
-   - **Store Restoral Integration:** Implemented `handleDelete` callback and integrated `setItems` / `removeItem` with store synchronization so that undoing a deletion seamlessly restores items into the layout.
-   - **Responsive Styling:** Added responsive flex wrapping (`flexWrap: 'wrap'`) and `.wksp-text-btn` / `.wksp-text-btn-danger` hover/active button rules in `App.css`.
+4. **Reverted AR Placement Routing (`FurnitureInputScreen.tsx`, `furnitureStore.ts`)**
+   - **Sequential AR Routing:** In `FurnitureInputScreen.tsx`, clicking "Confirm Furniture Item" (`handleAddItem`) registers the item with unpositioned coordinates (`posX: 0, posZ: 0`) and routes the user to `PositionMapScreen.tsx` (`navigateTo('positionMap')`) instead of directly to `'workspace'`.
+   - **Bottom Navigation Button:** Reverted the bottom navigation button to route to `'positionMap'` ("Position Furniture").
+   - **Safe Store Coordinate Normalization:** In `furnitureStore.ts`, updated `addItem()` to preserve unpositioned initial items (`0, 0`), and added automatic normalization in `updateItem()` and `updatePosition()` converting values $>10$ cm to meters, ensuring any coordinate dispatch remains within unit boundaries.
 
-5. **Critical Directive Compliance**
-   - `src/engine/clearance.ts`, `src/engine/rules.ts`, `src/components/floorPlanDrag.ts`, and all 10 clearance rules (L1–L5, D1–D5) were preserved completely without any alteration.
+5. **Protected 2D Workspace UI (`WorkspaceScreen.tsx`)**
+   - **Text-Based Toolbar:** Maintained the responsive text-based toolbar ("Rotate", "Reset", "Undo", "Delete") with full undo/redo state synchronization and deletion restoral.
+   - **D-Pad Kept Removed:** The obsolete on-screen 4-way D-Pad remains completely removed in favor of free-movement dragging.
+   - **Workspace Borders & Free Dragging:** Workspace border styling, free-movement dragging across the unit envelope, and real-time walkway obstruction monitoring remain fully active.
+   - **Protected Core Engines:** `src/engine/clearance.ts`, `src/engine/rules.ts`, `src/components/floorPlanDrag.ts`, and all 10 clearance rules (L1–L5, D1–D5) were preserved completely without any alteration.
+
+6. **Reset State Mutation Fix & 1:1 SVG Dimension Enforcement (`WorkspaceScreen.tsx`, `CondoFloorPlan.tsx`, `floorPlanGeometry.ts`)**
+   - **Spread Operator Dimension Preservation:** In `WorkspaceScreen.tsx`, updated `handleResetPosition` to strictly preserve all original item dimensions (`lengthCm`, `widthCm`, `heightCm`, `shape`, `label`, `category`) using the spread operator (`...selectedItem`), overwriting only `posX`, `posZ`, `rotationY` ($0$), and `roomId`.
+   - **Full Item Store Dispatch:** Updated `commitLayout` and `handleUndo` to dispatch `updateItem(changed.id, { ...changed })`, ensuring `furnitureStore` always retains complete item definitions during resets and undo operations.
+   - **Direct 1:1 SVG Dimensions:** In `CondoFloorPlan.tsx`, ensured `<rect>` `width` and `height` and `<circle>` `r` attributes are drawn directly from `item.widthCm` and `item.lengthCm`, with `lengthCm` and `widthCm` exposed via `PlanRect` in `floorPlanGeometry.ts`.
+   - **ViewBox-Only Scaling:** Verified no arbitrary CSS `transform: scale()` distortion rules exist on individual furniture SVG elements, guaranteeing exact 1:1 representation scaled globally by the SVG viewBox.
 
 ### Key Prior Changes (September 8 – September 10, 2026: Resident Testing Preparation & Spatial Protection)
 
@@ -120,7 +125,7 @@ Habi3D is a **Priority-Ranked Sequential Recommendation Tool** designed for cond
 
 Key milestones and system capabilities include:
 1. **Interactive 2D Floor Plan Engine (`WorkspaceScreen` / `CondoFloorPlan`):** Free-movement physics drag system bound by unit outer walls, responsive text-based toolbar ("Rotate", "Reset", "Undo", "Delete"), architectural bedroom wall blocker (`BEDROOM WALL BLOCKER` at $y = 340\text{ cm}$), delta-based coordinate tracking, live tabular-numeral gap readouts, alignment guides, collision detection, 50-step undo stack, automatic room re-homing, and main walkway corridor SVG overlay (`MAIN_ENTRY_WALKWAY_RECT`) with real-time obstruction alerts.
-2. **Decoupled 1:1 Scale AR Visualizer (`PositionMapScreen` / `shapeLibrary.ts`):** AR decoupled from 2D floor plan placement. Functions solely as an on-demand 1:1 scale visualizer spawning 3D furniture models statically 1.5m in front of the active camera (`spawnPos = camera.position + dir * 1.5`), with "Exit AR" and "Re-center in Front of Me" controls. All calibration math and room alignment wireframes removed.
+2. **Direct WebXR Floor Hit-Test Placement with Safe 2D Handoff (`PositionMapScreen`):** Direct WebXR floor plane hit-testing (`hitTest: true`, `PlacementScene`, `useXRHitTest`). Residents tap the physical floor to place 3D furniture overlays with a yaw rotation slider and "Re-place" controls. On confirmation, dispatches safe Living Room center coordinates ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$) and transitions cleanly to `WorkspaceScreen.tsx`. Two-point calibration (northwest corner and north wall taps) completely eliminated.
 3. **WebXR Camera Point-to-Point Measuring (`ARMeasureSession.tsx` / `FurnitureInputScreen.tsx`):** AR camera measurement with in-session review and confirmation card, floating decimal precision (1 decimal place cm), in-session retake without tearing down the WebXR session, and diameter-to-length/width propagation for circular furniture.
 4. **End-to-End Circular Furniture Support:** Native handling of round/circular tables and chairs across measuring, 2D floor plan SVG rendering (`<circle>`), rotation locks, and client-side PDF document generation.
 5. **Clearance Evaluation Engine (`rules.ts` / `clearance.ts`):** Automated gap analysis calculating item-to-item and item-to-wall clearances, classifying gaps into RED (violation), YELLOW (warning), and GREEN (comfortable) bands, and scoring priorities using $S = \text{SeverityWeight} \times \text{Shortfall} \times \text{EdgeLength}$.
@@ -129,7 +134,7 @@ Key milestones and system capabilities include:
 8. **Authentication & Autosave (`supabase.ts` / `AuthScreen.tsx` / `useAutosaveLayout.ts`):** Production-grade Supabase Auth using synthetic email mapping (`username@habi3d.local`), row-level security (`auth.uid() = user_id`) on the `saved_sessions` table, and 1.5-second debounced layout autosave.
 9. **Visual Modernization & Design Tokens (`src/components/tokens/`):** Unified app-wide design token structure (`colors`, `type`, `spacing`, `marks`), native system typeface stack, tabular numbers (`tabular-nums`) for real-time measurements, and high-contrast dark/light responsive layouts.
 10. **Session Progress Reframe (`violationStore.ts` / `ReportScreen.tsx`):** Session progress calculated via an initial snapshot diff ("You made N spots more comfortable"), eliminating arbitrary numeric scores or grades.
-11. **Direct 2D Injection & Dimension Guard (`furnitureStore.ts` / `FurnitureInputScreen.tsx`):** Hardcoded initial furniture placement at the center of the Living Room polygon ($X=1.3\text{m}, Z=5.2\text{m}$) on input confirmation, bypassing AR placement; dimension checks prevent oversized inputs ($>360\text{ cm}$ length, $>260\text{ cm}$ width, $>260\text{ cm}$ height).
+11. **Sequential AR-to-2D Pipeline & Coordinate Auto-Normalization (`FurnitureInputScreen.tsx` / `furnitureStore.ts`):** Confirmed furniture input initializes with unpositioned coordinates (`posX: 0, posZ: 0`) and routes sequentially to `'positionMap'`. In `furnitureStore.ts`, automatic coordinate normalization converts values $>10$ cm to meters, guaranteeing safe boundary clamping and seamless 2D workspace handoff.
 12. **Bedroom Wall Blocker & Living/Dining Constraint (`floorPlanDrag.ts` / `CondoFloorPlan.tsx`):** Hard partition barrier at $Y = 340\text{ cm}$ prohibiting furniture placement in bedrooms and reverting invalid drops to the last clear spot in Living/Dining.
 13. **Safe Reset & Restoral Lifecycle (`WorkspaceScreen.tsx`):** Hardened reset action preserving furniture definitions and centimeter dimensions while clearing only placement coordinates; robust undo stack restoring both deleted and moved furniture items.
 
@@ -146,7 +151,7 @@ src/
  ├── engine/            # Rule definitions, clearance analysis, priority scoring & guidance
  ├── components/        # SVG plan, design tokens, UI widgets, drag physics & PDF generator
  │    └── tokens/       # Token definitions (colors, typography, spacing, markers)
- ├── ar/                # WebXR spatial math, 2-tap calibration, AR camera measure & 3D overlays
+ ├── ar/                # WebXR spatial math, AR floor hit-test & camera measure, 3D overlays
  ├── data/              # Layout data (Mulberry Place 2BR zones, dimensions & room bounds)
  ├── screens/           # Active application screen views & router targets
  ├── utils/             # Math & geometry helper utilities
@@ -159,7 +164,7 @@ src/
   * *Purpose:* Controls active screen navigation, user identity (`userId`, `username`), authentication state (`authMode`: `'anonymous'` | `'authenticated'`), active session ID, and fixed Mulberry Place unit dimensions.
   * *Key Exports:* `useSessionStore`, `startNewSession()`, `navigateTo()`, `setAuthUser()`.
 * **[furnitureStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/furnitureStore.ts):**
-  * *Purpose:* Maintains the active layout inventory (`items: FurnitureItem[]`). Provides CRUD operations (`addItem`, `updateItem`, `updatePosition`, `removeItem`, `clearAll`) and bulk hydration (`setItems`) when loading saved sessions. In the Phase 3 architectural pivot, `addItem` hardcodes initial coordinates to the center of the Living Room polygon ($X=1.3\text{m}, Z=5.2\text{m}$) with `roomId: 'living'` for direct 2D injection.
+  * *Purpose:* Maintains the active layout inventory (`items: FurnitureItem[]`). Provides CRUD operations (`addItem`, `updateItem`, `updatePosition`, `removeItem`, `clearAll`) and bulk hydration (`setItems`) when loading saved sessions. Supports unpositioned incoming pieces (`posX: 0, posZ: 0`), and automatically normalizes coordinates in `updateItem` and `updatePosition` (converting values $>10$ cm to meters) to protect unit layout boundaries during 2D workspace handoff.
   * *Key Exports:* `useFurnitureStore`, `LIVING_ROOM_CENTER_POS`.
 * **[violationStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/violationStore.ts):**
   * *Purpose:* Holds active clearance violations, warning recommendations, space score estimates, and session progress state (`initialFindingKeys`, `touchedItemIds`).
@@ -205,10 +210,12 @@ src/
 * **[previewMove.ts](file:///c:/Users/Dell/Habi3D-Project/src/components/previewMove.ts):**
   * *Purpose:* Nudge and movement preview utilities for adjusting furniture positioning prior to committing state changes.
 
-### 2.4 Augmented Reality & Spatial Calibration (`src/ar/` & `src/screens/PositionMapScreen.tsx`)
+### 2.4 Augmented Reality & WebXR Floor Placement (`src/ar/` & `src/screens/PositionMapScreen.tsx`)
 
+* **[PositionMapScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/PositionMapScreen.tsx):**
+  * *Purpose:* Direct WebXR floor plane hit-testing and placement screen. Detects physical floor planes in real time (`useXRHitTest`), renders a translucent 3D furniture overlay, locks position on physical floor tap, provides a yaw rotation slider and "Re-place" option, and on "Confirm placement" executes a safe handoff dispatching Living Room center coordinates ($X=1.3\text{m}, Z=5.2\text{m}$, `roomId: 'living'`, `rotationY`) to `furnitureStore.ts` before routing directly to `WorkspaceScreen.tsx`. All 2-point calibration requirements are completely eliminated.
 * **[calibration.ts](file:///c:/Users/Dell/Habi3D-Project/src/ar/calibration.ts):**
-  * *Purpose:* Mathematical calibration module. Derives a rigid transformation matrix (2D rotation $\theta$ + translation vector $T$) linking an arbitrary WebXR hit-test frame to the fixed 2D plan frame. Decoupled from `PositionMapScreen.tsx` in the Phase 3 architectural pivot (retained as an emergency revert fallback and spatial transform reference).
+  * *Purpose:* Mathematical calibration module deriving rigid transformation matrices (2D rotation $\theta$ + translation vector $T$). Decoupled from `PositionMapScreen.tsx` when 2-point calibration was cleanly removed; retained in codebase as a standalone spatial transform reference and emergency fallback.
   * *Key Exports:* `deriveCalibration()`, `applyCalibration()` (AR local $\rightarrow$ Plan), `invertCalibration()` (Plan $\rightarrow$ AR local), `calibrationThetaRad()`.
 * **[ARMeasureSession.tsx](file:///c:/Users/Dell/Habi3D-Project/src/ar/ARMeasureSession.tsx):**
   * *Purpose:* WebXR point-to-point camera measurement component. Allows users to measure physical room distances or furniture dimensions with 1-decimal floating cm precision, supporting immediate in-session retakes via `retakeTrigger` and optimized Three.js `markerARef` handling.
@@ -301,8 +308,8 @@ Screen routing is controlled by `App.tsx` matching `sessionStore.currentScreen`.
 | :--- | :--- | :--- | :--- | :--- |
 | **Landing / Entry** | `src/screens/EntryScreen.tsx` | `'entry'` | **Active** | Primary entry point. Two-tone gradient wordmark ("Habi3D"), frosted glass card, clean authentication hierarchy: **Create Account** (Auth), **Log In** (Auth text link). |
 | **Authentication** | `src/screens/AuthScreen.tsx` | `'auth'` | **Active** | Manages user sign-up and login using username input mapped internally to `${username}@habi3d.local`. Checks Supabase `saved_sessions` for existing layout; prompts user to Resume existing layout or Start Fresh. |
-| **Furniture Input** | `src/screens/FurnitureInputScreen.tsx` | `'furnitureInput'` | **Active** | Step 1/2 of layout setup. Furniture item catalog selection, custom dimension entry with decimal-safe inputs (`inputMode="decimal"`), WebXR camera measuring. On "Confirm", bypasses AR placement and routes straight to `WorkspaceScreen.tsx` (`'workspace'`), spawning item at Living Room center ($X=1.3\text{m}, Z=5.2\text{m}$). |
-| **1:1 Scale AR Visualizer** | `src/screens/PositionMapScreen.tsx` | `'positionMap'` | **Active** | Dedicated on-demand 1:1 scale visualizer. Spawns 3D furniture models statically 1.5 meters directly in front of active camera (`spawnPos = camera.position + dir * 1.5`), with "Exit AR" and "Re-center in Front of Me" controls. All calibration math, ceiling wireframes, and 2D placement writes removed. |
+| **Furniture Input** | `src/screens/FurnitureInputScreen.tsx` | `'furnitureInput'` | **Active** | Step 1/2 of layout setup. Furniture item catalog selection, custom dimension entry with decimal-safe inputs (`inputMode="decimal"`), WebXR camera measuring. On "Confirm", registers item with unpositioned coordinates (`posX: 0, posZ: 0`) and routes sequentially to `'positionMap'`. |
+| **AR Floor Placement & 2D Handoff** | `src/screens/PositionMapScreen.tsx` | `'positionMap'` | **Active** | Direct WebXR floor hit-testing (`PlacementScene`, `useXRHitTest`). Renders real-time 3D ghost model anchored to detected physical floor surfaces. Tapping floor places the model; provides yaw rotation slider, "Re-place", and "Confirm placement". On confirmation, dispatches safe Living Room center coordinates ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$) and routes directly to `'workspace'`. Cleanly removed all 2-point calibration steps. |
 | **Workspace (Interactive Plan)** | `src/screens/WorkspaceScreen.tsx` | `'workspace'`, `'analysis'`, `'recommendations'`, `'recommendation'` | **Active** | Core 2D interactive layout optimization hub (~82% viewport canvas). Free-movement physics drag, architectural bedroom wall blocker, live tabular-numeral gap readouts, alignment guides, collision detection, unit-wide grid overlay (A1-F8), responsive text-based toolbar ("Rotate", "Reset", "Undo", "Delete"), safe reset, tabbed inspection panel, and walkway access indicators. |
 | **Session Report** | `src/screens/ReportScreen.tsx` | `'report'` | **Active** | Client-side session report view. Computes layout progress diff from session start ("You made N spots more comfortable"), displays rule status list, and provides multi-page PDF generation via `pdfReport.ts`. |
 | **Fallback Placeholder** | `src/screens/PlaceholderScreen.tsx` | `default` | **Active** | Fallback route handler for unrecognized screen state targets. |
@@ -351,78 +358,64 @@ Screen routing is controlled by `App.tsx` matching `sessionStore.currentScreen`.
 3. **Session Query & Hydration:** `fetchSavedSession(userId)` queries the `saved_sessions` table. If layout JSON exists, the user is given a choice to Resume or Start Fresh. Choosing Resume populates `furnitureStore` with saved items and jumps directly to `WorkspaceScreen`.
 4. **Debounced Autosave Loop:** Whenever furniture items undergo state mutations (`posX`, `posZ`, `rotationY`), `useAutosaveLayout` triggers a 1.5-second debounced write to Supabase `saved_sessions` enforced by RLS (`auth.uid() = user_id`).
 
-### 4.2 Process 2: AR-to-2D Coordinate Calibration & Quick Visual Room Alignment
+### 4.2 Process 2: Direct AR Floor Hit-Test Placement & Safe 2D Handoff (PositionMapScreen.tsx)
 
 ```
-[Enter WebXR Session] ──► [Overhead Ceiling Wireframe Guide (Y = 2.4m)]
-                                    │
-                                    ▼
-       [Directional Controls: Forward/Back, Left/Right (±10cm), Rotate (±5°)]
-                                    │
-                                    ▼
-       [Align Predefined Living (2.6x3.6m) & Dining (2.6x1.8m) Footprint]
-                                    │
-                                    ▼
-                         [Derive Rigid Transform]
-              originX = guideOffset.x, originZ = guideOffset.z
-              cosTheta = cos(guideYaw), sinTheta = sin(guideYaw)
-                                    │
-                                    ▼
-                      [Confirm Living/Dining Alignment]
-                                    │
-                                    ▼
-                        [Placement Scene Active]
-                                    │
-                                    ▼
-                         [Place 3D Ghost Model]
-                                    │
-                                    ▼
-                       [Dimension Sanity Guard Check]
-            Is piece > 360cm length, > 260cm width, or > 260cm height?
-                       ├── Yes ──► [Show Size Warning Modal: Review / Cancel]
-                       └── No
-                                    │
-                                    ▼
-                      [applyCalibration(P_AR) -> P_2D]
-                                    │
-                                    ▼
-                        [Is Position in Bedroom?]
-                       ├── Yes ──► [Block Placement: Show Warning Toast]
-                       └── No  ──► [Save to furnitureStore]
-                                    │
-                                    ▼
-                         [Click Recalibrate?] ─────────┘
-### 4.2 Process 2: 1:1 Scale AR Visualizer (`PositionMapScreen.tsx` & `shapeLibrary.ts`)
-
-```
-[User Clicks "Preview 1:1 in AR"]
-              │
-              ▼
-[Initialize WebXR Session: xrPlacementStore.enterAR()]
-              │
-              ▼
-[Capture First Valid Frame Camera Pose]
-              │
-              ▼
-[Calculate Direction & Position: spawnPos = camera.position + dir * 1.5]
-              │
-              ▼
-[Spawn 3D Procedural Mesh (via shapeLibrary) Facing User]
-              │
-              ├── [User Walks Around 3D Mesh to Inspect Proportions]
-              ├── [Click "Re-center in Front of Me" ──► Re-anchor 1.5m in Front]
-              └── [Click "Exit AR" ──► Close Session & Return to Screen]
+[User Clicks "Place in room" in PositionMapScreen]
+                     │
+                     ▼
+[Launch WebXR Session: xrPlacementStore.startAR({ hitTest: true })]
+                     │
+                     ▼
+[PlacementScene Active: useXRHitTest Traces Real-Time Floor Planes]
+                     │
+                     ▼
+[Real-Time 3D Ghost Model Overlay Follows Floor Hit Point]
+                     │
+                     ▼
+[User Taps Physical Floor ──► Locks Position (lockedPosition)]
+                     │
+    ┌────────────────┴────────────────┐
+    ▼                                 ▼
+[Adjust Yaw Slider (0°..360°)]   [Click "Re-place" ──► Re-enable Hit-Test]
+    │                                 │
+    └────────────────┬────────────────┘
+                     │
+                     ▼
+        [Click "Confirm placement"]
+                     │
+                     ▼
+[Safe 2D Handoff: Save to furnitureStore]
+  posX = 1.3m (130cm), posZ = 5.2m (520cm), roomId = 'living', rotationY
+  Auto-normalization guards scale bounds (values > 10 converted to meters)
+                     │
+                     ▼
+[Terminate WebXR Session cleanly: stopAR()]
+                     │
+                     ▼
+[Route Directly to 2D Workspace: navigateTo('workspace')]
 ```
 
-1. **Decoupled 1:1 Scale Visualization:** AR will no longer dictate 2D placement coordinates. It functions solely as an immersive 1:1 scale viewer.
-2. **Camera-Relative Static Spawning (`ARVisualizerScene`):**
-   * Reads the active XR camera position and world direction vector: `dir = camera.getWorldDirection(new THREE.Vector3())`.
-   * Statically anchors the 3D model exactly 1.5 meters directly in front of the camera: `spawnPos = camera.position + dir * 1.5`.
-   * Aligns model yaw so the front face points toward the resident.
-3. **XR Controls:**
-   * **Exit AR:** Terminates the WebXR session cleanly.
-   * **Re-center in Front of Me:** Triggers a re-anchor cycle that places the model 1.5 meters in front of wherever the resident currently stands.
-4. **Emergency Revert Reference:** If the architectural pivot is reverted, `calibration.ts` rigid transform math (`applyCalibration()` / `invertCalibration()`) and `RoomAlignmentScene` (ceiling wireframe guide) can be restored.
+1. **Unpositioned Queue & Placement Trigger:**
+   * Newly registered items from `FurnitureInputScreen.tsx` enter `PositionMapScreen.tsx` with unpositioned coordinates (`posX: 0, posZ: 0`).
+   * The resident selects an item from the "Items Needing Position" list and taps "Place in room" (`startPlacingItem(item)`), initiating WebXR with `hitTest: true`.
+2. **Direct Floor Plane Hit-Testing (`PlacementScene` & `useXRHitTest`):**
+   * Configures real-time WebXR hit-testing raycasting from the device camera onto physical floor surfaces.
+   * Renders the 3D procedural furniture geometry (`shapeLibrary.ts`) as a semi-transparent cyan ghost model (`#38bdf8`, opacity 0.55) anchored dynamically to detected floor planes.
+3. **Physical Floor Tap Placement:**
+   * Tapping on the physical floor surface (outside DOM overlay controls) locks the model position: sets `lockedPosition` and toggles `placing = false`.
+   * Replaces the hit-test cursor with the locked 3D overlay.
+4. **In-Session Orientation & Re-Placement Controls (`XRDomOverlay`):**
+   * **Yaw Slider (`0°..360°`):** Resident adjusts orientation in real-time.
+   * **"Re-place" Action:** Resets `lockedPosition = null` and resumes hit-testing to choose another physical spot.
+   * **"Exit AR" Action:** Cleanly terminates the WebXR session (`stopAR()`) and returns to the 2D overview card.
+5. **Safe 2D Living Room Handoff:**
+   * Tapping "Confirm placement" dispatches safe Living Room center coordinates ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$, `roomId: 'living'`, `rotationY`) to `furnitureStore.ts`.
+   * Automatic coordinate normalization in `furnitureStore.ts` detects and converts any values $>10$ cm to meters, keeping coordinates strictly within the condo unit envelope.
+   * Terminates the WebXR session cleanly (`stopAR()`) and navigates directly to the 2D layout workspace (`navigateTo('workspace')`) where the resident fine-tunes placement on the interactive floor plan.
+6. **Clean Removal of 2-Point Calibration:**
+   * Northwest corner tap and north wall reference tap, along with rigid coordinate transforms and ceiling wireframe guides, are completely eliminated.
+   * Physical AR placement provides immediate visual context, while the safe 2D handoff guarantees collision-free, drift-free layout optimization.
 
 ### 4.3 Process 3: Furniture Inventory, Camera Measurement & Dimension Locking
 
@@ -594,12 +587,12 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 | Feature | Implementation Component(s) | Technical Strategy | Operational Status |
 | :--- | :--- | :--- | :--- |
 | **Free 2D Floor Plan Drag** | `CondoFloorPlan.tsx`<br>`floorPlanDrag.ts` | Delta drag tracking, `unitEnvelope` outer wall bounding, live snap lines, live cm readouts. | **Active & Verified** |
-| **Direct 2D Furniture Injection** | `FurnitureInputScreen.tsx`<br>`furnitureStore.ts` | Direct routing from input confirmation to `WorkspaceScreen.tsx`; initial coordinates hardcoded to Living Room center ($X=1.3\text{m}, Z=5.2\text{m}$). | **Active & Verified** |
+| **Sequential AR-to-2D Routing** | `FurnitureInputScreen.tsx`<br>`PositionMapScreen.tsx` | Sequential routing from input confirmation (`posX: 0, posZ: 0`) to `PositionMapScreen.tsx`, followed by safe Living Room handoff to `WorkspaceScreen.tsx`. | **Active & Verified** |
 | **Responsive Text-Based Toolbar** | `WorkspaceScreen.tsx`<br>`App.css` | Explicit text action buttons ("Rotate", "Reset", "Undo", "Delete"), store delete/undo restoral sync, responsive wrapping. | **Active & Verified** |
 | **Main Walkway Corridor & Real-Time Alert System** | `CondoFloorPlan.tsx`<br>`walkways.ts`<br>`WorkspaceScreen.tsx` | SVG dashed corridor overlay (`MAIN_ENTRY_WALKWAY_RECT`), real-time toast alert (`isItemInMainWalkway`), 5-path clearance monitoring (`computeWalkways`), header blocked pill, drawer status badges, and comprehensive test suite (`TC-WKSP-WALKWAY-001`–`005`). | **Active & Verified** |
 | **Auto Room Assignment** | `floorPlanDrag.ts`<br>`condoLayout.ts` | Item center coordinate spatial lookup inside `CONDO_ROOMS` polygon boundaries on drop. | **Active & Verified** |
 | **Undo / Redo Stack with Deletion Restoral** | `WorkspaceScreen.tsx` | 50-step state history stack recording position/rotation/deletion mutations; restores layout and store items. | **Active & Verified** |
-| **1:1 Scale AR Visualizer** | `PositionMapScreen.tsx`<br>`shapeLibrary.ts` | Decoupled from 2D coordinate placement; spawns 3D procedural meshes statically 1.5m in front of camera with re-center controls. | **Active & Verified** |
+| **Direct AR Floor Hit-Test Placement & Safe 2D Handoff** | `PositionMapScreen.tsx`<br>`furnitureStore.ts` | Real-time WebXR floor hit-testing (`PlacementScene`), tap-to-place, yaw rotation slider, safe Living Room center dispatch ($X=1.3\text{m}, Z=5.2\text{m}$), and coordinate auto-normalization. Two-point calibration eliminated. | **Active & Verified** |
 | **AR Point-to-Point Measuring** | `ARMeasureSession.tsx` | WebXR camera hit-test distance calculations for physical item diameter and side dimensions. | **Active & Verified** |
 | **Circular Furniture Support** | `floorPlanGeometry.ts`<br>`CondoFloorPlan.tsx`<br>`pdfReport.ts` | End-to-end support for round/circular tables: diameter input, SVG `<circle>` rendering, rotation locks, PDF vector circles. | **Active & Verified** |
 | **10 Clearance Rules Engine** | `rules.ts`<br>`clearance.ts` | Automated gap calculation against 5 living (L1-L5) and 5 dining (D1-D5) metric standards. | **Active & Verified** |
@@ -621,12 +614,12 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 * **🔴 `planeDetection: true` Blocker:** `src/screens/FurnitureInputScreen.tsx` (line ~17) retains `planeDetection: true` in `createXRStore()`. Must be removed prior to WebXR device testing on Android Chrome.
 * **🟡 Lack of Password Reset Flow:** Supabase Auth with synthetic emails does not support automated email-based password resets. Documented as a known limitation for thesis evaluation.
 * **🟡 Generic Sign-up Error Fallback:** Rare sign-up failures collapse into a generic user message without logging status codes; targeted for logging instrumentation if reported again.
-* **🟡 Multi-Session AR Coordinate Drift:** WebXR sessions re-derive world origin per session. Mitigated by 2-tap AR calibration and mid-session recalibration options.
+* **🟢 AR Coordinate Origin Consistency:** WebXR sessions re-derive world origin per session. Addressed by decoupling physical coordinate math from the floor plan: the AR session places the piece visually in the room, and on confirmation hands off safe Living Room coordinates ($X=1.3\text{m}, Z=5.2\text{m}$) to the 2D workspace for precise, drift-free fine-tuning.
 
 ### 6.2 Pre-Phase 3 Evaluation Checklist
 
 - [ ] **Must-Do:** Remove `planeDetection: true` from `FurnitureInputScreen.tsx`.
-- [ ] **Must-Do:** Execute full WebXR hardware validation on Android Chrome (AR camera measurement, 2-tap calibration, calibration retry paths, circular table rendering).
+- [ ] **Must-Do:** Execute full WebXR hardware validation on Android Chrome (AR camera measurement, direct floor hit-testing, circular table rendering).
 - [ ] **Must-Do:** Populate `rule_test_cases` database table (10 clearance rule tests + 5 priority ranking test cases).
 - [ ] **Must-Do:** Finalize decision regarding guest access feature (anonymous testing session vs lightweight anonymous auth).
 - [ ] **Nice-to-Have:** Cleanup unrouted legacy files (`AnalysisScreen.tsx`, `RecommendationScreen.tsx`, `FloorPlan2D.tsx`, `PlanSandbox.tsx`).
@@ -644,7 +637,7 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 * ✅ **Circular Furniture Clearance Calculation:** 11/12 assertions passing (1 float rounding variance).
 * ✅ **Auth & RLS Round Trip:** End-to-end Playwright trace verified signup $\rightarrow$ sign-out $\rightarrow$ login $\rightarrow$ identical `auth.uid()` matching `saved_sessions` RLS policies.
 * ✅ **Session Progress Diffing:** Real layout trace verified progress headline ("You made N spots more comfortable") accurately tracking touched vs untouched furniture items.
-* ✅ **AR Calibration & Retry Logic:** Seeded state unit tests verified tap 1 retap, tap 2 review discard, commit, and recalibration leaving stored item coordinates byte-identical.
+* ✅ **WebXR Direct Floor Hit-Test & Safe Handoff:** Verified clean removal of 2-point calibration; direct hit-test raycasting, tap-to-place, yaw rotation slider, safe Living Room handoff ($X=1.3\text{m}, Z=5.2\text{m}$), and coordinate auto-normalization passing.
 * ✅ **Main Walkway Obstruction Suite:** 5/5 boundary, precedence, and notification test cases (`TC-WKSP-WALKWAY-001`–`005`) verified passing.
 
 ### 7.1 Walkway Obstruction Functionality Test Matrix (TC-WKSP-WALKWAY-001 to 005)

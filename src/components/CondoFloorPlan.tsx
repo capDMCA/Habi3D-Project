@@ -589,6 +589,12 @@ export default function CondoFloorPlan({
             }
           }
 
+          // Direct 1:1 real-world centimetre dimensions
+          const isRotated90 = Math.abs(Math.sin(item.rotationY)) > 0.5;
+          const directWidthCm = isRotated90 ? item.widthCm : item.lengthCm;
+          const directHeightCm = isRotated90 ? item.lengthCm : item.widthCm;
+          const directRadiusCm = (item.widthCm || item.lengthCm) / 2;
+
           return (
             <g
               key={r.id}
@@ -601,8 +607,8 @@ export default function CondoFloorPlan({
                 <rect
                   x={r.xCm - 3}
                   y={r.yCm - 3}
-                  width={r.wCm + 6}
-                  height={r.hCm + 6}
+                  width={directWidthCm + 6}
+                  height={directHeightCm + 6}
                   fill="none"
                   stroke={isColliding ? t.ink : t.inkSoft}
                   strokeWidth={2}
@@ -614,9 +620,9 @@ export default function CondoFloorPlan({
 
               {r.shape === 'round' ? (
                 <circle
-                  cx={r.xCm + r.wCm / 2}
-                  cy={r.yCm + r.hCm / 2}
-                  r={r.wCm / 2}
+                  cx={r.xCm + directWidthCm / 2}
+                  cy={r.yCm + directHeightCm / 2}
+                  r={directRadiusCm}
                   fill={fill}
                   stroke={stroke}
                   strokeWidth={isSelected || isDragging ? 4 : 2}
@@ -629,8 +635,8 @@ export default function CondoFloorPlan({
                 <rect
                   x={r.xCm}
                   y={r.yCm}
-                  width={r.wCm}
-                  height={r.hCm}
+                  width={directWidthCm}
+                  height={directHeightCm}
                   fill={fill}
                   stroke={stroke}
                   strokeWidth={isSelected || isDragging ? 4 : 2}
@@ -643,8 +649,8 @@ export default function CondoFloorPlan({
               )}
 
               <text
-                x={r.xCm + r.wCm / 2}
-                y={r.yCm + r.hCm / 2}
+                x={r.xCm + directWidthCm / 2}
+                y={r.yCm + directHeightCm / 2}
                 fontSize={18}
                 fontWeight={700}
                 fill={t.ink}
@@ -660,8 +666,8 @@ export default function CondoFloorPlan({
               <rect
                 x={r.xCm - 12}
                 y={r.yCm - 12}
-                width={r.wCm + 24}
-                height={r.hCm + 24}
+                width={directWidthCm + 24}
+                height={directHeightCm + 24}
                 fill="rgba(0,0,0,0.001)"
                 style={{
                   cursor: isDragging ? 'grabbing' : 'grab',

@@ -5,7 +5,7 @@ import ClearanceMeter, { BandGlyph } from '../components/ClearanceMeter';
 import { color as t, radius, fontFamily } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
-import { useFurnitureStore } from '../stores/furnitureStore';
+import { useFurnitureStore, LIVING_ROOM_CENTER_POS } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import { useAutosaveLayout } from '../stores/useAutosaveLayout';
@@ -257,7 +257,7 @@ export default function WorkspaceScreen() {
     (layout: FurnitureItem[], changed: FurnitureItem) => {
       previewRef.current = layout;
       setPreview(layout);
-      updateItem(changed.id, { roomId: changed.roomId });
+      updateItem(changed.id, { ...changed });
       updatePosition(changed.id, changed.posX, changed.posZ, changed.rotationY);
       markItemTouched(changed.id);
 
@@ -466,7 +466,7 @@ export default function WorkspaceScreen() {
     previewRef.current = previous;
     setPreview(previous);
     previous.forEach((it) => {
-      updateItem(it.id, { roomId: it.roomId });
+      updateItem(it.id, { ...it });
       updatePosition(it.id, it.posX, it.posZ, it.rotationY);
     });
     const fresh = runClearanceAnalysis(previous, roomWidthCm, roomLengthCm);
@@ -523,28 +523,29 @@ export default function WorkspaceScreen() {
     if (historyRef.current.length > 50) historyRef.current.shift();
     setCanUndo(true);
 
-    // Safe Reset (Task 4): Mutate ONLY placement-related fields (posX, posZ, rotationY, roomId).
+    // Safe Reset: Mutate ONLY placement-related fields (posX, posZ, rotationY, roomId).
     // Furniture dimensions (widthCm, lengthCm, heightCm, shape, category, label)
-    // are strictly immutable during reset operations.
+    // are strictly preserved using the spread operator (...selectedItem).
+    const posX = target?.posX ?? LIVING_ROOM_CENTER_POS.posX;
+    const posZ = target?.posZ ?? LIVING_ROOM_CENTER_POS.posZ;
+    const rotationY = 0;
+    const roomId = (target ? roomIdForItem(target) : null) ?? homeRoomId;
+
     const rehomed: FurnitureItem = {
-      id: selectedItem.id,
-      label: selectedItem.label,
-      category: selectedItem.category,
-      shape: selectedItem.shape,
-      lengthCm: selectedItem.lengthCm,
-      widthCm: selectedItem.widthCm,
-      heightCm: selectedItem.heightCm,
-      posX: target.posX,
-      posZ: target.posZ,
-      rotationY: target.rotationY,
-      roomId: roomIdForItem(target),
+      ...selectedItem,
+      posX,
+      posZ,
+      rotationY,
+      roomId,
     };
+
+    updateItem(rehomed.id, { ...rehomed });
 
     commitLayout(
       previewRef.current.map((it) => (it.id === rehomed.id ? rehomed : it)),
       rehomed,
     );
-  }, [selectedItem, commitLayout]);
+  }, [selectedItem, commitLayout, updateItem]);
 
   // ── Keyboard: arrow nudge, R rotate, Ctrl/Cmd+Z undo ──────────────────────
   useEffect(() => {
