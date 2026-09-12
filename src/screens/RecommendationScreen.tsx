@@ -11,6 +11,7 @@ import { commitLines } from '../components/previewMove';
 import type { PreviewMove } from '../components/previewMove';
 import { findingReason } from '../components/findingText';
 import DownloadReportButton from '../components/DownloadReportButton';
+import BackIcon from '../components/BackIcon';
 import { color as t, type as typeScale } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import type { WallSide } from '../engine/clearance';
@@ -313,7 +314,9 @@ export default function RecommendationScreen() {
     return (
       <div className="screen" style={{ maxWidth: 640 }}>
         <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
+          <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">
+            <BackIcon />
+          </button>
           <div className="screen-header-info">
             <span className="step-label">Your room</span>
             <h2>Try your layout</h2>
@@ -348,7 +351,9 @@ export default function RecommendationScreen() {
     return (
       <div className="screen" style={{ maxWidth: 640 }}>
         <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
+          <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">
+            <BackIcon />
+          </button>
           <div className="screen-header-info">
             <span className="step-label">Your room</span>
             <h2>Try your layout</h2>
@@ -386,7 +391,9 @@ export default function RecommendationScreen() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="screen-header">
-        <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">←</button>
+        <button className="back-btn" onClick={() => navigateTo('analysis')} aria-label="Go back">
+          <BackIcon />
+        </button>
         <div className="screen-header-info">
           <span className="step-label">Your room</span>
           <h2>Try your layout</h2>

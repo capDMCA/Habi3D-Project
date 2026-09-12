@@ -12,6 +12,8 @@ import {
   itemIntersectsRoomZone,
   overlappingItemIds,
   roomIdForItem,
+  isItemInBedroom,
+  isItemInKitchenOrBathroom,
   UNIT_WIDTH_CM,
   UNIT_HEIGHT_CM,
   type AlignmentGuide,
@@ -121,10 +123,11 @@ export default function CondoFloorPlan({
     () => (draggingId ? items.find((it) => it.id === draggingId) ?? null : null),
     [draggingId, items],
   );
-  const draggedGaps = useMemo(
-    () => (draggedItem ? edgeGaps(draggedItem, items) : null),
-    [draggedItem, items],
-  );
+  const draggedGaps = useMemo(() => {
+    if (!draggedItem) return null;
+    if (isItemInBedroom(draggedItem) || isItemInKitchenOrBathroom(draggedItem)) return null;
+    return edgeGaps(draggedItem, items);
+  }, [draggedItem, items]);
 
   // ─── viewBox smooth zoom ────────────────────────────────────────────────────
   const targetViewBox = useMemo(() => {
@@ -747,7 +750,7 @@ export default function CondoFloorPlan({
         })}
 
         {/* 5. LIVE GAP READOUTS on the dragged piece */}
-        {draggedItem && draggedGaps && (() => {
+        {draggedItem && draggedGaps && !isItemInBedroom(draggedItem) && !isItemInKitchenOrBathroom(draggedItem) && (() => {
           const dr = rects.find((r) => r.id === draggedItem.id);
           if (!dr) return null;
           const cx = dr.xCm + dr.wCm / 2;

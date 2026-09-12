@@ -5,6 +5,7 @@ import { useViolationStore } from '../stores/violationStore';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import DownloadReportButton from '../components/DownloadReportButton';
+import BackIcon from '../components/BackIcon';
 import StatusRow from '../components/StatusRow';
 import { statusForClassification } from '../components/statusVocabulary';
 import { describeFinding, findingConsequence, findingDetail } from '../components/findingText';
@@ -115,9 +116,9 @@ export default function ReportScreen() {
           className="back-btn"
           onClick={() => navigateTo('analysis')}
           aria-label="Go back"
-          style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', marginRight: 12 }}
+          style={{ marginRight: 12 }}
         >
-          ←
+          <BackIcon />
         </button>
         <div className="screen-header-info">
           <span style={stepBadgeStyle}>Report</span>

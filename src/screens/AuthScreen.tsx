@@ -4,6 +4,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { MULBERRY_PLACE_2BR, MULBERRY_PLACE_2BR_ID } from '../data/roomData';
 import Spinner from '../components/Spinner';
+import BackIcon from '../components/BackIcon';
 import {
   logIn,
   createAccount,
@@ -130,7 +131,7 @@ export default function AuthScreen() {
     <div className="screen">
       <div className="screen-header">
         <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
-          ←
+          <BackIcon />
         </button>
         <div className="screen-header-info">
           <span className="step-label">{mode === 'login' ? 'Log in' : 'Create account'}</span>

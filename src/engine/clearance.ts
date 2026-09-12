@@ -1,5 +1,6 @@
 import type { FurnitureCategory, FurnitureItem, GapClassificationLevel, Violation } from '../types';
 import { CLEARANCE_RULES, classifyGap, computePriorityScore } from './rules';
+import { WALKWAY_PATHS } from './walkways';
 
 export type WallSide = 'west' | 'east' | 'north' | 'south';
 
@@ -330,18 +331,16 @@ function getSpaceScoreBefore(
   return Math.round((freeAreaCm2 / totalFloorAreaCm2) * 1000) / 10;
 }
 
-function pairAppliesToL2(a: FurnitureItem, b: FurnitureItem): boolean {
-  return (
-    (a.category === 'sofa' && b.category === 'coffee_table') ||
-    (a.category === 'coffee_table' && b.category === 'sofa')
-  );
+const LIVING_CATEGORIES: FurnitureCategory[] = ['sofa', 'coffee_table', 'tv_stand', 'side_table', 'work_desk'];
+const DINING_CATEGORIES: FurnitureCategory[] = ['dining_table', 'dining_chair'];
+const GROUPING_CATEGORIES: FurnitureCategory[] = ['sofa', 'coffee_table', 'tv_stand', 'side_table', 'cabinet', 'other'];
+
+function isLivingItem(item: FurnitureItem): boolean {
+  return LIVING_CATEGORIES.includes(item.category);
 }
 
-function pairAppliesToD5(a: FurnitureItem, b: FurnitureItem): boolean {
-  return (
-    itemMatches(a, ['dining_table', 'dining_chair']) ||
-    itemMatches(b, ['dining_table', 'dining_chair'])
-  );
+function isDiningItem(item: FurnitureItem): boolean {
+  return DINING_CATEGORIES.includes(item.category);
 }
 
 function pairAppliesToD4(a: FurnitureItem, b: FurnitureItem): boolean {
@@ -359,48 +358,77 @@ export function runClearanceAnalysis(
   const bounds = items.map(toBounds);
   const roomWidthM = roomWidthCm / 100;
   const roomLengthM = roomLengthCm / 100;
-  // NOTE: no validity guard here. Real AR-placed furniture carries coordinates
-  // relative to the AR session origin, not normalized to [0, roomWidth], so it
-  // routinely reads as out-of-bounds — and pieces can overlap. Throwing here
-  // would crash the Analysis/Recommendation screens on ordinary layouts. The
-  // sandbox, which DOES need to reject impossible candidates, gates them itself
-  // with findLayoutViolation (the non-throwing predicate) before ever calling
-  // this. Wall-gap numbers on un-anchored AR coords are approximate; the
-  // furniture-to-furniture gaps are correct regardless of origin.
   const classifications: GapClassification[] = [];
   const violations: Violation[] = [];
 
+  // ── 1. Pair Checks (L1, L2, L3, L5, D4, D5) ──────────────────────────────
   for (let i = 0; i < bounds.length; i += 1) {
     for (let j = i + 1; j < bounds.length; j += 1) {
       const a = bounds[i];
       const b = bounds[j];
 
-      addPairCheck({ ruleCode: 'L1', a, b, classifications, violations });
-      addPairCheck({ ruleCode: 'L3', a, b, classifications, violations });
+      const isSofaCoffee =
+        (a.item.category === 'sofa' && b.item.category === 'coffee_table') ||
+        (a.item.category === 'coffee_table' && b.item.category === 'sofa');
 
-      if (pairAppliesToL2(a.item, b.item)) {
+      const isSofaSide =
+        (a.item.category === 'sofa' && b.item.category === 'side_table') ||
+        (a.item.category === 'side_table' && b.item.category === 'sofa');
+
+      const isDiningPair =
+        (a.item.category === 'dining_table' && b.item.category === 'dining_chair') ||
+        (a.item.category === 'dining_chair' && b.item.category === 'dining_table') ||
+        (a.item.category === 'dining_chair' && b.item.category === 'dining_chair');
+
+      const isTableCabinet =
+        (a.item.category === 'dining_table' && b.item.category === 'cabinet') ||
+        (a.item.category === 'cabinet' && b.item.category === 'dining_table');
+
+      const isLivingAndDining =
+        (isLivingItem(a.item) && isDiningItem(b.item)) ||
+        (isDiningItem(a.item) && isLivingItem(b.item));
+
+      // L1: Main Trafficway — evaluates clearance across major circulation routes,
+      // excluding intimate grouping pieces, dining table-chair pairs, and living-dining transitions (handled by L5).
+      if (!isSofaCoffee && !isSofaSide && !isDiningPair && !isTableCabinet && !isLivingAndDining) {
+        addPairCheck({ ruleCode: 'L1', a, b, classifications, violations });
+      }
+
+      // L2: General Circulation (sofa to coffee table / companion seating legroom)
+      if (isSofaCoffee) {
         addPairCheck({ ruleCode: 'L2', a, b, classifications, violations });
       }
 
+      // L3: Furniture Grouping (clearance between seating / conversation pieces)
+      if (
+        GROUPING_CATEGORIES.includes(a.item.category) &&
+        GROUPING_CATEGORIES.includes(b.item.category)
+      ) {
+        addPairCheck({ ruleCode: 'L3', a, b, classifications, violations });
+      }
+
+      // L5: Living-Dining Transition (clearance between living item and dining item)
+      if (isLivingAndDining) {
+        addPairCheck({ ruleCode: 'L5', a, b, classifications, violations });
+      }
+
+      // D4: Passage Only (behind dining chairs / around dining pieces to other items)
       if (pairAppliesToD4(a.item, b.item)) {
         addPairCheck({ ruleCode: 'D4', a, b, classifications, violations });
       }
 
-      if (pairAppliesToD5(a.item, b.item)) {
+      // D5: Table to Base Cabinet
+      if (isTableCabinet) {
         addPairCheck({ ruleCode: 'D5', a, b, classifications, violations });
       }
     }
   }
 
+  // ── 2. Wall Checks (D1, D2, D3) ──────────────────────────────────────────
+  // Note: Generic furniture-to-wall checks for L1 are SUPPRESSED. Furniture placed
+  // flat against a wall (e.g. sofa, console) does not violate trafficways.
   bounds.forEach((entry) => {
-    addWallCheck({
-      ruleCode: 'L1',
-      bounds: entry,
-      wallGap: getClosestWallGap(entry, roomWidthM, roomLengthM),
-      classifications,
-      violations,
-    });
-
+    // D1: Chair Access — dining table to wall clearance for chair pullout
     if (entry.item.category === 'dining_table') {
       addWallCheck({
         ruleCode: 'D1',
@@ -411,48 +439,118 @@ export function runClearanceAnalysis(
       });
     }
 
+    // D2 & D3: Dining chair to wall / passage / serving clearance
     if (entry.item.category === 'dining_chair') {
       const closest = getClosestWallGap(entry, roomWidthM, roomLengthM);
       addWallCheck({ ruleCode: 'D2', bounds: entry, wallGap: closest, classifications, violations });
       addWallCheck({ ruleCode: 'D3', bounds: entry, wallGap: closest, classifications, violations });
     }
-
-    if (entry.item.category === 'sofa') {
-      const centerZ = roomLengthM / 2;
-      const frontGap: WallGap =
-        entry.item.posZ <= centerZ
-          ? {
-              measuredCm: Math.round((roomLengthM - entry.maxZ) * 100),
-              wallSide: 'south',
-              directionLabel: 'toward the south wall',
-            }
-          : {
-              measuredCm: Math.round(entry.minZ * 100),
-              wallSide: 'north',
-              directionLabel: 'toward the north wall',
-            };
-
-      addWallCheck({ ruleCode: 'L5', bounds: entry, wallGap: frontGap, classifications, violations });
-    }
   });
 
-  const largestWallGaps = bounds
-    .map((entry) => ({
-      bounds: entry,
-      wallGap: getWallGaps(entry, roomWidthM, roomLengthM).sort(
-        (a, b) => b.measuredCm - a.measuredCm,
-      )[0],
-    }))
-    .sort((a, b) => b.wallGap.measuredCm - a.wallGap.measuredCm);
+  // ── 3. Walkway Corridor Obstruction (L4) ─────────────────────────────────
+  if (items.length > 0) {
+    if (roomLengthM >= 8) {
+      let worstWalkwayClearance = Infinity;
+      let worstPath = WALKWAY_PATHS[0];
+      let intrudingBound: ItemBounds | null = null;
 
-  if (largestWallGaps[0]) {
-    addWallCheck({
-      ruleCode: 'L4',
-      bounds: largestWallGaps[0].bounds,
-      wallGap: largestWallGaps[0].wallGap,
-      classifications,
-      violations,
-    });
+      for (const path of WALKWAY_PATHS) {
+        const pathMinX = path.x / 100;
+        const pathMaxX = (path.x + path.width) / 100;
+        const pathMinZ = path.y / 100;
+        const pathMaxZ = (path.y + path.height) / 100;
+
+        for (const b of bounds) {
+          const overlapX = Math.min(b.maxX, pathMaxX) - Math.max(b.minX, pathMinX);
+          const overlapZ = Math.min(b.maxZ, pathMaxZ) - Math.max(b.minZ, pathMinZ);
+
+          if (overlapX > 0 && overlapZ > 0) {
+            const protrusionCm = Math.round(Math.min(overlapX, overlapZ) * 100);
+            const maxCorridorDim = Math.min(path.width, path.height);
+            const clearanceCm = Math.max(0, maxCorridorDim - protrusionCm);
+
+            if (clearanceCm < worstWalkwayClearance) {
+              worstWalkwayClearance = clearanceCm;
+              worstPath = path;
+              intrudingBound = b;
+            }
+          }
+        }
+      }
+
+      if (intrudingBound && worstWalkwayClearance < 91) {
+        const rule = getRule('L4');
+        const classification = classifyGap(worstWalkwayClearance, rule);
+        classifications.push({
+          ruleCode: 'L4',
+          itemAId: intrudingBound.item.id,
+          itemBId: 'wall',
+          measuredCm: worstWalkwayClearance,
+          classification,
+        });
+
+        if (classification !== 'GREEN') {
+          violations.push(
+            makeViolation({
+              ruleCode: 'L4',
+              ruleLabel: rule.name,
+              classification,
+              measuredCm: worstWalkwayClearance,
+              requiredCm: requiredForClassification(classification, 'L4'),
+              affectedEdgeLengthCm: Math.min(
+                effectiveLengthCm(intrudingBound.item),
+                effectiveWidthCm(intrudingBound.item),
+              ),
+              item: intrudingBound.item,
+              itemBId: 'wall',
+              fixDirectionLabel: `clear of the ${worstPath.label} walkway`,
+            }),
+          );
+        }
+      } else {
+        classifications.push({
+          ruleCode: 'L4',
+          itemAId: bounds[0].item.id,
+          itemBId: 'wall',
+          measuredCm: 91,
+          classification: 'GREEN',
+        });
+      }
+    } else {
+      const largestWallGaps = bounds
+        .map((entry) => ({
+          bounds: entry,
+          wallGap: getWallGaps(entry, roomWidthM, roomLengthM).sort(
+            (a, b) => b.measuredCm - a.measuredCm,
+          )[0],
+        }))
+        .sort((a, b) => b.wallGap.measuredCm - a.wallGap.measuredCm);
+
+      if (largestWallGaps[0]) {
+        addWallCheck({
+          ruleCode: 'L4',
+          bounds: largestWallGaps[0].bounds,
+          wallGap: largestWallGaps[0].wallGap,
+          classifications,
+          violations,
+        });
+      }
+    }
+  }
+
+  // ── 4. Non-Applicable Rules Recording ('N/A') ────────────────────────────
+  // Record N/A for rules that do not apply to this room/item configuration.
+  const evaluatedRuleCodes = new Set(classifications.map((c) => c.ruleCode));
+  for (const rule of CLEARANCE_RULES) {
+    if (!evaluatedRuleCodes.has(rule.id)) {
+      classifications.push({
+        ruleCode: rule.id,
+        itemAId: '',
+        itemBId: '',
+        measuredCm: 0,
+        classification: 'N/A',
+      });
+    }
   }
 
   return {

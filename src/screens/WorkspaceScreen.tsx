@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import CondoFloorPlan from '../components/CondoFloorPlan';
 import ClearanceMeter, { BandGlyph } from '../components/ClearanceMeter';
+import BackIcon from '../components/BackIcon';
 import { color as t, radius, fontFamily } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
@@ -545,7 +546,9 @@ export default function WorkspaceScreen() {
     <div className="wksp-shell" style={shell}>
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <header style={header}>
-        <button className="wksp-icon-btn" style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">←</button>
+        <button className="wksp-icon-btn" style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">
+          <BackIcon />
+        </button>
         <div style={headerTitleWrap}>
           {focusedRoom ? (
             <div style={headerTitleRow}>
@@ -1002,13 +1005,9 @@ const headerTitle: CSSProperties = {
 };
 
 const backBtn: CSSProperties = {
-  background: 'none',
-  border: 'none',
-  fontSize: 18,
-  fontWeight: 700,
   cursor: 'pointer',
-  minWidth: 44,
-  minHeight: 44,
+  minWidth: 40,
+  minHeight: 40,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',

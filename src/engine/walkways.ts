@@ -83,7 +83,7 @@ export function computeWalkways(items: FurnitureItem[]): WalkwayStatus[] {
     const clearanceCm = Math.max(0, maxCorridorDim - maxOverlapCm);
     
     let status: 'RED' | 'YELLOW' | 'GREEN' = 'GREEN';
-    if (clearanceCm < 60) {
+    if (clearanceCm < 61) {
       status = 'RED';
     } else if (clearanceCm < 91) {
       status = 'YELLOW';

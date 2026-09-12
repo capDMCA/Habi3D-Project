@@ -29,54 +29,54 @@ export interface RuleGuidance {
 
 const COPY: Record<string, { title: string; requirement: string; consequence: string }> = {
   L1: {
-    title: 'Room to walk through',
-    requirement: 'Leave at least 91 cm of open floor for everyday circulation.',
-    consequence: 'the gap is too narrow to walk through comfortably',
+    title: 'Main Trafficway',
+    requirement: 'Keep the main trafficway at least 91 cm wide (minimum 61 cm).',
+    consequence: 'the main trafficway is too narrow to navigate comfortably',
   },
   L2: {
-    title: 'Legroom at the sofa',
-    requirement: 'Leave 45–60 cm between the sofa and the coffee table.',
-    consequence: 'there is not enough legroom to sit down properly',
+    title: 'General Circulation',
+    requirement: 'Leave at least 61 cm for general circulation around active furniture.',
+    consequence: 'circulation path around furniture is restricted',
   },
   L3: {
-    title: 'Squeezing between furniture',
-    requirement: 'Leave at least 76 cm between two pieces people pass between.',
-    consequence: 'it is a tight squeeze to move between them',
+    title: 'Furniture Grouping',
+    requirement: 'Keep at least 61 cm between seating pieces in a conversation grouping.',
+    consequence: 'the conversational seating pieces are cramped together',
   },
   L4: {
-    title: 'Main walkway width',
-    requirement: 'Keep the main route through the room at least 91 cm wide.',
-    consequence: 'the main walkway through the room is too narrow',
+    title: 'Walkway Obstruction',
+    requirement: 'Keep dedicated pedestrian walkways clear by at least 91 cm (minimum 61 cm).',
+    consequence: 'furniture is intruding into an active pedestrian walkway',
   },
   L5: {
-    title: 'Seating area depth',
-    requirement: 'Allow at least 300 cm of depth for a comfortable sofa grouping.',
-    consequence: 'the seating area is too shallow to sit and talk comfortably',
+    title: 'Living-Dining Transition',
+    requirement: 'Provide at least 91 cm (minimum 61 cm) transition clearance between living and dining areas.',
+    consequence: 'the transition between living and dining zones is obstructed',
   },
   D1: {
-    title: 'Table to wall',
-    requirement: 'Leave at least 91 cm between the table edge and the wall.',
-    consequence: 'there is not enough room to get around the table',
+    title: 'Chair Access',
+    requirement: 'Leave at least 81 cm behind the table to pull out chairs and sit.',
+    consequence: 'chairs cannot be pulled out far enough to sit down comfortably',
   },
   D2: {
-    title: 'Pulling out a chair',
-    requirement: 'Leave at least 97 cm behind the table to pull a chair out and sit.',
-    consequence: 'a chair cannot be pulled out far enough to sit down',
+    title: 'Chair + Passage',
+    requirement: 'Leave at least 96 cm behind the table for chair pull-out plus walking passage.',
+    consequence: 'there is insufficient clearance for someone to walk behind pulled-out chairs',
   },
   D3: {
-    title: 'Passing behind a seated person',
-    requirement: 'Leave at least 107 cm to edge past someone who is seated.',
-    consequence: 'there is no room to pass behind someone seated',
+    title: 'Serving Behind Chair',
+    requirement: 'Leave at least 107 cm behind seated diners for food serving and passage.',
+    consequence: 'there is no room to serve food behind occupied dining chairs',
   },
   D4: {
-    title: 'Walking past a seated person',
-    requirement: 'Leave at least 112 cm to walk past someone who is seated.',
-    consequence: 'it is too tight to walk past someone seated',
+    title: 'Passage Only',
+    requirement: 'Keep at least 61 cm for passage-only routes behind dining furniture.',
+    consequence: 'the passage route behind dining furniture is too narrow',
   },
   D5: {
-    title: 'Minimum passage',
-    requirement: 'Never let a passage between furniture drop below 76 cm.',
-    consequence: 'the passage is too tight to move through',
+    title: 'Table to Base Cabinet',
+    requirement: 'Leave at least 122 cm between the dining table and any base cabinet or buffet.',
+    consequence: 'base cabinet drawers or doors cannot open fully without hitting the table',
   },
 };
 
@@ -124,6 +124,12 @@ export interface BandRange {
 }
 
 export function bandRanges(g: RuleGuidance): BandRange[] {
+  if (g.warningThresholdCm <= g.violationThresholdCm) {
+    return [
+      { band: 'RED', label: bandLabel('RED'), fromCm: 0, toCm: g.violationThresholdCm },
+      { band: 'GREEN', label: bandLabel('GREEN'), fromCm: g.violationThresholdCm, toCm: null },
+    ];
+  }
   return [
     { band: 'RED', label: bandLabel('RED'), fromCm: 0, toCm: g.violationThresholdCm },
     {

@@ -4,6 +4,7 @@ const ZONE_COLOR: Record<GapClassificationLevel, string> = {
   RED: '#E24B4A',
   YELLOW: '#F0A500',
   GREEN: '#4CAF50',
+  'N/A': '#9CA3AF',
 };
 
 interface BoundsCm {

@@ -11,6 +11,7 @@ import {
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import Spinner from '../components/Spinner';
+import BackIcon from '../components/BackIcon';
 import { fontFamily, numeric } from '../components/tokens';
 import type { FurnitureItem } from '../types';
 
@@ -471,7 +472,7 @@ export default function PositionMapScreen() {
       <div className="screen">
         <div className="screen-header">
           <button className="back-btn" onClick={() => navigateTo('furnitureInput')} aria-label="Go back">
-            &lt;
+            <BackIcon />
           </button>
           <div className="screen-header-info">
             <span className="step-label">Step 2 of 2</span>

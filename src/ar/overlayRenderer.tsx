@@ -25,12 +25,14 @@ const COLORS: Record<GapClassificationLevel, string> = {
   RED: '#2563EB',
   YELLOW: '#BA7517',
   GREEN: '#639922',
+  'N/A': '#9CA3AF',
 };
 
 const OPACITY: Record<GapClassificationLevel, number> = {
   RED: 0.55,
   YELLOW: 0.45,
   GREEN: 0.35,
+  'N/A': 0,
 };
 
 function getBounds(item: FurnitureItem) {
@@ -196,6 +198,7 @@ export default function OverlayScene({
 
     return classifications
       .map((classification) => {
+        if (classification.classification === 'N/A') return null;
         const itemA = itemById.get(classification.itemAId);
         if (!itemA) return null;
 

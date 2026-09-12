@@ -52,7 +52,7 @@ export interface ClearanceRule {
   description: string;
 }
 
-export type GapClassificationLevel = 'RED' | 'YELLOW' | 'GREEN';
+export type GapClassificationLevel = 'RED' | 'YELLOW' | 'GREEN' | 'N/A';
 
 export interface Violation {
   id: string;

@@ -55,12 +55,12 @@ export const useViolationStore = create<ViolationState>((set) => ({
   spaceScoreAfter: 0,
   setViolations: (violations) =>
     set(() => {
-      // Fresh seed (first analysis of a session) — nothing resolved yet.
+      const validViolations = violations.filter((v) => v.classification === 'RED' || v.classification === 'YELLOW');
       const resolvedKeys = new Set<string>();
-      const recommendations = [...violations].sort((a, b) => b.priorityScore - a.priorityScore);
+      const recommendations = [...validViolations].sort((a, b) => b.priorityScore - a.priorityScore);
       const firstUnresolved = recommendations.findIndex((v) => !v.resolved);
       return {
-        violations,
+        violations: validViolations,
         recommendations,
         resolvedKeys,
         currentStepIndex: firstUnresolved === -1 ? recommendations.length : firstUnresolved,
@@ -70,10 +70,9 @@ export const useViolationStore = create<ViolationState>((set) => ({
     }),
   refreshViolations: (violations) =>
     set((state) => {
-      // Resolved status carries forward via the stable key set, so a
-      // re-analysis (new ids, new measuredCm) keeps prior resolutions.
+      const validViolations = violations.filter((v) => v.classification === 'RED' || v.classification === 'YELLOW');
       const { resolvedKeys } = state;
-      const merged = applyResolved(violations, resolvedKeys);
+      const merged = applyResolved(validViolations, resolvedKeys);
       const recommendations = [...merged].sort((a, b) => b.priorityScore - a.priorityScore);
 
       // find next unresolved starting at the previous index

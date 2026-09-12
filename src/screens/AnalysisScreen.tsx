@@ -5,6 +5,7 @@ import { createXRStore, XR, XRDomOverlay, XROrigin, useXRHitTest } from '@react-
 import * as THREE from 'three';
 import ClearanceOverlay from '../ar/ClearanceOverlay';
 import ErrorBoundary from '../components/ErrorBoundary';
+import BackIcon from '../components/BackIcon';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { useFurnitureStore } from '../stores/furnitureStore';
@@ -246,7 +247,7 @@ export default function AnalysisScreen() {
       {/* Header */}
       <div className="screen-header">
         <button className="back-btn" onClick={() => navigateTo('positionMap')} aria-label="Go back">
-          ←
+          <BackIcon />
         </button>
         <div className="screen-header-info">
           <span className="step-label">Step 5 of 6</span>

@@ -41,6 +41,7 @@ const ZONE_COLOR: Record<GapClassificationLevel, string> = {
   RED:    '#2563EB',
   YELLOW: '#F0A500',
   GREEN:  '#4CAF50',
+  'N/A':  '#9CA3AF',
 };
 
 // Light enough to see the floor, vivid enough to read severity
@@ -48,6 +49,7 @@ const ZONE_OPACITY: Record<GapClassificationLevel, number> = {
   RED:    0.20,
   YELLOW: 0.15,
   GREEN:  0.09,
+  'N/A':  0,
 };
 
 // Height of the 3D tile block (metres)
@@ -139,6 +141,7 @@ function buildZone(
   roomLengthM: number,
   highlightedRuleCode?: string,
 ): ZoneDefinition | null {
+  if (classification.classification === 'N/A') return null;
   const itemA = itemMap.get(classification.itemAId);
   if (!itemA) return null;
   const boundsA = getBounds(itemA);

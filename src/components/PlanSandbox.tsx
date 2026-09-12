@@ -37,7 +37,7 @@ function checkIsMoved(base: FurnitureItem | undefined, current: FurnitureItem | 
 
 /** Worse of two classifications — RED beats YELLOW beats GREEN. */
 function worseOf(a: GapClassificationLevel, b: GapClassificationLevel): GapClassificationLevel {
-  const rank: Record<GapClassificationLevel, number> = { RED: 2, YELLOW: 1, GREEN: 0 };
+  const rank: Record<GapClassificationLevel, number> = { RED: 2, YELLOW: 1, GREEN: 0, 'N/A': -1 };
   return rank[a] >= rank[b] ? a : b;
 }
 
@@ -112,7 +112,7 @@ export default function PlanSandbox({ baseItems, targetItemId, roomWidthCm, room
       const priorByKey = priorClassByKeyRef.current;
       const nextByKey = new Map<string, GapClassificationLevel>();
       const improved = new Set<string>();
-      const rank: Record<GapClassificationLevel, number> = { RED: 0, YELLOW: 1, GREEN: 2 };
+      const rank: Record<GapClassificationLevel, number> = { RED: 0, YELLOW: 1, GREEN: 2, 'N/A': -1 };
       result.violations.forEach((v) => {
         const key = stableViolationKey(v);
         nextByKey.set(key, v.classification);

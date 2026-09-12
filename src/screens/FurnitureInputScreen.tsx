@@ -8,6 +8,7 @@ import { useAutosaveLayout } from '../stores/useAutosaveLayout';
 import ARMeasureSession, { type MeasurePhase } from '../ar/ARMeasureSession';
 import { createFurnitureShape } from '../ar/shapeLibrary';
 import Spinner from '../components/Spinner';
+import BackIcon from '../components/BackIcon';
 import { fontFamily, numeric } from '../components/tokens';
 import type { FurnitureCategory, FurnitureItem, FurnitureShape } from '../types';
 
@@ -27,18 +28,17 @@ const CATEGORIES: Array<{
 }> = [
   { key: 'dining_table', label: 'Dining Table', rules: ['D1', 'D2', 'D3', 'D4', 'D5'], shapes: ['rectangle', 'round', 'oval'] },
   { key: 'dining_chair', label: 'Dining Chair', rules: ['D2', 'D3', 'D4'], shapes: ['rectangle'] },
-  { key: 'sofa', label: 'Sofa', rules: ['L1', 'L2', 'L3', 'L5'], shapes: ['rectangle', 'l-shape'] },
+  { key: 'sofa', label: 'Sofa', rules: ['L1', 'L2', 'L3', 'L5'], shapes: ['rectangle'] },
   { key: 'tv_stand', label: 'TV Rack', rules: ['L1', 'L4'], shapes: ['rectangle'] },
   { key: 'cabinet', label: 'Cabinet / Storage', rules: ['L1', 'L3'], shapes: ['rectangle'] },
   { key: 'side_table', label: 'Side Table', rules: ['L1', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
   { key: 'coffee_table', label: 'Coffee Table', rules: ['L2', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
   { key: 'work_desk', label: 'Work Desk / Study Table', rules: ['L1', 'L3'], shapes: ['rectangle'] },
-  { key: 'other', label: 'Other Furniture', rules: ['L1'], shapes: ['rectangle', 'l-shape', 'round', 'oval'] },
+  { key: 'other', label: 'Other Furniture', rules: ['L1'], shapes: ['rectangle', 'round', 'oval'] },
 ];
 
 const SHAPES: Array<{ value: FurnitureShape; label: string; hint: string }> = [
   { value: 'rectangle', label: 'Rectangle', hint: 'Sofas, cabinets, TV stands' },
-  { value: 'l-shape', label: 'L-shape', hint: 'Sectionals or corner furniture' },
   { value: 'round', label: 'Round', hint: 'Round tables or stools' },
   { value: 'oval', label: 'Oval', hint: 'Oval dining or coffee tables' },
 ];
@@ -327,7 +327,7 @@ export default function FurnitureInputScreen() {
         {/* Header */}
         <div className="screen-header">
           <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
-            ←
+            <BackIcon />
           </button>
           <div className="screen-header-info">
             <span className="step-label">Step 1 of 2</span>

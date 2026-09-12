@@ -362,6 +362,10 @@ export interface EdgeGaps {
 }
 
 export function edgeGaps(item: FurnitureItem, items: FurnitureItem[]): EdgeGaps {
+  if (isItemInBedroom(item) || isItemInKitchenOrBathroom(item)) {
+    return { west: 0, east: 0, north: 0, south: 0 };
+  }
+
   const a = toBounds(item);
   const gaps: EdgeGaps = {
     west: a.minX,

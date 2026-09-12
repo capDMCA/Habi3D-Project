@@ -19,96 +19,95 @@ export const clearanceRules: ClearanceRule[] = [
   // ── Living Room Rules (Table 3) ──────────────────────────────
   {
     id: 'L1',
-    name: 'General Circulation',
+    name: 'Main Trafficway',
     category: 'living',
-    violationThresholdCm: 60,   // RED: < 60 cm
-    warningThresholdCm: 91,     // YELLOW: 60–89 cm · GREEN: ≥ 91 cm
+    violationThresholdCm: 61,   // RED: < 61 cm
+    warningThresholdCm: 91,     // YELLOW: 61–90 cm · GREEN: ≥ 91 cm
     description:
-      'General circulation clearance in the combined living/dining area',
+      'Main trafficway clearance through the living area',
   },
   {
     id: 'L2',
-    name: 'Sofa / Coffee Table',
+    name: 'General Circulation',
     category: 'living',
-    violationThresholdCm: 35,   // RED: < 35 cm
-    warningThresholdCm: 45,     // YELLOW: 35–45 cm · GREEN: 45–60 cm
+    violationThresholdCm: 61,   // RED: < 61 cm
+    warningThresholdCm: 61,     // GREEN: ≥ 61 cm (No YELLOW)
     description:
-      'Sofa or coffee table clearance for legroom and use',
+      'General circulation clearance around active living furniture',
   },
   {
     id: 'L3',
-    name: 'Secondary Circulation',
+    name: 'Furniture Grouping',
     category: 'living',
     violationThresholdCm: 61,   // RED: < 61 cm
-    warningThresholdCm: 76,     // YELLOW: 61–75 cm · GREEN: ≥ 76 cm
+    warningThresholdCm: 61,     // GREEN: ≥ 61 cm (No YELLOW)
     description:
-      'Secondary circulation path between furniture pieces',
+      'Clearance between pieces within a conversational furniture grouping',
   },
   {
     id: 'L4',
-    name: 'Main Traffic Path',
+    name: 'Walkway Obstruction',
     category: 'living',
-    violationThresholdCm: 76,   // RED: < 76 cm
-    warningThresholdCm: 91,     // YELLOW: 76–90 cm · GREEN: ≥ 91 cm
+    violationThresholdCm: 61,   // RED: < 61 cm
+    warningThresholdCm: 91,     // YELLOW: 61–90 cm · GREEN: ≥ 91 cm
     description:
-      'Main traffic path toward kitchen path',
+      'Pedestrian walkway corridor obstruction clearance',
   },
   {
     id: 'L5',
-    name: 'Conversation Area',
+    name: 'Living-Dining Transition',
     category: 'living',
-    violationThresholdCm: 244,  // RED: < 244 cm
-    warningThresholdCm: 300,    // YELLOW: 244–299 cm · GREEN: ≥ 300 cm
+    violationThresholdCm: 61,   // RED: < 61 cm
+    warningThresholdCm: 91,     // Contextual: YELLOW 61–90 cm if main path, GREEN ≥ 91 cm
     description:
-      'Conversation area depth for sofa grouping. Shortfall is measured '
-      + 'against 244 cm minimum; affected edge is the sofa face width.',
+      'Circulation transition clearance between living and dining areas',
   },
 
   // ── Dining Room Rules (Table 4) ──────────────────────────────
   {
     id: 'D1',
-    name: 'Table to Wall',
+    name: 'Chair Access',
     category: 'dining',
-    violationThresholdCm: 76,   // RED: < 76 cm
-    warningThresholdCm: 91,     // YELLOW: 76–90 cm · GREEN: ≥ 91 cm
+    violationThresholdCm: 81,   // RED: < 81 cm
+    warningThresholdCm: 81,     // GREEN: ≥ 81 cm (No YELLOW)
     description:
-      'Minimum dining clearance from table edge to wall',
+      'Clearance behind dining table to access and pull out chairs',
   },
   {
     id: 'D2',
-    name: 'Chair Pull-out + Access',
+    name: 'Chair + Passage',
     category: 'dining',
-    violationThresholdCm: 81,   // RED: < 81 cm
-    warningThresholdCm: 97,     // YELLOW: 81–96 cm · GREEN: ≥ 97 cm
+    violationThresholdCm: 96,   // RED: < 96 cm
+    warningThresholdCm: 96,     // GREEN: ≥ 96 cm (No YELLOW)
     description:
-      'Space needed to pull out a dining chair and access the seat',
+      'Clearance behind table for chair pull-out plus walking passage',
   },
   {
     id: 'D3',
-    name: 'Passage Behind Seated',
+    name: 'Serving Behind Chair',
     category: 'dining',
-    violationThresholdCm: 91,   // RED: < 91 cm
-    warningThresholdCm: 107,    // YELLOW: 91–106 cm · GREEN: ≥ 107 cm
+    violationThresholdCm: 107,  // RED: < 107 cm
+    warningThresholdCm: 107,    // GREEN: ≥ 107 cm (No YELLOW)
     description:
-      'Clearance to pass behind a seated person at the dining table',
+      'Clearance behind seated diners for food serving and clear passage',
   },
   {
     id: 'D4',
-    name: 'Walking Past Seated',
+    name: 'Passage Only',
     category: 'dining',
-    violationThresholdCm: 97,   // RED: < 97 cm
-    warningThresholdCm: 112,    // YELLOW: 97–111 cm · GREEN: ≥ 112 cm
+    violationThresholdCm: 61,   // RED: < 61 cm
+    warningThresholdCm: 61,     // GREEN: ≥ 61 cm (No YELLOW)
     description:
-      'Clearance to walk past a seated person at the dining area',
+      'Passage only clearance behind dining chairs or around dining furniture',
   },
   {
     id: 'D5',
-    name: 'Minimum Passage',
+    name: 'Table to Base Cabinet',
     category: 'dining',
-    violationThresholdCm: 61,   // RED: < 61 cm
-    warningThresholdCm: 76,     // YELLOW: 61–75 cm · GREEN: ≥ 76 cm
+    violationThresholdCm: 122,  // RED: < 122 cm
+    warningThresholdCm: 122,    // GREEN: ≥ 122 cm (No YELLOW)
     description:
-      'Minimum passage width in tight spaces between dining furniture and walls',
+      'Clearance between dining table and base cabinet, buffet, or storage piece',
   },
 ];
 
@@ -119,7 +118,9 @@ export function classifyGap(
   rule: ClearanceRule,
 ): 'RED' | 'YELLOW' | 'GREEN' {
   if (measuredCm < rule.violationThresholdCm) return 'RED';
-  if (measuredCm < rule.warningThresholdCm) return 'YELLOW';
+  if (rule.warningThresholdCm > rule.violationThresholdCm && measuredCm < rule.warningThresholdCm) {
+    return 'YELLOW';
+  }
   return 'GREEN';
 }
 

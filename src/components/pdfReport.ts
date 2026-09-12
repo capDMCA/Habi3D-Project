@@ -36,7 +36,7 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 function worseOf(a: GapClassificationLevel, b: GapClassificationLevel): GapClassificationLevel {
-  const rank: Record<GapClassificationLevel, number> = { RED: 2, YELLOW: 1, GREEN: 0 };
+  const rank: Record<GapClassificationLevel, number> = { RED: 2, YELLOW: 1, GREEN: 0, 'N/A': -1 };
   return rank[a] >= rank[b] ? a : b;
 }
 
@@ -87,11 +87,13 @@ const STATUS_FILL: Record<GapClassificationLevel, string> = {
   RED: t.brandTint,
   YELLOW: t.tightBg,
   GREEN: t.comfortBg,
+  'N/A': '#f3f4f6',
 };
 const STATUS_STROKE: Record<GapClassificationLevel, string> = {
   RED: t.brand,
   YELLOW: t.tightFg,
   GREEN: t.comfortFg,
+  'N/A': '#9ca3af',
 };
 
 /** Draws the Mulberry Place room layout plus every furniture piece at its
@@ -256,11 +258,12 @@ function drawRuleDetail(
     byRule.set(gc.ruleCode, list);
   });
 
-  const rank: Record<GapClassificationLevel, number> = { RED: 2, YELLOW: 1, GREEN: 0 };
+  const rank: Record<GapClassificationLevel, number> = { RED: 2, YELLOW: 1, GREEN: 0, 'N/A': -1 };
 
   ALL_RULE_GUIDANCE.forEach((guidance) => {
-    const instances = byRule.get(guidance.code);
-    if (!instances || instances.length === 0) return; // rule wasn't applicable to this layout
+    const rawInstances = byRule.get(guidance.code) ?? [];
+    const instances = rawInstances.filter((gc) => gc.classification !== 'N/A');
+    if (instances.length === 0) return; // rule wasn't applicable to this layout
 
     const sorted = [...instances].sort((a, b) => rank[b.classification] - rank[a.classification]);
     const worst = sorted[0].classification;
@@ -306,7 +309,7 @@ function drawRuleDetail(
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
       doc.setTextColor(sr, sg, sb);
-      doc.text(bandLabel(gc.classification), margin + 4.5, y);
+      doc.text(gc.classification === 'N/A' ? 'N/A' : bandLabel(gc.classification), margin + 4.5, y);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
@@ -362,14 +365,15 @@ export async function downloadRoomAssessmentPdf(params: PdfReportParams): Promis
   // Counts every check performed (allClassifications), not just violations
   // — so a fully comfortable layout still shows how many rules it cleared,
   // rather than only ever reporting problems.
-  const redChecks = allClassifications.filter((c) => c.classification === 'RED').length;
-  const yellowChecks = allClassifications.filter((c) => c.classification === 'YELLOW').length;
-  const greenChecks = allClassifications.length - redChecks - yellowChecks;
+  const applicableChecks = allClassifications.filter((c) => c.classification !== 'N/A');
+  const redChecks = applicableChecks.filter((c) => c.classification === 'RED').length;
+  const yellowChecks = applicableChecks.filter((c) => c.classification === 'YELLOW').length;
+  const greenChecks = applicableChecks.filter((c) => c.classification === 'GREEN').length;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 108, 124);
   doc.text(
-    `${allClassifications.length} rule checks across your layout — ${greenChecks} comfortable, `
+    `${applicableChecks.length} applicable rule checks across your layout — ${greenChecks} comfortable, `
       + `${yellowChecks} tight, ${redChecks} with suggested adjustments. Full breakdown on the pages that follow.`,
     margin,
     36,
