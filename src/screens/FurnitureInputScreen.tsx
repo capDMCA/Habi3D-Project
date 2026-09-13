@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay } from '@react-three/xr';
-import { useFurnitureStore } from '../stores/furnitureStore';
+import { useFurnitureStore, getDefaultRoomPosition } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAutosaveLayout } from '../stores/useAutosaveLayout';
 import ARMeasureSession, { type MeasurePhase } from '../ar/ARMeasureSession';
@@ -16,7 +16,6 @@ const xrMeasureStore = createXRStore({
   offerSession: false,
   emulate: false,
   hitTest: true,
-  planeDetection: true,
   domOverlay: true,
 });
 
@@ -141,6 +140,7 @@ function FurnitureAddedPanel({
               </p>
               <p style={addedItemDimsStyle}>
                 {item.lengthCm} x {item.widthCm} x {item.heightCm} cm
+                {item.quantity && item.quantity > 1 ? ` · Qty: ${item.quantity}` : ''}
               </p>
             </div>
             <button type="button" style={removeButtonStyle} onClick={() => onRemove(item.id)}>
@@ -168,6 +168,7 @@ export default function FurnitureInputScreen() {
   const [lengthCm, setLengthCm] = useState('');
   const [widthCm, setWidthCm] = useState('');
   const [heightCm, setHeightCm] = useState('');
+  const [quantity, setQuantity] = useState<number>(4);
   const [measureTarget, setMeasureTarget] = useState<MeasureTarget | null>(null);
   const [arActive, setArActive] = useState(false);
   const [arError, setArError] = useState('');
@@ -208,6 +209,9 @@ export default function FurnitureInputScreen() {
   const availableShapes = selectedCategoryDef
     ? SHAPES.filter((s) => selectedCategoryDef.shapes.includes(s.value))
     : SHAPES;
+  const isDiningChair =
+    category === 'dining_chair' ||
+    (category === 'other' && label.toLowerCase().includes('chair'));
   const measurementTitle =
     measureTarget === 'length'   ? 'Measuring length' :
     measureTarget === 'width'    ? 'Measuring width'  :
@@ -291,6 +295,7 @@ export default function FurnitureInputScreen() {
     setLengthCm('');
     setWidthCm('');
     setHeightCm('');
+    setQuantity(4);
     setMeasureTarget(null);
     setMeasurementReview(null);
     setArError('');
@@ -302,6 +307,8 @@ export default function FurnitureInputScreen() {
     const parsedLength = toPositiveNumber(lengthCm);
     const parsedWidth = toPositiveNumber(widthCm);
     const parsedHeight = toPositiveNumber(heightCm);
+    const targetRoom = getDefaultRoomPosition(category, label).roomId;
+    const finalQuantity = isDiningChair ? quantity : 1;
 
     addItem({
       id: createFurnitureId(),
@@ -314,7 +321,8 @@ export default function FurnitureInputScreen() {
       posX: 0,
       posZ: 0,
       rotationY: 0,
-      roomId: 'living',
+      roomId: targetRoom,
+      quantity: finalQuantity,
     });
 
     resetForm();
@@ -551,6 +559,49 @@ export default function FurnitureInputScreen() {
                 placeholder="Enter height"
               />
             </div>
+
+            {isDiningChair && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="chair-quantity">
+                  Chair Quantity
+                </label>
+                <p className="form-sublabel" style={{ display: 'block', margin: '-2px 0 8px' }}>
+                  Choose how many dining chairs to spawn from this placement.
+                </p>
+                <div style={stepperContainerStyle}>
+                  <button
+                    type="button"
+                    style={{
+                      ...stepperBtnStyle,
+                      opacity: quantity <= 1 ? 0.4 : 1,
+                      cursor: quantity <= 1 ? 'not-allowed' : 'pointer',
+                    }}
+                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                    disabled={quantity <= 1}
+                    aria-label="Decrease quantity"
+                  >
+                    −
+                  </button>
+                  <span style={stepperValueStyle}>{quantity}</span>
+                  <button
+                    type="button"
+                    style={{
+                      ...stepperBtnStyle,
+                      opacity: quantity >= 8 ? 0.4 : 1,
+                      cursor: quantity >= 8 ? 'not-allowed' : 'pointer',
+                    }}
+                    onClick={() => setQuantity((q) => Math.min(8, q + 1))}
+                    disabled={quantity >= 8}
+                    aria-label="Increase quantity"
+                  >
+                    +
+                  </button>
+                  <span style={stepperHintStyle}>
+                    (1–8 chairs)
+                  </span>
+                </div>
+              </div>
+            )}
 
             {arError && <p className="form-error">{arError}</p>}
 
@@ -906,4 +957,41 @@ const removeButtonStyle: CSSProperties = {
   color: 'var(--danger)',
   padding: '0 10px',
   fontWeight: 800,
+};
+
+const stepperContainerStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  marginTop: 4,
+};
+
+const stepperBtnStyle: CSSProperties = {
+  width: 44,
+  height: 44,
+  borderRadius: 12,
+  border: '1px solid var(--border)',
+  background: 'var(--card)',
+  color: 'var(--text-primary)',
+  fontSize: 20,
+  fontWeight: 700,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  userSelect: 'none',
+  transition: 'all 0.15s ease',
+};
+
+const stepperValueStyle: CSSProperties = {
+  fontSize: 18,
+  fontWeight: 800,
+  minWidth: 32,
+  textAlign: 'center',
+  color: 'var(--primary)',
+};
+
+const stepperHintStyle: CSSProperties = {
+  fontSize: 13,
+  color: 'var(--text-muted)',
+  fontWeight: 550,
 };

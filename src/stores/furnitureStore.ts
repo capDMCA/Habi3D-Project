@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { FurnitureItem } from '../types';
+import type { FurnitureItem, FurnitureCategory } from '../types';
+import { getRoomForCategory } from '../data/condoLayout';
 
 interface FurnitureState {
   items: FurnitureItem[];
@@ -18,6 +19,20 @@ export const LIVING_ROOM_CENTER_POS = {
   posX: 1.3,
   posZ: 5.2,
 };
+
+export const DINING_ROOM_CENTER_POS = {
+  posX: 1.3,
+  posZ: 7.9,
+  roomId: 'dining' as const,
+  rotationY: 0,
+};
+
+export function getDefaultRoomPosition(category: string, label: string = '') {
+  if (getRoomForCategory(category as FurnitureCategory, label) === 'dining') {
+    return DINING_ROOM_CENTER_POS;
+  }
+  return { ...LIVING_ROOM_CENTER_POS, roomId: 'living' as const, rotationY: 0 };
+}
 
 export const useFurnitureStore = create<FurnitureState>((set) => ({
   items: [],

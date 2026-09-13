@@ -34,6 +34,7 @@ export interface FurnitureItem {
   posZ: number;
   rotationY: number;
   roomId?: string;
+  quantity?: number;
 }
 
 export interface RoomDimensions {

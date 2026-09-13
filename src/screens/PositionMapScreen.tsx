@@ -8,7 +8,7 @@ import {
   applyCalibration,
   type CalibrationTransform,
 } from '../ar/calibration';
-import { useFurnitureStore } from '../stores/furnitureStore';
+import { useFurnitureStore, getDefaultRoomPosition } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import Spinner from '../components/Spinner';
 import BackIcon from '../components/BackIcon';
@@ -374,10 +374,12 @@ export default function PositionMapScreen() {
       if (exists) {
         updatePosition(payload.id, payload.posX, payload.posZ, payload.rotationY);
         updateItem(payload.id, {
+          label: payload.label,
           roomId: payload.roomId,
           posX: payload.posX,
           posZ: payload.posZ,
           rotationY: payload.rotationY,
+          quantity: payload.quantity,
         });
       } else {
         storeAddItem(payload);
@@ -455,15 +457,98 @@ export default function PositionMapScreen() {
 
   // 5. REPLACE handleConfirmPlacement():
   const handleConfirmPlacement = () => {
-    if (!lockedPosition || !anchorCalibration) { showToast("⚠️ Please set room anchor and place furniture first."); return; }
+    if (!lockedPosition || !anchorCalibration) {
+      showToast("⚠️ Please set room anchor and place furniture first.");
+      return;
+    }
     try {
+      const defaultPos = getDefaultRoomPosition(itemPayload.category, itemPayload.label);
+      const isDining = defaultPos.roomId === 'dining';
+
       const blueprintCoord = applyCalibration({ x: lockedPosition.x, z: lockedPosition.z }, anchorCalibration);
-      const safeX = Math.max(0.1, Math.min(blueprintCoord.x, 2.5));
-      const safeZ = Math.max(0.1, Math.min(blueprintCoord.z, 3.6));
-      addItem({ ...itemPayload, posX: safeX, posZ: safeZ, rotationY: deviceYaw, roomId: 'living' });
+      let safeX = blueprintCoord.x;
+      let safeZ = blueprintCoord.z;
+
+      // Validate bounds and fall back to default room center if out-of-bounds or NaN
+      if (isDining) {
+        if (Number.isNaN(safeX) || Number.isNaN(safeZ) || safeZ < 6.9 || safeZ > 8.9 || safeX < 0 || safeX > 2.7) {
+          safeX = defaultPos.posX;
+          safeZ = defaultPos.posZ;
+        } else {
+          safeX = Math.max(0.3, Math.min(safeX, 2.3));
+          safeZ = Math.max(7.2, Math.min(safeZ, 8.6));
+        }
+      } else {
+        if (Number.isNaN(safeX) || Number.isNaN(safeZ) || safeZ < 3.3 || safeZ > 7.1 || safeX < 0 || safeX > 2.7) {
+          safeX = defaultPos.posX;
+          safeZ = defaultPos.posZ;
+        } else {
+          safeX = Math.max(0.3, Math.min(safeX, 2.3));
+          safeZ = Math.max(3.6, Math.min(safeZ, 6.8));
+        }
+      }
+
+      const qty = itemPayload.quantity && itemPayload.quantity > 1 ? itemPayload.quantity : 1;
+
+      if (qty > 1) {
+        const baseLabel = itemPayload.label.replace(/\s*\d+$/, '').trim() || 'Dining Chair';
+        const rows = Math.ceil(qty / 2);
+
+        for (let i = 0; i < qty; i++) {
+          const col = i % 2;
+          const row = Math.floor(i / 2);
+          const dx = col === 0 ? -0.28 : 0.28;
+          const dz = (row - (rows - 1) / 2) * 0.55;
+
+          let itemX = safeX + dx;
+          let itemZ = safeZ + dz;
+          if (isDining) {
+            itemX = Math.max(0.3, Math.min(itemX, 2.3));
+            itemZ = Math.max(7.15, Math.min(itemZ, 8.65));
+          } else {
+            itemX = Math.max(0.3, Math.min(itemX, 2.3));
+            itemZ = Math.max(3.55, Math.min(itemZ, 6.85));
+          }
+
+          if (i === 0) {
+            addItem({
+              ...itemPayload,
+              label: `${baseLabel} 1`,
+              posX: itemX,
+              posZ: itemZ,
+              rotationY: deviceYaw,
+              roomId: defaultPos.roomId,
+              quantity: 1,
+            });
+          } else {
+            storeAddItem({
+              ...itemPayload,
+              id: `${itemPayload.id}-${i + 1}`,
+              label: `${baseLabel} ${i + 1}`,
+              posX: itemX,
+              posZ: itemZ,
+              rotationY: deviceYaw,
+              roomId: defaultPos.roomId,
+              quantity: 1,
+            });
+          }
+        }
+      } else {
+        addItem({
+          ...itemPayload,
+          posX: safeX,
+          posZ: safeZ,
+          rotationY: deviceYaw,
+          roomId: defaultPos.roomId,
+        });
+      }
+
       stopAR();
       navigateTo('workspace');
-    } catch (error) { console.error("Placement failed:", error); showToast("⚠️ Placement failed. Try again."); }
+    } catch (error) {
+      console.error("Placement failed:", error);
+      showToast("⚠️ Placement failed. Try again.");
+    }
   };
 
 
@@ -536,7 +621,10 @@ export default function PositionMapScreen() {
                 <div className="card-header">
                   <div className="card-icon card-icon-primary">{item.label.slice(0, 1).toUpperCase()}</div>
                   <div>
-                    <p className="card-title">{item.label}</p>
+                    <p className="card-title">
+                      {item.label}
+                      {item.quantity && item.quantity > 1 ? ` (x${item.quantity})` : ''}
+                    </p>
                     <p className="card-subtitle">
                       {item.shape} | {item.lengthCm} x {item.widthCm} x {item.heightCm}cm
                     </p>
