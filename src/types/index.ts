@@ -4,6 +4,7 @@ export type ScreenName =
   | 'furnitureInput'
   | 'positionMap'
   | 'workspace'
+  | 'threeDPreview'
   | 'analysis'
   | 'recommendations'
   | 'recommendation'

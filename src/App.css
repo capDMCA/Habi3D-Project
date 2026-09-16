@@ -105,6 +105,145 @@
   background: #F1F5F9 !important;
 }
 
+/* --- Read-only 3D layout preview --- */
+.three-d-preview-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: #DDE3E5;
+  animation: screenFadeIn 0.2s ease;
+}
+
+.three-d-preview-header {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(118px, auto) minmax(0, 1fr) minmax(64px, auto);
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.three-d-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.three-d-back-button:hover {
+  background: #F4F6F8;
+  border-color: #AAB3C0;
+}
+
+.three-d-back-button:active {
+  transform: scale(0.97);
+}
+
+.three-d-back-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.three-d-preview-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.three-d-preview-title strong,
+.three-d-preview-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.three-d-preview-title strong {
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.three-d-preview-title span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.three-d-item-count {
+  justify-self: end;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.three-d-preview-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.three-d-preview-stage canvas {
+  display: block;
+  cursor: grab;
+}
+
+.three-d-preview-stage canvas:active {
+  cursor: grabbing;
+}
+
+@media (max-width: 520px) {
+  .three-d-preview-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 9px;
+    min-height: 58px;
+    padding: 7px 10px;
+  }
+
+  .three-d-back-button {
+    width: 42px;
+    min-height: 42px;
+    padding: 0;
+  }
+
+  .three-d-back-button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .three-d-item-count {
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .three-d-preview-screen {
+    animation: none;
+  }
+}
+
 /* --- Recommendation cards --- */
 .wksp-rec-card {
   animation: recCardIn 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;

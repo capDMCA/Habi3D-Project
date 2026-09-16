@@ -565,6 +565,13 @@ export default function WorkspaceScreen() {
             <span style={headerTitle}>Mulberry Place</span>
           )}
         </div>
+        <button
+          className="wksp-outline-btn"
+          style={preview3DBtn}
+          onClick={() => navigateTo('threeDPreview')}
+        >
+          3D View
+        </button>
         <button className="wksp-solid-btn" style={finishBtn} onClick={() => navigateTo('report')}>Done</button>
       </header>
 
@@ -1024,6 +1031,20 @@ const finishBtn: CSSProperties = {
   fontWeight: 700,
   fontSize: 15,
   cursor: 'pointer',
+  flexShrink: 0,
+};
+
+const preview3DBtn: CSSProperties = {
+  minHeight: 40,
+  padding: '0 12px',
+  borderRadius: radius.sm,
+  border: `1px solid ${t.line}`,
+  background: t.surface,
+  color: t.ink,
+  fontWeight: 700,
+  fontSize: 14,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
   flexShrink: 0,
 };
 

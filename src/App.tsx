@@ -4,6 +4,7 @@ import AuthScreen from './screens/AuthScreen';
 import FurnitureInputScreen from './screens/FurnitureInputScreen';
 import PositionMapScreen from './screens/PositionMapScreen';
 import WorkspaceScreen from './screens/WorkspaceScreen';
+import ThreeDPreviewScreen from './screens/ThreeDPreviewScreen';
 import ReportScreen from './screens/ReportScreen';
 import PlaceholderScreen from './screens/PlaceholderScreen';
 import './App.css';
@@ -25,6 +26,8 @@ export default function App() {
     case 'recommendations':
     case 'recommendation':
       return <WorkspaceScreen />;
+    case 'threeDPreview':
+      return <ThreeDPreviewScreen />;
     case 'report':
       return <ReportScreen />;
     default:
