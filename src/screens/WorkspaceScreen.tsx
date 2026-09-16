@@ -91,6 +91,7 @@ type Tab = 'items' | 'recommendations' | 'rules';
 
 export default function WorkspaceScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
+  const previousScreen = useSessionStore((s) => s.previousScreen);
   const items = useFurnitureStore((s) => s.items);
   const updateItem = useFurnitureStore((s) => s.updateItem);
   const updatePosition = useFurnitureStore((s) => s.updatePosition);
@@ -113,6 +114,7 @@ export default function WorkspaceScreen() {
   const [infeasible, setInfeasible] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('items');
   const [toast, setToast] = useState<string | null>(null);
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const toastTimeoutRef = useRef<number | null>(null);
 
   // Room Zoom Focus State
@@ -136,6 +138,12 @@ export default function WorkspaceScreen() {
   // nothing for this effect to cascade.
   useEffect(() => {
     if (items.length > 0 && !loadedRef.current) {
+      // The 3D preview is read-only, so returning from it must preserve the store verbatim.
+      if (previousScreen === 'threeDPreview') {
+        loadedRef.current = true;
+        return;
+      }
+
       // First ensure all items have roomIds
       const withRooms = initializeRoomAssignments(items);
       withRooms.forEach((it) => {
@@ -154,7 +162,7 @@ export default function WorkspaceScreen() {
       // and the render-time sync just below picks it up on the next render.
       loadedRef.current = true;
     }
-  }, [items, updateItem, updatePosition]);
+  }, [items, previousScreen, updateItem, updatePosition]);
 
   // ── Keep preview in sync with store ───────────────────────────────────────
   // Adjusted during render rather than in a follow-up effect — this is
@@ -490,6 +498,7 @@ export default function WorkspaceScreen() {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (deleteConfirmationOpen) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -528,7 +537,18 @@ export default function WorkspaceScreen() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedId, nudgeSelected, handleRotate, handleUndo]);
+  }, [deleteConfirmationOpen, selectedId, nudgeSelected, handleRotate, handleUndo]);
+
+  useEffect(() => {
+    if (!deleteConfirmationOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDeleteConfirmationOpen(false);
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [deleteConfirmationOpen]);
 
   // Counts for pills
   const issueCount = analysis.violations.length;
@@ -654,7 +674,7 @@ export default function WorkspaceScreen() {
               <button
                 className="wksp-text-btn wksp-text-btn-danger"
                 style={textToolbarBtn(!selectedItem, 'danger')}
-                onClick={handleDelete}
+                onClick={() => setDeleteConfirmationOpen(true)}
                 disabled={!selectedItem}
                 aria-label="Delete item"
                 title="Delete item"
@@ -955,6 +975,50 @@ export default function WorkspaceScreen() {
           </div>
         </section>
       </div>
+
+      {deleteConfirmationOpen && selectedItem && (
+        <div
+          style={deleteDialogBackdrop}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setDeleteConfirmationOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-furniture-title"
+            aria-describedby="delete-furniture-message"
+            style={deleteDialog}
+          >
+            <h2 id="delete-furniture-title" style={deleteDialogTitle}>Delete Furniture?</h2>
+            <p id="delete-furniture-message" style={deleteDialogMessage}>
+              Are you sure you want to delete this furniture item? This action can be undone using the Undo button.
+            </p>
+            <div style={deleteDialogActions}>
+              <button
+                type="button"
+                className="wksp-outline-btn"
+                style={deleteDialogCancelBtn}
+                onClick={() => setDeleteConfirmationOpen(false)}
+                autoFocus
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="wksp-text-btn wksp-text-btn-danger"
+                style={deleteDialogDeleteBtn}
+                onClick={() => {
+                  setDeleteConfirmationOpen(false);
+                  handleDelete();
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1159,6 +1223,70 @@ const toastBanner: CSSProperties = {
   animation: 'fadeIn 0.2s ease',
   pointerEvents: 'none',
   zIndex: 10,
+};
+
+const deleteDialogBackdrop: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 100,
+  display: 'grid',
+  placeItems: 'center',
+  padding: 16,
+  background: 'rgba(22, 32, 58, 0.48)',
+};
+
+const deleteDialog: CSSProperties = {
+  width: 'min(380px, calc(100vw - 32px))',
+  boxSizing: 'border-box',
+  padding: 20,
+  borderRadius: radius.sm,
+  border: `1px solid ${t.line}`,
+  background: t.surface,
+  boxShadow: '0 18px 48px rgba(22, 32, 58, 0.28)',
+};
+
+const deleteDialogTitle: CSSProperties = {
+  margin: 0,
+  color: t.ink,
+  fontSize: 19,
+  fontWeight: 800,
+};
+
+const deleteDialogMessage: CSSProperties = {
+  margin: '10px 0 20px',
+  color: t.inkSoft,
+  fontSize: 14,
+  lineHeight: 1.55,
+};
+
+const deleteDialogActions: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: 10,
+};
+
+const deleteDialogCancelBtn: CSSProperties = {
+  minWidth: 88,
+  minHeight: 44,
+  padding: '0 16px',
+  borderRadius: radius.sm,
+  border: `1px solid ${t.line}`,
+  background: t.surface,
+  color: t.ink,
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const deleteDialogDeleteBtn: CSSProperties = {
+  minWidth: 88,
+  minHeight: 44,
+  padding: '0 16px',
+  borderRadius: radius.sm,
+  border: '1px solid rgba(220, 38, 38, 0.45)',
+  background: '#DC2626',
+  color: '#FFFFFF',
+  fontWeight: 700,
+  cursor: 'pointer',
 };
 
 const sideDrawer: CSSProperties = {

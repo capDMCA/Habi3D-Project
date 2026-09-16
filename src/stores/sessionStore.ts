@@ -4,6 +4,7 @@ import { MULBERRY_PLACE_2BR, MULBERRY_PLACE_2BR_ID } from '../data/roomData';
 
 interface SessionState {
   currentScreen: ScreenName;
+  previousScreen: ScreenName | null;
   // Set once a session actually starts after sign-up/login — never on cold
   // load, so a stale reload can't silently resume as if a session were already active.
   sessionId: string | null;
@@ -36,13 +37,18 @@ function createSessionId(): string {
 
 export const useSessionStore = create<SessionState>((set) => ({
   currentScreen: 'entry',
+  previousScreen: null,
   sessionId: null,
   unitTypeId: null,
   roomDimensions: null,
   userId: null,
   username: null,
   authMode: 'login',
-  navigateTo: (screen) => set({ currentScreen: screen }),
+  navigateTo: (screen) =>
+    set((state) => ({
+      previousScreen: state.currentScreen,
+      currentScreen: screen,
+    })),
   setSessionId: (id) => set({ sessionId: id }),
   setUnitTypeId: (id) => set({ unitTypeId: id }),
   setRoomDimensions: (dims) => set({ roomDimensions: dims }),
@@ -57,6 +63,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   reset: () =>
     set({
       currentScreen: 'entry',
+      previousScreen: null,
       sessionId: null,
       unitTypeId: null,
       roomDimensions: null,

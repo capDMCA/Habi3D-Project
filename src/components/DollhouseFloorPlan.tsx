@@ -4,6 +4,19 @@ const CM_TO_WORLD = 0.01;
 const UNIT_WIDTH_CM = Math.max(...CONDO_ROOMS.map((room) => room.x + room.width));
 const UNIT_DEPTH_CM = Math.max(...CONDO_ROOMS.map((room) => room.y + room.height));
 const WALL_THICKNESS = 0.07;
+const livingRoom = CONDO_ROOMS.find((room) => room.id === 'living');
+const diningRoom = CONDO_ROOMS.find((room) => room.id === 'dining');
+
+const LIVING_DINING_DIVIDER = livingRoom && diningRoom
+  ? {
+      z: diningRoom.y,
+      start: Math.max(livingRoom.x, diningRoom.x),
+      end: Math.min(
+        livingRoom.x + livingRoom.width,
+        diningRoom.x + diningRoom.width,
+      ),
+    }
+  : null;
 
 const ROOM_COLORS: Record<string, string> = {
   balcony: '#B8C9CF',
@@ -72,6 +85,14 @@ function buildWallSegments(): WallSegment[] {
 
   horizontalEdges.forEach((intervals, z) => {
     mergeIntervals(intervals).forEach(({ start, end }) => {
+      if (
+        LIVING_DINING_DIVIDER
+        && z === LIVING_DINING_DIVIDER.z
+        && start === LIVING_DINING_DIVIDER.start
+        && end === LIVING_DINING_DIVIDER.end
+      ) {
+        return;
+      }
       segments.push({
         key: `h-${z}-${start}-${end}`,
         x: ((start + end) / 2) * CM_TO_WORLD,
@@ -137,6 +158,25 @@ export default function DollhouseFloorPlan() {
           />
         </mesh>
       ))}
+
+      {LIVING_DINING_DIVIDER && (
+        <mesh
+          position={[
+            ((LIVING_DINING_DIVIDER.start + LIVING_DINING_DIVIDER.end) / 2) * CM_TO_WORLD,
+            0.013,
+            LIVING_DINING_DIVIDER.z * CM_TO_WORLD,
+          ]}
+        >
+          <boxGeometry
+            args={[
+              (LIVING_DINING_DIVIDER.end - LIVING_DINING_DIVIDER.start) * CM_TO_WORLD,
+              0.006,
+              0.025,
+            ]}
+          />
+          <meshStandardMaterial color="#8D9895" roughness={0.9} />
+        </mesh>
+      )}
 
       {WALL_SEGMENTS.map((wall) => {
         const height = wall.exterior ? 0.52 : 0.32;
