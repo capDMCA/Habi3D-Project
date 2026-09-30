@@ -205,6 +205,7 @@ export function isItemInLivingOrDining(item: FurnitureItem): boolean {
 }
 
 /** True when this one piece sits inside the unit, not in a bedroom or blocked zone. Furniture overlaps are allowed as soft constraints. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function canPlace(item: FurnitureItem, _items: FurnitureItem[] = []): boolean {
   const b = toBounds(item);
   const epsilon = 0.01;
@@ -351,8 +352,223 @@ export function snapFree(
 }
 
 /**
+ * Horizontal perimeter segment of an active planning boundary.
+ */
+export interface HorizontalBoundarySegment {
+  z: number;
+  minX: number;
+  maxX: number;
+  facing: 'north' | 'south';
+}
+
+/**
+ * Vertical perimeter segment of an active planning boundary.
+ */
+export interface VerticalBoundarySegment {
+  x: number;
+  minZ: number;
+  maxZ: number;
+  facing: 'west' | 'east';
+}
+
+/**
+ * Composite boundary of the active planning region (Living + Dining union).
+ */
+export interface ActivePlanningBoundary {
+  horizontal: HorizontalBoundarySegment[];
+  vertical: VerticalBoundarySegment[];
+}
+
+interface Interval1D {
+  start: number;
+  end: number;
+}
+
+function subtractInterval(intervals: Interval1D[], cut: Interval1D): Interval1D[] {
+  const result: Interval1D[] = [];
+  const eps = 1e-4;
+
+  for (const inv of intervals) {
+    if (cut.end <= inv.start + eps || cut.start >= inv.end - eps) {
+      result.push(inv);
+      continue;
+    }
+    if (cut.start <= inv.start + eps && cut.end < inv.end - eps) {
+      result.push({ start: cut.end, end: inv.end });
+      continue;
+    }
+    if (cut.start > inv.start + eps && cut.end >= inv.end - eps) {
+      result.push({ start: inv.start, end: cut.start });
+      continue;
+    }
+    if (cut.start > inv.start + eps && cut.end < inv.end - eps) {
+      result.push({ start: inv.start, end: cut.start });
+      result.push({ start: cut.end, end: inv.end });
+      continue;
+    }
+  }
+
+  return result;
+}
+
+function mergeIntervals(intervals: Interval1D[]): Interval1D[] {
+  if (intervals.length === 0) return [];
+  const sorted = [...intervals].sort((a, b) => a.start - b.start);
+  const merged: Interval1D[] = [{ start: sorted[0].start, end: sorted[0].end }];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const current = sorted[i];
+    const prev = merged[merged.length - 1];
+    if (current.start <= prev.end + 1e-4) {
+      prev.end = Math.max(prev.end, current.end);
+    } else {
+      merged.push({ start: current.start, end: current.end });
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Derives the active 2D planning geometry from CONDO_ROOMS for the combined
+ * Living + Dining region. Treats Living and Dining as a union:
+ * - Shared internal boundaries (such as the Living/Dining threshold) are cancelled out.
+ * - Outer perimeters (adjacent to Bedroom, Storage, Bathroom, Kitchen, and exterior walls)
+ *   are preserved.
+ * - Stepped or non-rectangular boundaries are fully supported.
+ */
+export function deriveActivePlanningBoundary(
+  rooms: RoomZone[] = CONDO_ROOMS,
+  activeRoomIds: string[] = ['living', 'dining'],
+): ActivePlanningBoundary {
+  const activeRooms = rooms.filter((r) => activeRoomIds.includes(r.id));
+
+  const northMap = new Map<number, Interval1D[]>();
+  const southMap = new Map<number, Interval1D[]>();
+  const westMap = new Map<number, Interval1D[]>();
+  const eastMap = new Map<number, Interval1D[]>();
+
+  const roundKey = (val: number) => Math.round(val * 1000) / 1000;
+
+  const pushInterval = (map: Map<number, Interval1D[]>, key: number, start: number, end: number) => {
+    const rKey = roundKey(key);
+    const list = map.get(rKey) ?? [];
+    list.push({ start: Math.min(start, end), end: Math.max(start, end) });
+    map.set(rKey, list);
+  };
+
+  for (const r of activeRooms) {
+    const minX = r.x / 100;
+    const maxX = (r.x + r.width) / 100;
+    const minZ = r.y / 100;
+    const maxZ = (r.y + r.height) / 100;
+
+    pushInterval(northMap, minZ, minX, maxX);
+    pushInterval(southMap, maxZ, minX, maxX);
+    pushInterval(westMap, minX, minZ, maxZ);
+    pushInterval(eastMap, maxX, minZ, maxZ);
+  }
+
+  const horizontal: HorizontalBoundarySegment[] = [];
+  const vertical: VerticalBoundarySegment[] = [];
+
+  const allZ = new Set<number>([...northMap.keys(), ...southMap.keys()]);
+  for (const z of allZ) {
+    const norths = mergeIntervals(northMap.get(z) ?? []);
+    const souths = mergeIntervals(southMap.get(z) ?? []);
+
+    let remainingNorth = norths;
+    for (const s of souths) {
+      remainingNorth = subtractInterval(remainingNorth, s);
+    }
+
+    let remainingSouth = souths;
+    for (const n of norths) {
+      remainingSouth = subtractInterval(remainingSouth, n);
+    }
+
+    for (const seg of remainingNorth) {
+      horizontal.push({ z, minX: seg.start, maxX: seg.end, facing: 'north' });
+    }
+    for (const seg of remainingSouth) {
+      horizontal.push({ z, minX: seg.start, maxX: seg.end, facing: 'south' });
+    }
+  }
+
+  const allX = new Set<number>([...westMap.keys(), ...eastMap.keys()]);
+  for (const x of allX) {
+    const wests = mergeIntervals(westMap.get(x) ?? []);
+    const easts = mergeIntervals(eastMap.get(x) ?? []);
+
+    let remainingWest = wests;
+    for (const e of easts) {
+      remainingWest = subtractInterval(remainingWest, e);
+    }
+
+    let remainingEast = easts;
+    for (const w of wests) {
+      remainingEast = subtractInterval(remainingEast, w);
+    }
+
+    for (const seg of remainingWest) {
+      vertical.push({ x, minZ: seg.start, maxZ: seg.end, facing: 'west' });
+    }
+    for (const seg of remainingEast) {
+      vertical.push({ x, minZ: seg.start, maxZ: seg.end, facing: 'east' });
+    }
+  }
+
+  // Merge contiguous collinear segments sharing the same facing
+  const mergedHorizontal: HorizontalBoundarySegment[] = [];
+  const hGroups = new Map<string, HorizontalBoundarySegment[]>();
+  for (const h of horizontal) {
+    const key = `${roundKey(h.z)}_${h.facing}`;
+    const group = hGroups.get(key) ?? [];
+    group.push(h);
+    hGroups.set(key, group);
+  }
+  for (const group of hGroups.values()) {
+    const intervals = mergeIntervals(group.map((g) => ({ start: g.minX, end: g.maxX })));
+    for (const inv of intervals) {
+      mergedHorizontal.push({ z: group[0].z, minX: inv.start, maxX: inv.end, facing: group[0].facing });
+    }
+  }
+
+  const mergedVertical: VerticalBoundarySegment[] = [];
+  const vGroups = new Map<string, VerticalBoundarySegment[]>();
+  for (const v of vertical) {
+    const key = `${roundKey(v.x)}_${v.facing}`;
+    const group = vGroups.get(key) ?? [];
+    group.push(v);
+    vGroups.set(key, group);
+  }
+  for (const group of vGroups.values()) {
+    const intervals = mergeIntervals(group.map((g) => ({ start: g.minZ, end: g.maxZ })));
+    for (const inv of intervals) {
+      mergedVertical.push({ x: group[0].x, minZ: inv.start, maxZ: inv.end, facing: group[0].facing });
+    }
+  }
+
+  return {
+    horizontal: mergedHorizontal,
+    vertical: mergedVertical,
+  };
+}
+
+let cachedBoundary: ActivePlanningBoundary | null = null;
+
+export function getActivePlanningBoundary(): ActivePlanningBoundary {
+  if (!cachedBoundary) {
+    cachedBoundary = deriveActivePlanningBoundary();
+  }
+  return cachedBoundary;
+}
+
+/**
  * Distance in cm from each side of a piece to the nearest thing on that side —
- * another piece's facing edge, or the unit wall. Powers the live gap readouts.
+ * another piece's facing edge, or the nearest boundary of the active Living + Dining
+ * planning region (stopping at Kitchen, Bathroom, Bedroom, or exterior walls).
+ * Powers the live gap readouts.
  */
 export interface EdgeGaps {
   west: number;
@@ -367,13 +583,44 @@ export function edgeGaps(item: FurnitureItem, items: FurnitureItem[]): EdgeGaps 
   }
 
   const a = toBounds(item);
+  const boundary = getActivePlanningBoundary();
+
+  let west = Infinity;
+  let east = Infinity;
+  let north = Infinity;
+  let south = Infinity;
+
+  // 1. Measure against the valid outer perimeter of the active Living + Dining union
+  for (const seg of boundary.vertical) {
+    const spansZ = Math.min(a.maxZ, seg.maxZ) - Math.max(a.minZ, seg.minZ) > 0;
+    if (!spansZ) continue;
+
+    if (seg.facing === 'west' && a.maxX > seg.x) {
+      west = Math.min(west, a.minX - seg.x);
+    } else if (seg.facing === 'east' && a.minX < seg.x) {
+      east = Math.min(east, seg.x - a.maxX);
+    }
+  }
+
+  for (const seg of boundary.horizontal) {
+    const spansX = Math.min(a.maxX, seg.maxX) - Math.max(a.minX, seg.minX) > 0;
+    if (!spansX) continue;
+
+    if (seg.facing === 'north' && a.maxZ > seg.z) {
+      north = Math.min(north, a.minZ - seg.z);
+    } else if (seg.facing === 'south' && a.minZ < seg.z) {
+      south = Math.min(south, seg.z - a.maxZ);
+    }
+  }
+
   const gaps: EdgeGaps = {
-    west: a.minX,
-    east: UNIT_WIDTH_CM / 100 - a.maxX,
-    north: a.minZ,
-    south: UNIT_HEIGHT_CM / 100 - a.maxZ,
+    west: Number.isFinite(west) ? west : a.minX,
+    east: Number.isFinite(east) ? east : UNIT_WIDTH_CM / 100 - a.maxX,
+    north: Number.isFinite(north) ? north : a.minZ,
+    south: Number.isFinite(south) ? south : UNIT_HEIGHT_CM / 100 - a.maxZ,
   };
 
+  // 2. Measure against facing edges of other furniture pieces
   for (const other of items) {
     if (other.id === item.id) continue;
     const b = toBounds(other);

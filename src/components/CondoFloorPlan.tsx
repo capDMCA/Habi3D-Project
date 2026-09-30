@@ -118,16 +118,22 @@ export default function CondoFloorPlan({
     return selectedItem.roomId || getRoomForCategory(selectedItem.category, selectedItem.label);
   }, [selectedItem, focusedRoomId]);
 
-  // Live gap readouts for the piece being dragged.
-  const draggedItem = useMemo(
-    () => (draggingId ? items.find((it) => it.id === draggingId) ?? null : null),
-    [draggingId, items],
-  );
-  const draggedGaps = useMemo(() => {
-    if (!draggedItem) return null;
-    if (isItemInBedroom(draggedItem) || isItemInKitchenOrBathroom(draggedItem)) return null;
-    return edgeGaps(draggedItem, items);
-  }, [draggedItem, items]);
+  // Live gap readouts for the piece being dragged or selected.
+  const activeGapItem = useMemo(() => {
+    if (draggingId) {
+      return items.find((it) => it.id === draggingId) ?? null;
+    }
+    if (highlightItemId) {
+      return items.find((it) => it.id === highlightItemId) ?? null;
+    }
+    return null;
+  }, [draggingId, highlightItemId, items]);
+
+  const activeGaps = useMemo(() => {
+    if (!activeGapItem) return null;
+    if (isItemInBedroom(activeGapItem) || isItemInKitchenOrBathroom(activeGapItem)) return null;
+    return edgeGaps(activeGapItem, items);
+  }, [activeGapItem, items]);
 
   // ─── viewBox smooth zoom ────────────────────────────────────────────────────
   const targetViewBox = useMemo(() => {
@@ -749,9 +755,9 @@ export default function CondoFloorPlan({
           );
         })}
 
-        {/* 5. LIVE GAP READOUTS on the dragged piece */}
-        {draggedItem && draggedGaps && !isItemInBedroom(draggedItem) && !isItemInKitchenOrBathroom(draggedItem) && (() => {
-          const dr = rects.find((r) => r.id === draggedItem.id);
+        {/* 5. LIVE GAP READOUTS on the dragged or selected piece */}
+        {activeGapItem && activeGaps && !isItemInBedroom(activeGapItem) && !isItemInKitchenOrBathroom(activeGapItem) && (() => {
+          const dr = rects.find((r) => r.id === activeGapItem.id);
           if (!dr) return null;
           const cx = dr.xCm + dr.wCm / 2;
           const cy = dr.yCm + dr.hCm / 2;
@@ -782,10 +788,10 @@ export default function CondoFloorPlan({
           );
           return (
             <>
-              {badge('gap-w', Math.max(dr.xCm - 34, 30), cy, draggedGaps.west)}
-              {badge('gap-e', Math.min(dr.xCm + dr.wCm + 34, WIDTH_CM - 30), cy, draggedGaps.east)}
-              {badge('gap-n', cx, Math.max(dr.yCm - 22, 16), draggedGaps.north)}
-              {badge('gap-s', cx, Math.min(dr.yCm + dr.hCm + 22, HEIGHT_CM - 16), draggedGaps.south)}
+              {badge('gap-w', Math.max(dr.xCm - 34, 30), cy, activeGaps.west)}
+              {badge('gap-e', Math.min(dr.xCm + dr.wCm + 34, WIDTH_CM - 30), cy, activeGaps.east)}
+              {badge('gap-n', cx, Math.max(dr.yCm - 22, 16), activeGaps.north)}
+              {badge('gap-s', cx, Math.min(dr.yCm + dr.hCm + 22, HEIGHT_CM - 16), activeGaps.south)}
             </>
           );
         })()}

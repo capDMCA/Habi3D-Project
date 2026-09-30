@@ -1,6 +1,6 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-09-16 (Read-Only 3D Dollhouse Layout Preview, Responsive Camera & Regression Isolation)
+**Last updated:** 2026-09-30 (Combined Living + Dining Boundary Directional Gap Readouts Architecture & Plan)
 **Project phase:** Phase 3 — AR Floor Hit-Test Placement, Streamlined 2D Planning & Read-Only 3D Visualization
 **Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig)
 
@@ -9,14 +9,70 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-09-16):** Read-Only 3D Dollhouse Layout Preview — Added a dedicated Three.js / React Three Fiber visualization screen for inspecting the current Mulberry Place 2BR furniture arrangement. The preview reads the authoritative `furnitureStore.items` array, renders user-defined dimensions, shape, category, position, and rotation, and provides bounded orbit/zoom camera controls. It contains no furniture mutation actions, clearance classifications, recommendation overlays, AR behavior, persistence hooks, or report changes.
+> **Latest Update (2026-09-30):** Implemented the combined Living + Dining active planning region boundary calculation for the four live directional gap badges (compass readouts) in the 2D workspace. The architectural measurement candidate is now derived from the union of Living + Dining in `CONDO_ROOMS`, canceling out the internal shared divider while strictly terminating directional rays at the perimeter walls facing Kitchen, Bathroom, Bedroom, and exterior perimeters. All 7 acceptance test criteria passed.
 
-### Key Recent Changes (September 16, 2026: Read-Only 3D Dollhouse Layout Preview)
+### Key Recent Changes (September 30, 2026: Combined Living + Dining Boundary Directional Gap Readouts)
+
+1. **Root Cause Analysis (`floorPlanDrag.ts:edgeGaps`)**
+   - **Original Implementation:** `edgeGaps` initialized its wall distance candidates against the overall condominium bounding envelope (`UNIT_WIDTH_CM = 510`, `UNIT_HEIGHT_CM = 880`, `west: a.minX`, `north: a.minZ`, `east: UNIT_WIDTH_CM / 100 - a.maxX`, `south: UNIT_HEIGHT_CM / 100 - a.maxZ`).
+   - **Failure Mode:** Because of this, an item located in the Dining area measured east across the restricted Kitchen zone all the way to the building's outer envelope ($X = 5.10\text{m}$), displaying large false GREEN clearances instead of stopping at the Dining/Kitchen dividing partition ($X = 2.60\text{m}$). Similarly, items in Living measured north across Bedroom 2 and Balcony to $Z = 0$, instead of stopping at the Bedroom divider wall ($Z = 3.40\text{m}$).
+
+2. **Derivation of Active Living + Dining Union Boundary (`condoLayout.ts`, `floorPlanDrag.ts`)**
+   - **Single Source of Truth:** Reuses `CONDO_ROOMS` directly without duplicating hardcoded dimensions or introducing magic numbers.
+   - **Active Region Union:** Extracts `living` and `dining` room zones. Each room contributes four directed bounding intervals: North ($Z_{\min}$), South ($Z_{\max}$), West ($X_{\min}$), and East ($X_{\max}$).
+   - **Internal Transition Cancellation:** Shared collinear intervals between active rooms (e.g., Living south edge at $Z = 7.00\text{m}, X \in [0, 2.60\text{m}]$ and Dining north edge at $Z = 7.00\text{m}, X \in [0, 2.60\text{m}]$) are subtracted/cancelled, removing the internal dividing line from wall boundary consideration so furniture can traverse freely across rooms without false 0 cm wall spikes.
+   - **Stepped & Non-Rectangular Support:** Generates discrete horizontal and vertical outer perimeter segments (`HorizontalBoundarySegment[]`, `VerticalBoundarySegment[]`), ensuring that if room geometry is stepped or L-shaped, the outer boundary accurately reflects every step and indentation.
+
+3. **Four Directional Gap Measurements Formulation**
+   - **AABB Projected Footprint:** Reuses the existing conservative rotated AABB `toBounds(item)` ($[a.\min X, a.\max X] \times [a.\min Z, a.\max Z]$).
+   - **WEST Gap:** Measures distance from $a.\min X$ to the nearest west-facing boundary segment overlapping the furniture's $Z$-span ($\min(a.\max Z, seg.maxZ) - \max(a.\min Z, seg.minZ) > 0$). In the standard layout, this is the outer unit wall at $X = 0$.
+   - **EAST Gap:** Measures distance from $a.\max X$ to the nearest east-facing boundary segment overlapping the furniture's $Z$-span. Across both Living and Dining, this terminates at $X = 2.60\text{m}$ (Storage, Bathroom, and Kitchen partitions), completely preventing measuring through the Kitchen or Bathroom.
+   - **NORTH Gap:** Measures distance from $a.\min Z$ to the nearest north-facing boundary segment overlapping the furniture's $X$-span ($\min(a.\maxX, seg.maxX) - \max(a.\min X, seg.minX) > 0$). For items in Living and Dining, this terminates at the Bedroom wall ($Z = 3.40\text{m}$), passing seamlessly across the Living/Dining internal threshold.
+   - **SOUTH Gap:** Measures distance from $a.\max Z$ to the nearest south-facing boundary segment overlapping the furniture's $X$-span, terminating at the outer south unit wall ($Z = 8.80\text{m}$).
+   - **Furniture Occlusion:** Retains the existing pairwise loop against other furniture pieces in `items`, computing $\min(\text{activeBoundaryGap}, \text{nearestFurnitureGap})$.
+   - **Color Thresholds & Formatting:** Retains exact styling and classification (<60cm RED, 60-90cm YELLOW, ≥91cm GREEN; negative values clamped to 0cm for display).
+
+4. **Selection & Dragging Affordance (`CondoFloorPlan.tsx`)**
+   - Displays live directional badges for the item being dragged (`draggingId`) or the selected item (`highlightItemId`) when positioned within the valid Living/Dining planning zone.
+   - Maintains strict suppression of gap badges whenever an item footprint intersects a restricted zone (`isItemInBedroom(item) || isItemInKitchenOrBathroom(item)`).
+
+5. **Scope & Regression Protection**
+   - No modifications to 10-rule clearance thresholds, contextual applicability, walkway circulation logic (`walkways.ts`), AR hit-test/calibration, 3D preview, Supabase autosave, or PDF report generators.
+
+### Key Prior Changes (September 17, 2026: 3D State Preservation, Correct Room Boundary & Delete Confirmation)
+
+1. **Fixed Furniture Mutation When Returning from 3D (`sessionStore.ts`, `WorkspaceScreen.tsx`)**
+   - **Root Cause:** `ThreeDPreviewScreen` and its child meshes were already read-only. The mutation happened after navigation back to 2D because `WorkspaceScreen` remounted, its component-local `loadedRef` reset, and the mount-time `initializeRoomAssignments()` / `normalizeFurniturePositions()` pipeline ran again. That pipeline can call `packItemsIntoRoom()` and persist normalized coordinates through `updateItem()` / `updatePosition()`.
+   - Added `previousScreen: ScreenName | null` to `sessionStore`. Every `navigateTo(screen)` call records the old `currentScreen` before assigning the destination; `reset()` clears both navigation fields.
+   - `WorkspaceScreen` now detects `previousScreen === 'threeDPreview'` during its one-time initializer, marks the initializer as handled, and returns before any room assignment, packing, or position write occurs.
+   - The exception is deliberately narrow: ordinary entry from AR placement, session hydration, and other routes retain the existing initialization behavior.
+   - Furniture dimensions, positions, rotation, room assignment, array order, object payloads, autosave state, and undo history remain unchanged during 3D viewing and return navigation.
+
+2. **Corrected Living/Dining Boundary in 3D (`DollhouseFloorPlan.tsx`)**
+   - Derived the exact shared edge from the existing `CONDO_ROOMS` Living and Dining geometry rather than adding duplicate room coordinates.
+   - Excluded only the merged horizontal wall segment matching the Living/Dining boundary from raised wall generation.
+   - Added a subtle floor-level strip at the same boundary to keep the room transition legible without visually or physically separating the two connected spaces.
+   - Exterior walls and all Bedroom, Storage, Bathroom, Kitchen, and Balcony partitions remain unchanged.
+
+3. **Added Confirmed Furniture Deletion (`WorkspaceScreen.tsx`)**
+   - The toolbar **Delete** command now opens an accessible modal titled **Delete Furniture?** instead of mutating state immediately.
+   - **Cancel**, Escape, and backdrop dismissal close the dialog without changing furniture state or pushing an undo-history entry.
+   - **Delete** confirmation closes the dialog and invokes the existing `handleDelete()` implementation, preserving selection updates, clearance re-analysis, autosave behavior, and undo restoration.
+   - Workspace keyboard movement, rotation, deletion, and undo shortcuts are suspended while the confirmation dialog is open.
+   - The dialog uses a responsive `border-box` width and was visually verified at desktop and a true `390 x 844` emulated mobile viewport.
+
+4. **Regression and Scope Verification**
+   - Three automated 2D -> 3D -> 2D round trips preserved byte-for-byte serialized `furnitureStore.items` state both inside 3D and after each return.
+   - Automated interaction checks verified Cancel preserved state, confirmed Delete removed the selected item, and Undo restored the exact pre-delete array.
+   - Production build and focused ESLint checks passed. Project-wide lint retains only the known pre-existing `_items` error in `floorPlanDrag.ts:208`.
+   - No changes were made to clearance/rule engines, walkway logic, AR modules, Supabase/authentication, reports, 2D drag geometry, `CondoFloorPlan`, or `condoLayout`.
+
+### Key Prior Changes (September 16, 2026: Read-Only 3D Dollhouse Layout Preview)
 
 1. **New Isolated 3D Preview Screen (`ThreeDPreviewScreen.tsx`, `ThreeDLayoutPreview.tsx`)**
    - Added route key `'threeDPreview'` to `ScreenName` and registered it in `App.tsx`.
    - Added a compact **3D View** command to the existing 2D workspace header and a **Back to 2D** command inside the preview.
-   - Returning to the workspace preserves the exact active layout because navigation changes only `sessionStore.currentScreen`; the preview does not clone, commit, normalize, or save furniture state.
+   - The preview does not clone, commit, normalize, or save furniture state. Exact return-to-2D preservation is enforced by the September 17 workspace remount guard described above.
    - The preview screen subscribes only to `useFurnitureStore((state) => state.items)` and passes that array down as read-only component props.
 
 2. **Procedural Dollhouse Environment (`DollhouseFloorPlan.tsx`)**
@@ -278,7 +334,7 @@
 Habi3D is a **Priority-Ranked Sequential Recommendation Tool** designed for condominium residents to configure, position, and validate furniture layouts against 10 interior design clearance rules (5 living room, 5 dining room) sourced from *Time-Saver Standards for Interior Design* (DeChiara, Panero & Zelnik, 2001, pp. 61–90).
 
 Key milestones and system capabilities include:
-1. **Interactive 2D Floor Plan Engine (`WorkspaceScreen` / `CondoFloorPlan`):** Free-movement physics drag system bound by unit outer walls, responsive text-based toolbar ("Rotate", "Reset", "Undo", "Delete"), architectural bedroom wall blocker (`BEDROOM WALL BLOCKER` at $y = 340\text{ cm}$), delta-based coordinate tracking, live tabular-numeral gap readouts, alignment guides, collision detection, 50-step undo stack, automatic room re-homing, and main walkway corridor SVG overlay (`MAIN_ENTRY_WALKWAY_RECT`) with real-time obstruction alerts.
+1. **Interactive 2D Floor Plan Engine (`WorkspaceScreen` / `CondoFloorPlan`):** Free-movement physics drag system bound by unit outer walls, responsive text-based toolbar ("Rotate", "Undo", "Delete"), confirmed deletion with undo restoration, architectural bedroom wall blocker (`BEDROOM WALL BLOCKER` at $y = 340\text{ cm}$), delta-based coordinate tracking, live tabular-numeral gap readouts, alignment guides, collision detection, 50-step undo stack, automatic room re-homing, and main walkway corridor SVG overlay (`MAIN_ENTRY_WALKWAY_RECT`) with real-time obstruction alerts.
 2. **Direct WebXR Floor Hit-Test Placement with Safe 2D Handoff (`PositionMapScreen`):** Direct WebXR floor plane hit-testing (`hitTest: true`, `PlacementScene`, `useXRHitTest`). Residents tap the physical floor to place 3D furniture overlays with a yaw rotation slider and "Re-place" controls. On confirmation, dispatches safe Living Room center coordinates ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$) and transitions cleanly to `WorkspaceScreen.tsx`. Two-point calibration (northwest corner and north wall taps) completely eliminated.
 3. **WebXR Camera Point-to-Point Measuring (`ARMeasureSession.tsx` / `FurnitureInputScreen.tsx`):** AR camera measurement with in-session review and confirmation card, floating decimal precision (1 decimal place cm), in-session retake without tearing down the WebXR session, and diameter-to-length/width propagation for circular furniture.
 4. **End-to-End Circular Furniture Support:** Native handling of round/circular tables and chairs across measuring, 2D floor plan SVG rendering (`<circle>`), rotation locks, and client-side PDF document generation.
@@ -290,8 +346,8 @@ Key milestones and system capabilities include:
 10. **Session Progress Reframe (`violationStore.ts` / `ReportScreen.tsx`):** Session progress calculated via an initial snapshot diff ("You made N spots more comfortable"), eliminating arbitrary numeric scores or grades.
 11. **Sequential AR-to-2D Pipeline & Coordinate Auto-Normalization (`FurnitureInputScreen.tsx` / `furnitureStore.ts`):** Confirmed furniture input initializes with unpositioned coordinates (`posX: 0, posZ: 0`) and routes sequentially to `'positionMap'`. In `furnitureStore.ts`, automatic coordinate normalization converts values $>10$ cm to meters, guaranteeing safe boundary clamping and seamless 2D workspace handoff.
 12. **Bedroom Wall Blocker & Living/Dining Constraint (`floorPlanDrag.ts` / `CondoFloorPlan.tsx`):** Hard partition barrier at $Y = 340\text{ cm}$ prohibiting furniture placement in bedrooms and reverting invalid drops to the last clear spot in Living/Dining.
-13. **Safe Reset & Restoral Lifecycle (`WorkspaceScreen.tsx`):** Hardened reset action preserving furniture definitions and centimeter dimensions while clearing only placement coordinates; robust undo stack restoring both deleted and moved furniture items.
-14. **Read-Only 3D Dollhouse Preview (`ThreeDPreviewScreen.tsx` / `ThreeDLayoutPreview.tsx`):** Isolated visualization of the current layout using procedural room and furniture geometry, direct store reads, responsive orbit/zoom camera controls, and no furniture, clearance, AR, persistence, or report mutations.
+13. **Confirmed Delete & Restoral Lifecycle (`WorkspaceScreen.tsx`):** Accessible confirmation prevents accidental deletion; Cancel is non-mutating, while confirmed deletion uses the established history path so Undo restores both removed and moved furniture items.
+14. **Read-Only 3D Dollhouse Preview (`ThreeDPreviewScreen.tsx` / `ThreeDLayoutPreview.tsx`):** Isolated visualization of the current layout using procedural room and furniture geometry, an open floor-level Living/Dining divider, direct store reads, responsive orbit/zoom camera controls, and no furniture, clearance, AR, persistence, or report mutations. A previous-screen guard prevents 2D remount normalization after preview navigation.
 
 ---
 
@@ -316,7 +372,7 @@ src/
 ### 2.1 State Management (`src/stores/`)
 
 * **[sessionStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/sessionStore.ts):**
-  * *Purpose:* Controls active screen navigation, user identity (`userId`, `username`), authentication state (`authMode`: `'anonymous'` | `'authenticated'`), active session ID, and fixed Mulberry Place unit dimensions.
+  * *Purpose:* Controls active and previous screen navigation (`currentScreen`, `previousScreen`), user identity (`userId`, `username`), authentication state (`authMode`: `'anonymous'` | `'authenticated'`), active session ID, and fixed Mulberry Place unit dimensions. Previous-screen tracking lets the workspace distinguish a read-only 3D return from normal initialization routes.
   * *Key Exports:* `useSessionStore`, `startNewSession()`, `navigateTo()`, `setAuthUser()`.
 * **[furnitureStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/furnitureStore.ts):**
   * *Purpose:* Maintains the active layout inventory (`items: FurnitureItem[]`). Provides CRUD operations (`addItem`, `updateItem`, `updatePosition`, `removeItem`, `clearAll`) and bulk hydration (`setItems`) when loading saved sessions. Supports unpositioned incoming pieces (`posX: 0, posZ: 0`), dynamic quantity support (`quantity?: number`), category-aware room center assignments (`LIVING_ROOM_CENTER_POS`, `DINING_ROOM_CENTER_POS`, `getDefaultRoomPosition`), and automatically normalizes coordinates in `updateItem` and `updatePosition` (converting values $>10$ cm to meters) to protect unit layout boundaries during 2D workspace handoff.
@@ -451,7 +507,7 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
   * *Camera Safety:* Landscape and portrait offsets are applied locally according to canvas aspect ratio. Panning is disabled; zoom and polar angles are constrained.
 * **[DollhouseFloorPlan.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/DollhouseFloorPlan.tsx):**
   * *Purpose:* Converts `CONDO_ROOMS` centimeter geometry into a lightweight open-top dollhouse environment.
-  * *Geometry Strategy:* Derives unit dimensions from room extents, renders one floor tile per room, merges collinear edge intervals, and generates deduplicated exterior/interior wall meshes.
+  * *Geometry Strategy:* Derives unit dimensions from room extents, renders one floor tile per room, merges collinear edge intervals, and generates deduplicated exterior/interior wall meshes. The shared Living/Dining edge is omitted from raised wall generation and rendered as a subtle floor-level divider derived from the same room coordinates.
 * **[DollhouseFurniture.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/DollhouseFurniture.tsx):**
   * *Purpose:* Converts each `FurnitureItem` into lightweight category-aware procedural meshes.
   * *Data Mapping:* `lengthCm`, `widthCm`, and `heightCm` are divided by `100`; `posX`, `posZ`, and `rotationY` are consumed directly; `shape` selects rectangular, round/oval, or L-shaped construction.
@@ -554,8 +610,8 @@ workspace (same furnitureStore layout)
 | **Authentication** | `src/screens/AuthScreen.tsx` | `'auth'` | **Active** | Manages user sign-up and login using username input mapped internally to `${username}@habi3d.local`. Checks Supabase `saved_sessions` for existing layout; prompts user to Resume existing layout or Start Fresh. |
 | **Furniture Input** | `src/screens/FurnitureInputScreen.tsx` | `'furnitureInput'` | **Active** | Step 1/2 of layout setup. Furniture item catalog selection, custom dimension entry with decimal-safe inputs (`inputMode="decimal"`), WebXR camera measuring (with `planeDetection` stripped for Android stability), and dining chair quantity selector (1–8 chairs, default 4). On "Confirm", appends the configured item to the "Furniture added" list on-screen and resets the form, allowing users to configure multiple pieces before explicitly clicking "Position Furniture" to route to `'positionMap'`. |
 | **AR Floor Placement & 2D Handoff** | `src/screens/PositionMapScreen.tsx` | `'positionMap'` | **Active** | Direct WebXR floor hit-testing (`PlacementScene`, `useXRHitTest`) with Single-Tap Room Entry Corner Anchor (`waitingForAnchor`: "📍 Tap the room entry corner to align") establishing calibration against `ENTRY_DOOR_BLUEPRINT` ($X=0.2\text{m}, Z=0.1\text{m}$) using viewer pose yaw. Renders real-time 3D ghost model, tap-to-place, yaw rotation slider, "Re-place", and "Confirm placement". On confirmation, executes `applyCalibration`, category-aware room routing (`'dining'` vs `'living'`), bounds-checking, and automatic batch-spawning of dining chairs if `quantity > 1` with a non-overlapping 2-column spatial layout before navigating to `'workspace'`. |
-| **Workspace (Interactive Plan)** | `src/screens/WorkspaceScreen.tsx` | `'workspace'`, `'analysis'`, `'recommendations'`, `'recommendation'` | **Active** | Core 2D interactive layout optimization hub (~82% viewport canvas). Free-movement physics drag, architectural bedroom wall blocker, live tabular-numeral gap readouts, alignment guides, collision detection, unit-wide grid overlay (A1-F8), responsive text-based toolbar ("Rotate", "Reset", "Undo", "Delete"), safe reset, tabbed inspection panel, and walkway access indicators. |
-| **3D Layout Preview** | `src/screens/ThreeDPreviewScreen.tsx` | `'threeDPreview'` | **Active** | Read-only dollhouse visualization of the current `furnitureStore.items` layout. Renders the predefined Mulberry Place 2BR room geometry and lightweight furniture using stored shape, category, dimensions, position, and rotation. Supports bounded orbit and zoom only; exposes no furniture editing, clearance visualization, autosave, AR, or reporting behavior. |
+| **Workspace (Interactive Plan)** | `src/screens/WorkspaceScreen.tsx` | `'workspace'`, `'analysis'`, `'recommendations'`, `'recommendation'` | **Active** | Core 2D interactive layout optimization hub (~82% viewport canvas). Free-movement physics drag, architectural bedroom wall blocker, live tabular-numeral gap readouts, alignment guides, collision detection, unit-wide grid overlay (A1-F8), responsive text-based toolbar ("Rotate", "Undo", "Delete"), confirmed deletion with undo restoration, tabbed inspection panel, and walkway access indicators. Its mount initializer skips all normalization writes specifically when `previousScreen === 'threeDPreview'`. |
+| **3D Layout Preview** | `src/screens/ThreeDPreviewScreen.tsx` | `'threeDPreview'` | **Active** | Read-only dollhouse visualization of the current `furnitureStore.items` layout. Renders the predefined Mulberry Place 2BR room geometry and lightweight furniture using stored shape, category, dimensions, position, and rotation. Supports bounded orbit and zoom only; exposes no furniture editing, clearance visualization, autosave, AR, or reporting behavior. The Living/Dining transition is open with a floor-level divider, and the guarded return route preserves exact store state. |
 | **Session Report** | `src/screens/ReportScreen.tsx` | `'report'` | **Active** | Client-side session report view. Computes layout progress diff from session start ("You made N spots more comfortable"), displays rule status list, and provides multi-page PDF generation via `pdfReport.ts`. |
 | **Fallback Placeholder** | `src/screens/PlaceholderScreen.tsx` | `default` | **Active** | Fallback route handler for unrecognized screen state targets. |
 
@@ -716,10 +772,12 @@ workspace (same furnitureStore layout)
 
 1. **Interaction Gate:** Pointer down on an SVG item element tracks movement. Movement under `DRAG_THRESHOLD_PX = 5` is treated as an item selection click.
 2. **Free Delta Movement Dragging:** Once past 5px, `floorPlanDrag.ts` tracks delta offsets ($\Delta X, \Delta Z$). Dragging is delta-based, rendering it immune to viewport zoom shifts.
-3. **Boundary & Outer Wall Constraint:** Item bounds are restricted to remain within `unitEnvelope` outer walls (West 0cm, East 650cm, North 0cm, South 800cm).
-4. **Real-time Visual Feedback:** Computes alignment snap lines, live collision highlights, and tabular-numeral gap readouts in real-time.
-5. **Drop & Room Re-Homing:** Pointer up commits final coordinates. `detectRoomFromPosition()` automatically assigns the item's `roomId` based on center point drop coordinates inside `CONDO_ROOMS`.
+3. **Boundary & Outer Wall Constraint:** Item bounds are clamped to remain within the unit envelope outer walls (West $0\text{ cm}$, East $510\text{ cm}$, North $0\text{ cm}$, South $880\text{ cm}$). Placement is strictly constrained to the editable Living and Dining areas; dropping on Bedroom ($Z < 3.40\text{m}$), Kitchen, or Bathroom rolls back to the last valid position with a warning toast.
+4. **Real-Time Visual Feedback & Directional Gap Readouts:** Computes alignment snap lines, live collision highlights, and tabular-numeral gap badges in real-time. For pieces selected or dragged within the active planning area, four directional gap badges (West, East, North, South) measure clearances to the nearest perimeter boundary of the combined Living + Dining union (stopping at Kitchen, Bathroom, Bedroom, or exterior walls) or to facing adjacent furniture pieces. The internal Living/Dining transition is open and produces no artificial wall readings. Badges are hidden when hovering or dragged over restricted zones.
+5. **Drop & Room Re-Homing:** Pointer up commits final coordinates. `roomIdForItem()` automatically assigns the item's `roomId` based on maximum bounding overlap inside `CONDO_ROOMS`.
 6. **Undo & Progress Recording:** Pushes the state snapshot into a 50-step undo stack and calls `markItemTouched(itemId)`.
+7. **Confirmed Deletion:** Selecting **Delete** opens a modal without touching the furniture array or history. Only explicit confirmation invokes the existing deletion commit; Cancel, Escape, and backdrop dismissal are non-mutating.
+8. **Read-Only 3D Return:** Navigation back from `'threeDPreview'` is identified through `sessionStore.previousScreen`. The workspace marks its mount initializer complete without running room assignment or position normalization, preserving the exact layout produced by the 2D editor.
 
 ### 4.5 Process 5: Clearance Rule Analysis & Priority Ranking Engine
 
@@ -1090,10 +1148,11 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 
 | Feature | Implementation Component(s) | Technical Strategy | Operational Status |
 | :--- | :--- | :--- | :--- |
-| **Read-Only 3D Dollhouse Preview** | `ThreeDPreviewScreen.tsx`<br>`ThreeDLayoutPreview.tsx`<br>`DollhouseFloorPlan.tsx`<br>`DollhouseFurniture.tsx` | Direct read of `furnitureStore.items`; `cm / 100` procedural geometry; stored position/rotation mapping; `CONDO_ROOMS`-derived floors and walls; responsive bounded `OrbitControls`; no editing or analysis imports. | **Active & Verified** |
+| **Read-Only 3D Dollhouse Preview** | `ThreeDPreviewScreen.tsx`<br>`ThreeDLayoutPreview.tsx`<br>`DollhouseFloorPlan.tsx`<br>`DollhouseFurniture.tsx` | Direct read of `furnitureStore.items`; `cm / 100` procedural geometry; stored position/rotation mapping; `CONDO_ROOMS`-derived floors and walls; floor-level Living/Dining divider; responsive bounded `OrbitControls`; no editing or analysis imports. | **Active & Verified** |
+| **3D Return State Preservation** | `sessionStore.ts`<br>`WorkspaceScreen.tsx` | Tracks `previousScreen`; skips workspace mount normalization only after `'threeDPreview'`; preserves exact furniture JSON, undo history, and normal initialization from all other routes. | **Active & Verified (3 Round Trips)** |
 | **Free 2D Floor Plan Drag** | `CondoFloorPlan.tsx`<br>`floorPlanDrag.ts` | Delta drag tracking, `unitEnvelope` outer wall bounding, live snap lines, live cm readouts. | **Active & Verified** |
 | **Sequential AR-to-2D Routing** | `FurnitureInputScreen.tsx`<br>`PositionMapScreen.tsx` | Sequential routing from input confirmation (`posX: 0, posZ: 0`) to `PositionMapScreen.tsx`, followed by safe Living Room handoff to `WorkspaceScreen.tsx`. | **Active & Verified** |
-| **Responsive Text-Based Toolbar** | `WorkspaceScreen.tsx`<br>`App.css` | Explicit text action buttons ("Rotate", "Reset", "Undo", "Delete"), store delete/undo restoral sync, responsive wrapping. | **Active & Verified** |
+| **Responsive Text-Based Toolbar** | `WorkspaceScreen.tsx`<br>`App.css` | Explicit text action buttons ("Rotate", "Undo", "Delete"), accessible delete confirmation, non-mutating Cancel/Escape/backdrop paths, store delete/undo restoral sync, and responsive wrapping. | **Active & Verified** |
 | **Main Walkway Corridor & Real-Time Alert System** | `CondoFloorPlan.tsx`<br>`walkways.ts`<br>`WorkspaceScreen.tsx` | SVG dashed corridor overlay (`MAIN_ENTRY_WALKWAY_RECT`), real-time toast alert (`isItemInMainWalkway`), 5-path clearance monitoring (`computeWalkways`), header blocked pill, drawer status badges, and comprehensive test suite (`TC-WKSP-WALKWAY-001`–`005`). | **Active & Verified** |
 | **Auto Room Assignment** | `floorPlanDrag.ts`<br>`condoLayout.ts` | Item center coordinate spatial lookup inside `CONDO_ROOMS` polygon boundaries on drop. | **Active & Verified** |
 | **Undo / Redo Stack with Deletion Restoral** | `WorkspaceScreen.tsx` | 50-step state history stack recording position/rotation/deletion mutations; restores layout and store items. | **Active & Verified** |
@@ -1119,7 +1178,7 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 * **WARNING - Existing Project-Wide ESLint Failure:** `npm run lint` currently reports one pre-existing `@typescript-eslint/no-unused-vars` error at `src/components/floorPlanDrag.ts:208` because `_items` is assigned a default value but never used. The 3D feature's focused ESLint scope passes with zero errors.
 * **WARNING - Existing Production Bundle Size:** `npm run build` succeeds, but Vite reports multiple chunks above the 500 kB warning threshold. The largest existing bundles remain the Three/XR-related application chunks; future optimization may use route-level dynamic imports or explicit chunk splitting.
 * **WARNING - Physical Android 3D Preview Validation Pending:** The 3D preview was verified in Chromium/Edge WebGL at desktop (`1440 x 900`) and mobile (`390 x 844`) viewports. A final performance and gesture pass on the target Android device remains recommended alongside the existing WebXR hardware checklist.
-* **OK - 3D Preview Isolation:** Static scans confirm that preview modules contain no furniture mutation calls and no clearance, walkway, recommendation, Supabase, autosave, report, or AR imports.
+* **OK - 3D Preview Isolation and Return Preservation:** Static scans confirm that preview modules contain no furniture mutation calls and no clearance, walkway, recommendation, Supabase, autosave, report, or AR imports. Automated state checks additionally confirmed that the workspace remount guard preserves serialized furniture state across three repeated preview round trips.
 * **✅ `planeDetection: true` Removed (Fixed Sept 14, 2026):** Cleanly removed `planeDetection: true` from `createXRStore()` in `FurnitureInputScreen.tsx`, eliminating the WebXR driver crash on Android Chrome devices.
 * **🟡 Lack of Password Reset Flow:** Supabase Auth with synthetic emails does not support automated email-based password resets. Documented as a known limitation for thesis evaluation.
 * **🟡 Generic Sign-up Error Fallback:** Rare sign-up failures collapse into a generic user message without logging status codes; targeted for logging instrumentation if reported again.
@@ -1129,6 +1188,9 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 
 - [x] **Completed:** Add isolated, read-only 3D dollhouse preview using the existing furniture state and floor-plan constants.
 - [x] **Completed:** Verify nonblank desktop and mobile WebGL rendering, responsive framing, and lack of UI overlap.
+- [x] **Completed:** Prevent workspace mount normalization from mutating furniture when returning from 3D.
+- [x] **Completed:** Render the Living/Dining shared boundary as a floor divider rather than a raised 3D wall.
+- [x] **Completed:** Require confirmation before 2D furniture deletion while preserving Cancel and Undo semantics.
 - [ ] **Must-Do:** Validate orbit/zoom gesture performance on the target Android Chrome device with a representative full furniture layout.
 - [x] **Resolved:** Remove `planeDetection: true` from `FurnitureInputScreen.tsx`.
 - [ ] **Must-Do:** Execute full WebXR hardware validation on Android Chrome (AR camera measurement, single-tap entry anchor, direct floor hit-testing, circular table rendering).
@@ -1141,11 +1203,13 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 
 ## 7. Verification & Testing Matrix
 
-* **PASS - Integrated Production Build (2026-09-16):** `npm run build` completed successfully after the 3D preview integration (`tsc -b && vite build`, 1,140 modules transformed).
-* **PASS - Focused Feature Lint:** `App.tsx`, `types/index.ts`, `WorkspaceScreen.tsx`, and all four new 3D preview files pass ESLint with 0 errors and 0 warnings.
+* **PASS - Integrated Production Build (2026-09-17):** `npm run build` completed successfully after the state-preservation, boundary, and confirmation updates (`tsc -b && vite build`, 1,140 modules transformed).
+* **PASS - Focused Feature Lint:** `sessionStore.ts`, `WorkspaceScreen.tsx`, and `DollhouseFloorPlan.tsx` pass ESLint with 0 errors and 0 warnings.
 * **PASS - 3D Read-Only Static Audit:** No calls to `addItem`, `updateItem`, `updatePosition`, `removeItem`, `clearAll`, or `setItems` exist in the four new 3D preview files.
-* **PASS - Protected Module Diff Audit:** No feature-related changes detected in clearance/rule modules, walkway logic, AR modules, furniture/session stores, Supabase, reports, 2D drag geometry, or the 2D floor-plan renderer.
-* **PASS - Responsive WebGL Visual Audit:** Headless Edge screenshots at `1440 x 900` and `390 x 844` confirmed a nonblank canvas, complete condominium framing, visible procedural furniture, responsive portrait composition, and no header/canvas overlap.
+* **PASS - Exact State Round-Trip Audit:** Three automated 2D -> 3D -> 2D cycles retained byte-for-byte identical `furnitureStore.items` JSON inside the preview and after every return.
+* **PASS - Delete Confirmation Interaction Audit:** Cancel retained exact state, confirmed Delete removed the selected item through the existing handler, and Undo restored the exact pre-delete furniture array.
+* **PASS - Protected Module Diff Audit:** No feature-related changes detected in clearance/rule modules, walkway logic, AR modules, `furnitureStore`, Supabase, reports, 2D drag geometry, the 2D floor-plan renderer, or room-layout data. The navigation-only `sessionStore` change is intentionally scoped to previous-screen tracking.
+* **PASS - Responsive Visual Audit:** Headless Edge screenshots at `1440 x 900` and true device-emulated `390 x 844` confirmed a nonblank 3D canvas, open Living/Dining transition, complete condominium framing, and a fully contained confirmation dialog without overlap or clipping.
 * ✅ **TypeScript Compilation:** `npx tsc -b --force` clean project-wide (0 errors).
 * **WARNING - ESLint Suite:** `npm run lint` reports one pre-existing error in `src/components/floorPlanDrag.ts:208` (`_items` unused). The 3D feature and all directly modified TypeScript files pass focused ESLint checks with 0 errors and 0 warnings.
 * ✅ **Production Bundle Build:** `npx vite build` successful (module output verified).
@@ -1158,7 +1222,7 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 * ✅ **Main Walkway Obstruction Suite:** 5/5 boundary, precedence, and notification test cases (`TC-WKSP-WALKWAY-001`–`005`) verified passing.
 * ✅ **Increment 2 AR Room Alignment & Furniture Positioning Suite:** 10/10 functionality test cases (`FT2-01`–`FT2-10`) verified passing with zero code modifications.
 * ✅ **Increment 3 Clearance & Circulation Suite:** 9/9 functionality test cases (`FT3-01`–`FT3-08`, `FT3-10`) verified passing with zero code modifications.
-* ✅ **Increment 4 Interactive 2D Workspace Suite:** 7/7 selected functionality test cases (`FT4-02`, `FT4-06`, `FT4-07`, `FT4-09`, `FT4-10`, `FT4-11`, `FT4-12`) verified passing with zero code modifications.
+* ✅ **Increment 4 Interactive 2D Workspace Suite:** 7/7 selected functionality test cases (`FT4-02`, `FT4-06`, `FT4-07`, `FT4-09`, `FT4-10`, `FT4-11`, `FT4-12`) verified passing against the current implementation, including confirmed deletion and Undo restoration.
 
 ### 7.1 Walkway Obstruction Functionality Test Matrix (TC-WKSP-WALKWAY-001 to 005)
 
@@ -1253,7 +1317,7 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 | **`FT4-09`** | **Automatic Re-evaluation After Move** | Moved a Work Desk from an initial insufficient clearance position ($40\text{ cm}$ gap from Sofa, classified RED under Rule L1) outward to a comfortable position ($110\text{ cm}$ gap). | The affected clearance and circulation findings are automatically recalculated after the move. | Dropping the desk at the new position automatically invoked `commitLayout()`, triggering `runClearanceAnalysis()`. Clearance was re-evaluated from $40\text{ cm}$ (RED, priority score $5,040$) to $110\text{ cm}$ (GREEN, comfort threshold $\ge 91\text{ cm}$), instantly clearing the violation card from the Fixes tab, updating the Rules tab status to "Passing", and updating item status borders without page reload. | **Passed** |
 | **`FT4-10`** | **Automatic Re-evaluation After Rotation** | Rotated a rectangular $30 \times 250\text{ cm}$ Dining Table by 90° using the "Rotate" toolbar button, changing the edge facing the adjacent wall. | The affected findings are automatically recalculated using the new orientation. | Triggering 90° rotation updated `rotationY` ($\pi/2\text{ rad}$) and rotated the conservative AABB bounding footprint. Clearance to the wall was automatically re-evaluated via swapped effective width/length from $135\text{ cm}$ (Adequate GREEN) to $25\text{ cm}$ (Insufficient RED under Rule D1), immediately generating a priority-ranked violation card and updating ClearanceMeter SVG tracks. | **Passed** |
 | **`FT4-11`** | **Undo Layout Adjustment** | Moved an item and rotated a piece, then triggered the **Undo** toolbar button (`Ctrl+Z`). | The most recent supported layout adjustment is reverted and the analysis reflects the restored arrangement. | Selecting Undo popped the previous snapshot from `historyRef`, restored coordinates and rotation in `furnitureStore` and `preview`, and re-ran `runClearanceAnalysis()`. The prior spatial layout was restored with exact coordinate equality, and all clearance findings and blocked walkway counters reverted synchronously to their pre-adjustment states. | **Passed** |
-| **`FT4-12`** | **Delete Furniture Item** | Selected a furniture piece with active clearance violations and clicked the **Delete** button. | The selected item is removed from the workspace and affected clearance/circulation findings are updated accordingly. | Clicking Delete pushed a state snapshot to undo history, invoked `removeItem()` in `furnitureStore`, and removed the item from the 2D canvas. The clearance engine re-analyzed remaining pieces, clearing all active violation cards and walkway obstruction metrics associated with the deleted piece. | **Passed** |
+| **`FT4-12`** | **Delete Furniture Item** | Selected a furniture piece, clicked **Delete**, exercised Cancel, then reopened the dialog and confirmed deletion before invoking Undo. | Deletion requires confirmation; Cancel is non-mutating; confirmation removes the item and updates analysis; Undo restores it. | The first Delete click opened **Delete Furniture?** without changing state or history. Cancel preserved exact furniture JSON. Confirming invoked the existing `handleDelete()`, removed the item, and refreshed clearance/circulation state. Undo restored the exact pre-delete array. | **Passed** |
 
 #### Testing Notes
 
@@ -1272,14 +1336,14 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`FT3D-01`** | **Workspace Entry Point** | Inspected the workspace header integration and routed from `'workspace'` through the **3D View** command. | The app opens the dedicated 3D preview without replacing the 2D workspace implementation. | `navigateTo('threeDPreview')` selects `ThreeDPreviewScreen` through the existing `App.tsx` switch. No 2D workspace logic was refactored. | **Passed** |
 | **`FT3D-02`** | **Single Layout Source of Truth** | Traced all state access in `ThreeDPreviewScreen` and its child components. | The preview reads the existing furniture array and introduces no duplicate editable layout state. | The screen selects only `furnitureStore.items`; child components receive items through props. No secondary furniture store or synchronization layer exists. | **Passed** |
-| **`FT3D-03`** | **Condominium Dollhouse Geometry** | Rendered the scene and compared the room slab/partition layout against `CONDO_ROOMS`. | The predefined Mulberry Place 2BR footprint and major room boundaries are visible in an open-top view. | All eight room zones rendered with a base slab, low interior partitions, and higher exterior walls derived from the existing room extents. | **Passed** |
+| **`FT3D-03`** | **Condominium Dollhouse Geometry** | Rendered the scene and compared the room slab/partition layout against `CONDO_ROOMS`, including the shared Living/Dining edge. | The predefined Mulberry Place 2BR footprint and major structural boundaries are visible, while the connected Living/Dining transition remains open. | All eight room zones rendered with a base slab and derived wall geometry. Exterior and structural partitions remained raised; only the exact Living/Dining shared edge became a subtle floor-level divider. | **Passed** |
 | **`FT3D-04`** | **Furniture Dimension Mapping** | Seeded representative sofa, table, console, chair, and L-shaped furniture during an isolated visual check. | Mesh outer dimensions remain proportional to stored `lengthCm`, `widthCm`, and `heightCm`. | Procedural geometry used `dimensionCm / 100` consistently. Table, seating, cabinet, and generic primitives remained bounded by each item's dimensions. Temporary seed data was removed after testing. | **Passed** |
 | **`FT3D-05`** | **Position and Rotation Mapping** | Reviewed mesh group transforms and rendered items with zero, positive 90-degree, and negative 90-degree yaw values. | 3D placement corresponds directly to current 2D world coordinates and saved rotation. | Mesh groups use `[posX, localFloorOffset, posZ]` and `[0, rotationY, 0]` without layout recalculation, clamping, or write-back. | **Passed** |
 | **`FT3D-06`** | **Shape and Category Representation** | Rendered rectangle, round, oval, and L-shaped examples across sofa, coffee table, dining table, chair, and TV stand categories. | Shape selection and category remain visually distinguishable while using lightweight geometry. | Boxes, scaled cylinders, bounded L-shaped unions, tabletops, supports, seats, backs, and arms produced recognizable low-poly silhouettes without external assets. | **Passed** |
 | **`FT3D-07`** | **Orbit, Zoom and Responsive Framing** | Loaded WebGL screenshots at `1440 x 900` and `390 x 844`; reviewed `OrbitControls` limits and responsive camera initialization. | The canvas is nonblank, the full unit is visible, and camera interaction cannot easily lose the model. | Desktop and portrait scenes rendered fully within the viewport. Orbit/zoom are enabled; pan is disabled; distance and polar-angle constraints are active. | **Passed (Desktop/Emulated Mobile)** |
 | **`FT3D-08`** | **Read-Only Enforcement** | Searched all four preview files for furniture mutations and inspected mesh event handlers. | The user cannot add, move, rotate, resize, delete, or reassign furniture from 3D. | No mutation methods or editable mesh handlers exist. Pointer/touch gestures are consumed only by camera controls. | **Passed** |
-| **`FT3D-09`** | **Return-to-2D Preservation** | Traced the **Back to 2D** path and compared store ownership before/after navigation. | Returning to the workspace preserves the exact furniture arrangement. | The action calls only `navigateTo('workspace')`. No layout commit, reset, autosave, undo-history write, or coordinate conversion occurs in the preview. | **Passed** |
-| **`FT3D-10`** | **Protected-System Regression Audit** | Ran production build, focused lint, static mutation scans, and protected-path diff checks. | Clearance, circulation, AR, 2D editing, persistence, authentication, and reports remain unchanged. | Build passed; feature lint passed; mutation scan returned no matches; protected modules had no feature diff. Full lint retained only the documented pre-existing `_items` error. | **Passed** |
+| **`FT3D-09`** | **Return-to-2D Preservation** | Captured serialized furniture state, completed three automated **3D View** / **Back to 2D** round trips, and compared state inside 3D and after each workspace remount. | Returning to the workspace preserves the exact furniture arrangement without normalization or history writes. | `sessionStore.previousScreen` identified each 3D return, and `WorkspaceScreen` skipped its mount normalization pipeline. Serialized `furnitureStore.items` remained byte-for-byte identical across all three cycles. | **Passed** |
+| **`FT3D-10`** | **Protected-System Regression Audit** | Ran production build, focused lint, static mutation scans, protected-path diff checks, and automated browser state assertions. | Clearance, circulation, AR, 2D editing, persistence, authentication, and reports remain unchanged. | Build and focused lint passed; state, deletion, undo, and visual assertions passed; protected modules had no feature diff. Full lint retained only the documented pre-existing `_items` error. | **Passed** |
 
 #### 3D Preview Testing Notes
 
@@ -1289,3 +1353,41 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 * **Remaining Physical Test:** Orbit/zoom responsiveness and sustained frame rate should still be confirmed on the target Android Chrome device with a realistic maximum furniture count. This is a device-performance validation item, not a known functional defect.
 * **Build Result:** `npm run build` passed with 1,140 modules transformed. Vite retained its existing warning for chunks above 500 kB.
 * **Lint Result:** Focused lint for the feature and integration files passed. Project-wide lint remains blocked by the unrelated existing `_items` warning/error in `floorPlanDrag.ts:208`.
+
+### 7.6 September 17 Regression Matrix: State Preservation, Boundary and Confirmed Delete (FTFIX-01 to FTFIX-06)
+
+| Test ID | Functionality Tested | Verification Procedure | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`FTFIX-01`** | **Repeated 3D Round Trips** | Serialized `furnitureStore.items`, then automated three cycles from 2D to 3D and back to 2D. Compared JSON inside 3D and after every workspace remount. | No furniture object, coordinate, dimension, rotation, room assignment, or array order changes. | Every comparison matched the original serialized array exactly across all three cycles. | **Passed** |
+| **`FTFIX-02`** | **Workspace Remount Guard** | Reviewed the mount initializer and navigation state while returning from `'threeDPreview'`. | The 3D return bypasses room assignment, packing, and coordinate writes without disabling normal initialization from other routes. | `previousScreen === 'threeDPreview'` sets `loadedRef.current = true` and exits before `initializeRoomAssignments()`, `normalizeFurniturePositions()`, `updateItem()`, or `updatePosition()`. Other route entries retain the existing path. | **Passed** |
+| **`FTFIX-03`** | **Living/Dining 3D Boundary** | Rendered a representative sofa and dining table in the dollhouse and visually inspected the shared edge and surrounding partitions. | Living and Dining are separated by a visible floor line, not a raised wall; unrelated walls remain intact. | The exact derived shared segment rendered at floor level. The two spaces remained visually connected and all other structural walls were present. | **Passed** |
+| **`FTFIX-04`** | **Delete Cancellation** | Opened the confirmation dialog, captured furniture JSON, clicked Cancel, and compared state afterward. | Dialog closes with no furniture or history mutation. | Dialog closed and the serialized furniture array remained identical. No deletion was committed. | **Passed** |
+| **`FTFIX-05`** | **Confirmed Delete and Undo** | Reopened the dialog, confirmed Delete, verified the item count, then invoked Undo and compared restored state. | Confirmation removes the selected item through the existing workflow; Undo restores the prior layout exactly. | Item count dropped to zero after confirmation, and Undo restored the exact pre-delete furniture JSON. | **Passed** |
+| **`FTFIX-06`** | **Build, Lint, Responsive UI and Scope** | Ran `npm run build`, focused ESLint, `git diff --check`, protected-path scans, desktop 3D rendering, and `390 x 844` DevTools device emulation for the dialog. | Changed files compile cleanly, UI remains contained, and protected systems remain untouched. | Build and focused lint passed; the dialog fit without clipping; protected paths returned no changes. Full lint reported only the existing `floorPlanDrag.ts:208` `_items` issue. | **Passed** |
+
+#### September 17 Testing Notes
+
+* **Automated Browser Environment:** Headless Microsoft Edge controlled through Chrome DevTools Protocol with a true `390 x 844` mobile device metrics override.
+* **State Assertion Method:** Runtime-imported the live Zustand furniture store and compared serialized arrays before, during, and after navigation and deletion actions.
+* **Visual Evidence:** Desktop rendering confirmed the open Living/Dining threshold and intact surrounding walls; mobile rendering confirmed readable dialog copy and fully visible Cancel/Delete controls.
+* **Temporary Test Data:** Representative furniture seeds, screenshots, browser profiles, and the CDP harness were removed after verification and are not part of the repository.
+* **Protected Areas:** No clearance thresholds, contextual rule predicates, walkway geometry, AR hit-test/calibration behavior, Supabase/authentication calls, report/PDF logic, 2D drag physics, or room coordinate data changed.
+
+### 7.7 Verification & Testing Matrix: Living + Dining Combined Boundary Directional Gap Readouts (Tests 1 to 7)
+
+| Test ID | Test Scenario | Detailed Test Procedure | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`Test 1`** | **Dining beside Kitchen** | Placed a $120 \times 80\text{ cm}$ Dining Table in Dining at $X = 1.40\text{m}, 1.60\text{m}, 1.80\text{m}$ ($maxX = 2.00\text{m}, 2.20\text{m}, 2.40\text{m}$) and evaluated `edgeGaps`. | The EAST gap badge decreases proportionally ($60\text{ cm} \to 40\text{ cm} \to 20\text{ cm}$) matching the distance to the Dining/Kitchen partition ($X = 2.60\text{m}$). | `edgeGaps` strictly returned $60\text{ cm}$, $40\text{ cm}$, and $20\text{ cm}$ respectively, monotonically decreasing as the table moved east toward the Kitchen wall. | **Passed** |
+| **`Test 2`** | **No measuring through Kitchen** | Inspected EAST gap readout with Dining Table at $X = 1.60\text{m}$. | The badge never reports the distance to the outer east wall ($X = 5.10\text{m}$, e.g. $\sim 290\text{ cm}$); it strictly measures to the Kitchen wall ($X = 2.60\text{m}$). | Readout reported $40\text{ cm}$ ($2.60\text{m} - 2.20\text{m}$), fully isolating the Kitchen and never measuring across it to $5.10\text{m}$. | **Passed** |
+| **`Test 3`** | **Living/Dining transition** | Evaluated furniture straddling the Living/Dining internal threshold ($Z = 7.00\text{m}$, $Z \in [6.60, 7.40]\text{m}$). | The shared threshold produces no false 0 cm wall reading; NORTH gap continues measuring toward the Bedroom wall (or Living furniture) and SOUTH gap measures toward the south wall (or Dining furniture). | NORTH gap read $320\text{ cm}$ ($6.60\text{m} - 3.40\text{m}$) to the Bedroom divider wall and SOUTH gap read $140\text{ cm}$ ($8.80\text{m} - 7.40\text{m}$) to the south unit wall. Neither produced a 0 cm reading at $Z = 7.00\text{m}$. | **Passed** |
+| **`Test 4`** | **Bedroom boundary** | Placed a $200 \times 90\text{ cm}$ Sofa in Living with center $Z = 4.00\text{m}$ ($minZ = 3.55\text{m}$) and measured clearance north toward Bedroom 2. | The NORTH gap readout decreases according to distance to the Bedroom divider wall ($Z = 3.40\text{m}$) and does not measure through into Bedroom 2 or Balcony ($Z = 0$). | NORTH gap read $15\text{ cm}$ ($3.55\text{m} - 3.40\text{m}$); distance to Balcony/outer wall ($355\text{ cm}$) was completely rejected. | **Passed** |
+| **`Test 5`** | **Exterior wall** | Moved furniture toward the true exterior West wall ($X = 0$) and South wall ($Z = 8.80\text{m}$). | WEST and SOUTH live gap badges accurately report physical clearance to the respective exterior unit walls. | WEST gap with table center $X = 1.30\text{m}$ ($minX = 0.70\text{m}$) read $70\text{ cm}$. SOUTH gap with table center $Z = 8.20\text{m}$ ($maxZ = 8.60\text{m}$) read $20\text{ cm}$. | **Passed** |
+| **`Test 6`** | **Restricted-zone preview** | Evaluated items placed or dragged over Kitchen ($X = 3.50\text{m}, Z = 7.50\text{m}$), Bathroom ($X = 3.50\text{m}, Z = 5.00\text{m}$), and Bedroom ($Z = 2.00\text{m}$). | The floor plan renders the red zone blocker warning, and all four compass gap badges are suppressed/hidden. | `edgeGaps` returned `{ west: 0, east: 0, north: 0, south: 0 }`, and `CondoFloorPlan` predicate `!isItemInBedroom(item) && !isItemInKitchenOrBathroom(item)` evaluated to false, suppressing badge rendering. | **Passed** |
+| **`Test 7`** | **Non-regression validation** | Evaluated 90° rotation, facing furniture occlusion, undo, deletion, autosave, clearance re-evaluation, walkway warnings, and production bundling. | Drag physics, undo history, clearance engine calculations, walkway obstruction warnings, and build integrity remain 100% intact. | Rotated 90° AABB swap correctly updated gap distances ($20\text{ cm}$ east); facing items correctly measured inter-furniture clearance ($110\text{ cm}$ gap between Sofa and Table); production build passed in 17.3s with zero lint errors in target files. | **Passed** |
+
+#### Testing Notes (September 30, 2026)
+
+* **Verification Harness:** Automated mathematical assertion suite in `scratch/verify_edge_gaps.ts` testing boundary extraction, stepped geometry cancellation, interval subtraction, rotation handling, and all 7 acceptance test cases.
+* **Build & Lint Verification:** `npm run build` completed with 1,140 modules transformed. Focused ESLint on `src/components/floorPlanDrag.ts` and `src/components/CondoFloorPlan.tsx` passed with 0 errors and 0 warnings.
+* **Protected Scope Verification:** No changes to `src/engine/clearance.ts` (10-rule clearance standards), `src/engine/walkways.ts`, `src/ar/`, `ThreeDPreviewScreen.tsx`, `DollhouseFloorPlan.tsx`, `useAutosaveLayout.ts`, or report generation.
+
