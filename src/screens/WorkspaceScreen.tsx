@@ -6,6 +6,7 @@ import BackIcon from '../components/BackIcon';
 import { color as t, radius, fontFamily } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
+import DesignerAssistant from '../components/DesignerAssistant';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
@@ -92,6 +93,7 @@ type Tab = 'items' | 'recommendations' | 'rules';
 export default function WorkspaceScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
   const previousScreen = useSessionStore((s) => s.previousScreen);
+  const setActivePlacementItemId = useSessionStore((s) => s.setActivePlacementItemId);
   const items = useFurnitureStore((s) => s.items);
   const updateItem = useFurnitureStore((s) => s.updateItem);
   const updatePosition = useFurnitureStore((s) => s.updatePosition);
@@ -249,6 +251,28 @@ export default function WorkspaceScreen() {
   const handleSelectItem = useCallback((id: string) => {
     setSelectedId(id);
   }, []);
+
+  // WebXR AR Capability detection
+  const [hasARCapability, setHasARCapability] = useState(false);
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && 'xr' in navigator && navigator.xr) {
+      navigator.xr
+        .isSessionSupported('immersive-ar')
+        .then((supported) => setHasARCapability(supported))
+        .catch(() => setHasARCapability(false));
+    }
+  }, []);
+
+  const handleLaunchAR = useCallback(
+    (item?: FurnitureItem) => {
+      const target = item || selectedItem || preview[0];
+      if (target) {
+        setActivePlacementItemId(target.id);
+      }
+      navigateTo('positionMap');
+    },
+    [selectedItem, preview, setActivePlacementItemId, navigateTo],
+  );
 
   // ── Status map ────────────────────────────────────────────────────────────
   const itemStatuses = useMemo(() => {
@@ -588,6 +612,14 @@ export default function WorkspaceScreen() {
         <button
           className="wksp-outline-btn"
           style={preview3DBtn}
+          onClick={() => handleLaunchAR()}
+          title="Place or adjust furniture in AR"
+        >
+          📷 AR Place
+        </button>
+        <button
+          className="wksp-outline-btn"
+          style={preview3DBtn}
           onClick={() => navigateTo('threeDPreview')}
         >
           3D View
@@ -649,6 +681,16 @@ export default function WorkspaceScreen() {
               )}
             </span>
             <div style={toolbarTextRow}>
+              <button
+                className="wksp-text-btn"
+                style={textToolbarBtn(!selectedItem)}
+                onClick={() => handleLaunchAR(selectedItem ?? undefined)}
+                disabled={!selectedItem}
+                aria-label="Adjust in AR"
+                title="Adjust this item in AR"
+              >
+                📷 AR Mode
+              </button>
               {selectedItem?.shape !== 'round' && (
                 <button
                   className="wksp-text-btn"
@@ -715,6 +757,15 @@ export default function WorkspaceScreen() {
             {/* TAB: Items list */}
             {activeTab === 'items' && (
               <div style={scrollContainer}>
+                <DesignerAssistant
+                  violations={analysis.violations}
+                  items={preview}
+                  walkwayStatuses={walkwayStatuses}
+                  onSelectItem={handleSelectItem}
+                  selectedId={selectedItem?.id ?? null}
+                  onLaunchAR={handleLaunchAR}
+                  hasARCapability={hasARCapability}
+                />
                 <h3 style={sectionHeading}>Furniture List</h3>
                 {preview.map((item) => {
                   const status = itemStatuses[item.id] ?? 'GREEN';
@@ -738,9 +789,34 @@ export default function WorkspaceScreen() {
                         <div style={{ fontWeight: 600, color: t.ink, fontSize: 14 }}>{item.label}</div>
                         <div style={{ fontSize: 11, color: t.inkSoft, marginTop: 2 }}>{roomName}</div>
                       </div>
-                      <span style={{ ...badgeStyle, background: meta.bg, color: meta.color }}>
-                        {status === 'RED' ? 'Needs Attention' : status === 'YELLOW' ? 'Tight' : 'Good'}
-                      </span>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ ...badgeStyle, background: meta.bg, color: meta.color }}>
+                          {status === 'RED' ? 'Needs Attention' : status === 'YELLOW' ? 'Tight' : 'Good'}
+                        </span>
+                        <button
+                          type="button"
+                          className="wksp-icon-btn"
+                          style={{
+                            padding: '3px 7px',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            borderRadius: 6,
+                            border: `1px solid ${t.line}`,
+                            background: '#ffffff',
+                            color: t.brand,
+                            cursor: 'pointer',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleLaunchAR(item);
+                          }}
+                          title="Place or adjust in AR"
+                        >
+                          📷 AR
+                        </button>
+                      </div>
+
                     </div>
                   );
                 })}
@@ -751,6 +827,15 @@ export default function WorkspaceScreen() {
             {activeTab === 'recommendations' && (
               <div style={scrollContainer}>
                 {/* 1. Clearance Recommendations */}
+                <DesignerAssistant
+                  violations={analysis.violations}
+                  items={preview}
+                  walkwayStatuses={walkwayStatuses}
+                  onSelectItem={handleSelectItem}
+                  selectedId={selectedItem?.id ?? null}
+                  onLaunchAR={handleLaunchAR}
+                  hasARCapability={hasARCapability}
+                />
                 <h3 style={sectionHeading}>What to fix</h3>
                 {issueCount === 0 ? (
                   <div style={successMessage}>

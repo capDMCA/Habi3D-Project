@@ -17,6 +17,9 @@ interface SessionState {
   // Which tab the auth screen opens on — set right before navigateTo('auth')
   // since screen routing carries no params of its own.
   authMode: 'login' | 'signup';
+  // Currently focused item for AR placement
+  activePlacementItemId: string | null;
+  setActivePlacementItemId: (id: string | null) => void;
   // Actions
   navigateTo: (screen: ScreenName) => void;
   setSessionId: (id: string) => void;
@@ -44,6 +47,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   userId: null,
   username: null,
   authMode: 'login',
+  activePlacementItemId: null,
+  setActivePlacementItemId: (id) => set({ activePlacementItemId: id }),
   navigateTo: (screen) =>
     set((state) => ({
       previousScreen: state.currentScreen,

@@ -1,217 +1,371 @@
-# Habi3D
+# Habi3D — WebXR Spatial Clearance Analysis & Layout Optimization
 
-Habi3D is a Web-based Augmented Reality application for furniture spatial clearance analysis in Philippine condominium units. It is built as a thesis project focused on 2-bedroom units at Mulberry Place, Acacia Estates, Taguig City.
+Habi3D is a Web-based Augmented Reality (WebXR) and interactive spatial planning application designed for furniture clearance analysis and circulation optimization in Philippine condominium units. Built as an architectural and interior design thesis project, Habi3D is specifically tailored to standard 2-bedroom units at **Mulberry Place, Acacia Estates, Taguig City** ($5.10\,\text{m} \times 8.80\,\text{m}$).
 
-The app is a priority-ranked sequential recommendation tool. It digitizes existing furniture, maps furniture at its current real-world position, checks clearance rules, visualizes spatial violations in AR, and presents recommended fixes one step at a time.
+Rather than acting as a design-from-scratch CAD package, Habi3D evaluates and enhances existing living and dining layouts. It digitizes real-world furniture, maps items to real physical floor coordinates in AR, checks clearances against 10 codified interior design rules, flags circulation bottlenecks in an interactive 2D workspace, provides a read-only 3D dollhouse perspective, and delivers priority-ranked sequential recommendations with client-side PDF reporting.
+
+---
+
+## Table of Contents
+
+- [Core Purpose](#core-purpose)
+- [Target Scope & Floor Plan](#target-scope--floor-plan)
+- [Tech Stack](#tech-stack)
+- [System Architecture & End-to-End User Flow](#system-architecture--end-to-end-user-flow)
+  - [1. Authentication & Session Lifecycle](#1-authentication--session-lifecycle)
+  - [2. Furniture Inventory & AR Measurement](#2-furniture-inventory--ar-measurement)
+  - [3. WebXR AR Floor Placement & Single-Tap Alignment](#3-webxr-ar-floor-placement--single-tap-alignment)
+  - [4. Interactive 2D Workspace](#4-interactive-2d-workspace)
+  - [5. Read-Only 3D Dollhouse Layout Preview](#5-read-only-3d-dollhouse-layout-preview)
+  - [6. Constructive Evaluation & PDF Report Export](#6-constructive-evaluation--pdf-report-export)
+- [Codified 10 Clearance Rules Matrix](#codified-10-clearance-rules-matrix)
+  - [Contextual Applicability Model](#contextual-applicability-model)
+  - [Rule Specifications](#rule-specifications)
+  - [Priority Ranking & Remediation Formula](#priority-ranking--remediation-formula)
+- [Project Directory Structure](#project-directory-structure)
+- [Changelog & System Evolution](#changelog--system-evolution)
+- [Environment Configuration & Setup](#environment-configuration--setup)
+- [Testing & WebXR Verification](#testing--webxr-verification)
+
+---
 
 ## Core Purpose
 
-Habi3D is not a design-from-scratch tool. It analyzes an existing living/dining layout and answers:
+In compact urban condominium units, layout adjustments can drastically affect circulation, accessibility, and human comfort. Habi3D systematically answers:
 
-- Which furniture items violate interior clearance standards?
-- Which violations should be fixed first?
-- How far and in what direction should the user move each item?
-- How does the layout improve after following recommendations?
+1. **Which furniture items violate interior design clearance standards?**
+2. **Which bottlenecks are most critical and should be resolved first?**
+3. **How far and in what direction should each piece be adjusted?**
+4. **Is the primary entrance-to-bedroom walkway corridor obstructed?**
+5. **How does the layout improve after applying recommendations?**
+
+---
+
+## Target Scope & Floor Plan
+
+Habi3D focuses on the **Mulberry Place 2-Bedroom Unit** layout:
+
+- **Total Dimensions:** $5.10\,\text{m}$ (width, $X$) $\times 8.80\,\text{m}$ (depth, $Z$) ($510\,\text{cm} \times 880\,\text{cm}$).
+- **Active Planning Rooms:** 
+  - **Living Room:** $X \in [0.00, 2.60]\,\text{m}$, $Z \in [3.40, 7.00]\,\text{m}$
+  - **Dining Room:** $X \in [0.00, 2.60]\,\text{m}$, $Z \in [7.00, 8.80]\,\text{m}$
+  - *(Combined active region forms an open continuous zone of $2.60\,\text{m} \times 5.40\,\text{m}$)*
+- **Restricted Architectural Zones (Non-Plannable):**
+  - **Bedroom Hallway Divider:** Rigid structural barrier at $Z = 3.40\,\text{m}$ (separating Bedrooms 1 & 2 and Balcony).
+  - **Bathroom Zone:** $X \in [2.60, 5.10]\,\text{m}$, $Z \in [4.60, 6.20]\,\text{m}$.
+  - **Kitchen Zone:** $X \in [2.60, 5.10]\,\text{m}$, $Z \in [6.20, 8.80]\,\text{m}$.
+  - **Storage / Utility:** $X \in [2.60, 5.10]\,\text{m}$, $Z \in [3.40, 4.60]\,\text{m}$.
+- **Main Walkway Corridor:** Pedestrian thoroughfare spanning from the main entrance door ($Z = 8.80\,\text{m}$) to the bedroom hall ($Z = 3.40\,\text{m}$) across $X \in [2.15, 2.95]\,\text{m}$ ($80\,\text{cm}$ width).
+
+---
 
 ## Tech Stack
 
-- React + TypeScript + Vite
-- Zustand for app state
-- Three.js for geometry and spatial calculations
-- `@react-three/fiber` for Three.js rendering in React
-- `@react-three/xr` for WebXR AR sessions
-- `@react-three/drei` for AR text labels
-- Supabase for survey and score storage
-- jsPDF for downloadable reports
-- Vercel for HTTPS deployment
+| Technology | Purpose |
+| :--- | :--- |
+| **React 19 + TypeScript** | Core reactive user interface, custom hooks, and strict type safety |
+| **Vite 8** | Modern client bundling, fast HMR, and production optimization |
+| **Zustand 5** | Lightweight, performant state management (`sessionStore`, `furnitureStore`, `violationStore`) |
+| **Three.js 0.184** | 3D scene graphing, spatial transform mathematics, and geometric meshes |
+| **@react-three/fiber & @react-three/drei** | Declarative Three.js scene graph in React and 3D camera controls |
+| **@react-three/xr 6** | WebXR Augmented Reality integration for mobile Android Chrome |
+| **Supabase Client (@supabase/supabase-js)** | Authentication and debounced background layout autosave (`saved_sessions`) |
+| **jsPDF 4** | High-fidelity multi-page vector PDF session report generation |
+| **Vanilla CSS & Tokens** | High-performance design token system (`src/components/tokens/`), glassmorphism, and responsive layouts |
 
-## Current Feature Set
+---
 
-### Increment 1: WebXR Foundation
+## System Architecture & End-to-End User Flow
 
-- Starts a WebXR AR session on Android Chrome
-- Uses `@react-three/xr` with a connected Three.js canvas
-- Detects floor planes through hit testing
-- Shows a green hit-test reticle on the detected floor
-- Includes an AR diagnostic/demo screen
-
-### Increment 2: Furniture Shape Library and AR Measurement
-
-- Supports four furniture shapes:
-  - Rectangle
-  - L-shape
-  - Round
-  - Oval
-- Converts user dimensions from centimeters to meters for Three.js
-- Returns both visual geometry and clearance bounding boxes
-- Measures furniture length and width using two AR floor taps
-- Allows manual dimension entry as fallback
-- Height remains manually entered
-
-### Increment 3: Position Mapping
-
-- Lists furniture items that still need real-world positions
-- Shows a ghost mesh that follows the AR floor hit-test cursor
-- Lets users tap to lock the mesh position
-- Stores `posX` and `posZ` in WebXR world meters
-- Stores `rotationY` in radians
-- Renders previously placed furniture while mapping new items
-
-### Increment 4: Clearance Analysis
-
-- Runs spatial clearance analysis using 10 locked clearance rules
-- Computes item-to-item and item-to-wall gaps
-- Classifies gaps as `RED`, `YELLOW`, or `GREEN`
-- Computes Priority Score:
-
-```text
-Priority Score = Violation Severity Weight x Spatial Impact
-Spatial Impact = Shortfall Distance x Affected Edge Length
+```
+[EntryScreen] ──► [AuthScreen] ──► [FurnitureInputScreen] ──► [PositionMapScreen (AR)]
+                                                                    │
+┌───────────────────────────────────────────────────────────────────┘
+▼
+[WorkspaceScreen (2D Interactive Plan)] ◄──► [ThreeDPreviewScreen (3D Dollhouse)]
+        │
+        ▼
+  [ReportScreen (PDF Export)]
 ```
 
-- Sorts violations by descending Priority Score
-- Shows a Spatial Clearance Visualization Overlay in AR
-- Draws a 2D floor plan using Canvas
-- Saves `score_before` to Supabase when a participant is active
+### 1. Authentication & Session Lifecycle
+- **Synthetic Email Mapping:** Users log in or sign up with a simple username. The app maps this internally to `${username}@habi3d.local` using Supabase Auth.
+- **Session Resumption:** Automatically checks the `saved_sessions` table for previously saved arrangements. Users can choose to **Resume Existing Layout** or **Start Fresh**.
+- **Autosave Engine (`useAutosaveLayout`):** Debounces furniture modifications (drag, rotate, delete) and persists state directly to Supabase with Row-Level Security (`auth.uid() = user_id`).
 
-### Increment 5: Sequential Recommendations and Evaluation
+### 2. Furniture Inventory & AR Measurement
+- **Catalog Categories:** Living room (sofas, coffee tables, TV consoles, side tables, work desks) and Dining room (dining tables, dining chairs, buffets/cabinets).
+- **Standardized Shapes:** Rectangular, circular, and oval footprints.
+- **Decimal-Safe Inputs:** Dimensions entered in centimeters with validation against maximum room dimensions.
+- **Dining Chair Quantity Stepper:** Allows users to set a chair count (1–8 chairs, default 4) on a single configuration step without repetitive data entry.
+- **In-Session AR Measurement (`ARMeasureSession`):** Uses WebXR camera hit-testing to measure real-world furniture dimensions via floor taps, with zero-teardown retake options.
 
-- Shows one violation at a time
-- Displays the rule, furniture item, measured gap, required gap, fix distance, and Priority Score
-- Renders an AR correction arrow from the furniture item toward the recommended direction
-- Supports `Done - I moved it` and `Skip this step`
-- Tracks resolved recommendation steps
-- Shows final SUS and post-session survey
-- Saves SUS, post-survey, and space utilization score updates to Supabase
-- Generates a downloadable PDF report
+### 3. WebXR AR Floor Placement & Single-Tap Alignment
+- **Single-Tap Room Entry Corner Alignment:** Replaced complex multi-step calibration with a single tap at the unit's front entry corner (`ENTRY_DOOR_BLUEPRINT` at $X=0.2\,\text{m}, Z=0.1\,\text{m}$). The app reads the device camera yaw to establish the transformation matrix between AR space and the 2D blueprint.
+- **Real-Time 3D Ghost Mesh:** Uses `useXRHitTest` on Android Chrome to project a semi-transparent blue ghost mesh onto the physical floor.
+- **Tap-to-Place & Yaw Slider:** Users tap to lock position, adjust the yaw slider (0°–360°), and tap **Confirm placement**.
+- **Category-Aware Routing:** Automatically routes dining furniture to dining zones and living furniture to living zones, clamping positions inside safe boundaries.
+- **Batch Replication:** If a dining chair was added with quantity $N > 1$, confirming placement automatically spawns $N$ independent furniture pieces arranged in a neat, non-overlapping 2-column offset grid.
+- **Safe Handoff:** Ends the AR session cleanly and navigates to the 2D interactive workspace.
 
-## Clearance Rules
+### 4. Interactive 2D Workspace
+The central layout optimization interface (~82% viewport canvas):
+- **1:1 Metric Floor Plan (`CondoFloorPlan`):** High-precision SVG rendering with room color weighting and unit-wide wayfinding grid (A1 to F8).
+- **Free-Movement Physics Drag:** Smooth dragging with a 5px drag threshold to eliminate click jitter.
+- **Soft Collision Handling:** Allows overlapping furniture pieces during manual experimentation; soft toast warnings (`⚠️ Notice: Furniture pieces are overlapping`) inform the user while the clearance engine calculates $0\,\text{cm}$ gap violations.
+- **Strict Architectural Confinement:**
+  - Hard structural bedroom divider wall at $Z = 3.40\,\text{m}$ (`isItemInBedroom`).
+  - Strict Kitchen & Bathroom blockers at $X \ge 2.60\,\text{m}, Z \ge 4.60\,\text{m}$ (`isItemInKitchenOrBathroom`).
+  - Drops into invalid zones are instantly rejected and rolled back to the last valid coordinate.
+- **Combined Living + Dining Directional Gap Badges:** Displays live compass badges (North, South, East, West) around the active piece. Boundary rays pass seamlessly across the open Living/Dining transition while strictly stopping at interior partition walls and exterior perimeters.
+- **Main Walkway Obstruction Monitoring (`walkways.ts`):** Checks intersections with the entry corridor. Alerts users with dynamic toast notifications (`⚠️ Notice: [Item] is placed on the main walkway corridor`) and a header indicator (`N Walkways Blocked`).
+- **Responsive Text Toolbar:** 90° rotation, 50-step layout undo stack, and an accessible **Delete Furniture?** confirmation dialog.
+- **Tabbed Drawer Panel:**
+  - **Items:** Selection, room tags, dimensions, and quick jump.
+  - **Recommendations:** Actionable fix cards sorted by Priority Score with step-by-step "DO THIS" guidance and buffered move distances ($\text{shortfall} + 5\,\text{cm}$).
+  - **Rules:** Live clearance status for all 10 interior design rules.
 
-The app uses 10 clearance rules based on interior design references.
+### 5. Read-Only 3D Dollhouse Layout Preview
+- **Procedural 3D Environment (`ThreeDLayoutPreview`):** Generates the unit slab, low interior partition walls, and room zones directly from `CONDO_ROOMS`.
+- **Open Living/Dining Transition:** Shared divider wall is excluded and marked with a subtle floor strip, preserving the open floor plan aesthetic.
+- **Dimension-Faithful Models:** Category-specific 3D meshes (cushioned sofas, table tops with legs, chairs with backrests, cabinets, desks).
+- **Responsive Camera & Controls:** Bounded `OrbitControls` with separate landscape and portrait framing offsets.
+- **State Preservation Guard:** Workspace remount detects `previousScreen === 'threeDPreview'` and skips normalization writes, ensuring exact furniture coordinates are preserved byte-for-byte when toggling between 2D and 3D.
 
-### Living Room
+### 6. Constructive Evaluation & PDF Report Export
+- **Affirmative Vocabulary:** Replaces punitive deficit language with constructive reassurance (e.g., *"You made N spots more comfortable"*, *"Extra space suggested"* instead of *"Needs attention"*).
+- **Space Score Tracking:** Computes before-and-after space utilization scores.
+- **Client-Side PDF Export (`pdfReport.ts`):** Generates downloadable vector PDF reports containing unit summary, clearance breakdown, resolved bottlenecks, and furniture inventory.
 
-- `L1` General circulation
-- `L2` Sofa to coffee table legroom
-- `L3` Secondary circulation
-- `L4` Main traffic path
-- `L5` Conversation area depth
+---
 
-### Dining Room
+## Codified 10 Clearance Rules Matrix
 
-- `D1` Table to wall
-- `D2` Chair pull-out and access
-- `D3` Passage behind seated person
-- `D4` Walking past seated person
-- `D5` Minimum passage
+### Contextual Applicability Model
+Clearances are evaluated under the **Contextual Applicability Model** based on *Time-Saver Standards for Interior Design and Space Planning* (DeChiara, Panero & Zelnik, 2001, pp. 61–90). Rather than measuring all arbitrary pairwise distances, rules follow a strict 5-step sequence:
+1. **Identify Spatial Relationship:** Determine functional roles (living vs dining, seating vs table, walking path).
+2. **Check Applicability Preconditions:** Only evaluate pairs that represent functional interactions (e.g., sofa opposite coffee table). Flat against-wall placements for L1 are suppressed to prevent false positives.
+3. **Measure Clearance:** Compute orthogonal Euclidean edge-to-edge distance.
+4. **Compare Against Thresholds:** Classify into `RED` (violation), `YELLOW` (tight/warning), or `GREEN` (comfortable).
+5. **Return Status:** Non-applicable combinations return `N/A` and are excluded from violation counts.
 
-## Main User Flow
+### Rule Specifications
 
-1. Start session
-2. Choose 2-bedroom unit type and confirm unit dimensions
-3. Add furniture category, shape, and dimensions
-4. Verify living/dining dimensions
-5. Map each furniture item in AR
-6. Analyze layout
-7. Review Spatial Clearance Visualization Overlay
-8. Follow priority-ranked recommendations one by one
-9. Complete end survey
-10. Download PDF report
+| Code | Rule Name | Category | RED (Violation) | YELLOW (Warning) | GREEN (Clear) | Anthropometric Basis |
+| :---: | :--- | :---: | :---: | :---: | :---: | :--- |
+| **L1** | General Living Circulation | Living | $< 76\,\text{cm}$ | $76 - 90\,\text{cm}$ | $\ge 91\,\text{cm}$ | Single-person passage between seating/cabinet pieces (wall-backed pieces excluded). |
+| **L2** | Sofa to Coffee Table Legroom | Living | $< 35\,\text{cm}$ | $35 - 44\,\text{cm}$ | $\ge 45\,\text{cm}$ | Seated knee and legroom clearance to low center surface. |
+| **L3** | Conversation Seating Distance | Living | $< 45\,\text{cm}$ | $45 - 59\,\text{cm}$ | $\ge 60\,\text{cm}$ | Minimum space between opposing conversational seating pieces. |
+| **L4** | Main Traffic Path | Living | $< 61\,\text{cm}$ | $61 - 75\,\text{cm}$ | $\ge 76\,\text{cm}$ | Central corridor passage between primary entry and bedroom areas. |
+| **L5** | Living-Dining Transition | Living | $< 91\,\text{cm}$ | *N/A (Binary)* | $\ge 91\,\text{cm}$ | Clear opening width between living zone and dining room perimeter. |
+| **D1** | Dining Table to Wall | Dining | $< 91\,\text{cm}$ | $91 - 106\,\text{cm}$ | $\ge 107\,\text{cm}$ | Space to push chair back and walk behind seated diner. |
+| **D2** | Chair Pull-Out Depth | Dining | $< 50\,\text{cm}$ | $50 - 60\,\text{cm}$ | $\ge 61\,\text{cm}$ | Depth required to pull chair out from table and sit comfortably. |
+| **D3** | Dining Service Passage | Dining | $< 91\,\text{cm}$ | $91 - 106\,\text{cm}$ | $\ge 107\,\text{cm}$ | Unobstructed route behind seated diner for serving and circulation. |
+| **D4** | Seated Diner Clearance | Dining | $< 91\,\text{cm}$ | *N/A (Binary)* | $\ge 91\,\text{cm}$ | Clearance between seated dining chair back and opposing furniture. |
+| **D5** | Table to Buffet / Cabinet | Dining | $< 107\,\text{cm}$ | $107 - 121\,\text{cm}$ | $\ge 122\,\text{cm}$ | Access to open drawers/doors with diner seated at table. |
 
-## Key Folders
+### Priority Ranking & Remediation Formula
+
+Violations are prioritized using their **Spatial Impact** and **Severity Weight**:
+
+$$\text{Priority Score} = \text{Severity Weight} \times \text{Spatial Impact}$$
+
+Where:
+- $\text{Severity Weight} = 3$ for `RED` violations; $1$ for `YELLOW` warnings.
+- $\text{Spatial Impact} = \text{Shortfall Distance (cm)} \times \text{Affected Edge Length (cm)}$.
+- $\text{Shortfall Distance} = \text{Required Distance} - \text{Measured Distance}$.
+
+**Remediation Recommendation:**
+$$\text{Fix Distance} = (\text{Required Distance} - \text{Measured Distance}) + 5\,\text{cm buffer}$$
+
+---
+
+## Project Directory Structure
 
 ```text
-src/
-  ar/
-    ARMeasureSession.tsx
-    ClearanceOverlay.tsx
-    CorrectionArrow.tsx
-    shapeLibrary.ts
-
-  engine/
-    clearance.ts
-    clearanceTestCases.ts
-    rules.ts
-
-  screens/
-    EntryScreen.tsx
-    UnitSetupScreen.tsx
-    FurnitureInputScreen.tsx
-    DimensionVerificationScreen.tsx
-    PositionMapScreen.tsx
-    AnalysisScreen.tsx
-    RecommendationScreen.tsx
-    EndSurveyScreen.tsx
-
-  stores/
-    furnitureStore.ts
-    sessionStore.ts
-    violationStore.ts
-
-  utils/
-    floorPlan.ts
-    pdfExport.ts
+habi3d-project/
+├── public/                     # Static public assets
+├── src/
+│   ├── ar/                     # WebXR Augmented Reality modules
+│   │   ├── ARMeasureSession.tsx   # Two-tap AR measurement tool
+│   │   ├── ClearanceOverlay.tsx   # AR spatial clearance bounding visualizer
+│   │   ├── CorrectionArrow.tsx    # Directional AR remediation arrow
+│   │   ├── calibration.ts         # Single-tap corner anchor transformation math
+│   │   ├── overlayRenderer.tsx    # WebXR Three.js overlay rendering
+│   │   └── shapeLibrary.ts        # Three.js AR geometry generators
+│   │
+│   ├── components/             # Reusable UI & canvas components
+│   │   ├── BackIcon.tsx           # Glassmorphic vector SVG back button
+│   │   ├── ClearanceMeter.tsx     # Three-color band clearance bar glyph
+│   │   ├── CondoFloorPlan.tsx     # Interactive SVG 2D floor plan with drag & guides
+│   │   ├── DollhouseFloorPlan.tsx # Procedural 3D condominium unit walls & slabs
+│   │   ├── DollhouseFurniture.tsx # Dimension-accurate 3D furniture models
+│   │   ├── DownloadReportButton.tsx# PDF download action trigger
+│   │   ├── ErrorBoundary.tsx      # Application error boundary
+│   │   ├── FloorPlan2D.tsx        # Legacy 2D canvas renderer (retained)
+│   │   ├── PlanSandbox.tsx        # Experimental layout sandbox
+│   │   ├── Spinner.tsx            # Accessible loading spinner
+│   │   ├── StatusRow.tsx          # Clearance status list item component
+│   │   ├── ThreeDLayoutPreview.tsx# Three.js Canvas container with OrbitControls
+│   │   ├── findingText.ts         # Human-readable violation text generator
+│   │   ├── floorPlanDrag.ts       # Drag physics, snapping, boundaries & raycasts
+│   │   ├── floorPlanGeometry.ts   # Metric coordinate projection helpers
+│   │   ├── gridOverlay.ts         # A1-F8 metric wayfinding grid generator
+│   │   ├── pdfReport.ts           # Client-side jsPDF multi-page vector report engine
+│   │   ├── previewMove.ts         # Ghost coordinate preview utilities
+│   │   ├── statusVocabulary.ts    # Constructive affirmative reporting terminology
+│   │   └── tokens/                # Visual design tokens (colors, radiuses, fonts)
+│   │
+│   ├── data/                   # Architectural models & metadata
+│   │   ├── condoLayout.ts         # Mulberry Place 2BR room coordinates & boundaries
+│   │   └── roomData.ts            # Unit dimensions and metadata
+│   │
+│   ├── engine/                 # Core clearance & spatial analysis engines
+│   │   ├── clearance.ts           # Pairwise clearance evaluation & priority ranking
+│   │   ├── clearanceTestCases.ts  # Verification suite for clearance rules
+│   │   ├── ruleGuidance.ts        # Actionable "DO THIS" recommendation texts
+│   │   ├── rules.ts               # Codified 10 interior design rule definitions
+│   │   ├── violationKey.ts        # Deterministic finding identification keys
+│   │   └── walkways.ts            # Main entry-to-bedroom corridor obstruction engine
+│   │
+│   ├── screens/                # Active application screens
+│   │   ├── EntryScreen.tsx        # High-impact landing page with branded gradient
+│   │   ├── AuthScreen.tsx         # Username authentication & session resume modal
+│   │   ├── FurnitureInputScreen.tsx # Catalog input, dimensioning & chair quantity
+│   │   ├── PositionMapScreen.tsx  # WebXR anchor calibration & floor hit-test placement
+│   │   ├── WorkspaceScreen.tsx    # 2D interactive plan, live readouts, tabs & tools
+│   │   ├── ThreeDPreviewScreen.tsx# Read-only 3D dollhouse perspective screen
+│   │   ├── ReportScreen.tsx       # Affirmative evaluation summary & PDF trigger
+│   │   ├── AnalysisScreen.tsx     # Legacy standalone analysis screen
+│   │   ├── RecommendationScreen.tsx # Legacy standalone recommendation screen
+│   │   └── PlaceholderScreen.tsx  # Fallback routing placeholder
+│   │
+│   ├── stores/                 # Zustand state stores
+│   │   ├── furnitureStore.ts      # Active furniture array, catalog & mutations
+│   │   ├── sessionStore.ts        # Auth user, screen routing & previousScreen tracking
+│   │   ├── useAutosaveLayout.ts   # Debounced Supabase autosave hook
+│   │   └── violationStore.ts      # Clearance findings, space scores & resolved state
+│   │
+│   ├── types/                  # TypeScript interface definitions
+│   │   └── index.ts               # Screens, furniture items, rules, and violations
+│   │
+│   ├── utils/                  # General utility helpers
+│   │   ├── floorPlan.ts           # 2D canvas drawing utility
+│   │   └── furnitureValidation.ts # Boundary dimension validation guards
+│   │
+│   ├── App.css                 # Application-wide styling & glassmorphism
+│   ├── App.tsx                 # Root application screen router
+│   ├── index.css               # Base CSS resets and font variables
+│   ├── main.tsx                # React DOM root entry point
+│   └── supabase.ts             # Supabase client, auth helpers & session storage
+│
+├── CODEBASE_STATUS.md          # Comprehensive architectural reference & test logs
+├── package.json                # Project dependencies and script configurations
+├── tsconfig.json               # TypeScript compiler configuration
+└── vite.config.ts              # Vite configuration
 ```
 
-## Environment Variables
+---
 
-Create `.env.local` with:
+## Changelog & System Evolution
+
+### September 30, 2026: Combined Living + Dining Boundary Directional Gap Readouts
+- **Architectural Raycast Fix (`floorPlanDrag.ts`, `condoLayout.ts`):** Fixed live 4-way directional gap compass badges. Previously, boundary rays were checked against the entire $5.10\,\text{m} \times 8.80\,\text{m}$ unit envelope, causing false clearances across the kitchen and bedroom partitions. The system now computes the geometric union of the active Living + Dining rooms, cancelling the internal divider and strictly terminating at interior partition walls (Bedroom $Z = 3.40\,\text{m}$, Kitchen/Bathroom $X = 2.60\,\text{m}$) and exterior perimeters.
+
+### September 17, 2026: 3D State Preservation, Shared Boundary Fix & Confirmed Delete Modal
+- **State Preservation Guard (`sessionStore.ts`, `WorkspaceScreen.tsx`):** Added `previousScreen` tracking to `sessionStore`. Returning to 2D from the 3D preview bypasses the mount-time normalization and room-packing pipeline, preserving user-edited coordinates byte-for-byte.
+- **Shared Room Boundary in 3D (`DollhouseFloorPlan.tsx`):** Excluded the internal divider between Living and Dining from 3D wall mesh generation and replaced it with a floor-level strip.
+- **Accessible Delete Confirmation (`WorkspaceScreen.tsx`):** Added an accessible confirmation dialog (**Delete Furniture?**) to prevent accidental deletions while keeping full 50-step undo restoration.
+
+### September 16, 2026: Read-Only 3D Dollhouse Layout Preview
+- **3D Dollhouse Screen (`ThreeDPreviewScreen.tsx`, `ThreeDLayoutPreview.tsx`):** Introduced a read-only 3D view rendering the Mulberry Place 2BR layout directly from `CONDO_ROOMS` with low exterior walls and room partitions.
+- **Dimension-Accurate Furniture Models (`DollhouseFurniture.tsx`):** Procedural 3D models for sofas, tables, chairs, cabinets, and desks that mirror exact stored centimeter dimensions and rotations.
+- **Responsive Camera Framing:** Integrated `OrbitControls` with separate portrait and landscape viewport offsets for mobile ergonomics.
+
+### September 14, 2026: Category-Aware AR Spawning, Dining Chair Batch Replication & WebXR Stability
+- **Category-Aware Placement (`furnitureStore.ts`, `PositionMapScreen.tsx`):** Automated room assignment based on item category (`'dining'` vs `'living'`), preventing dining items from spawning in the living room.
+- **Batch Chair Replication (`FurnitureInputScreen.tsx`, `PositionMapScreen.tsx`):** Added a dining chair quantity stepper (1–8 chairs). Users place one chair archetype in AR, which automatically replicates into $N$ distinct items arranged in a 2-column offset grid upon confirmation.
+- **Android WebXR Crash Fix:** Removed `planeDetection: true` from `createXRStore()` to resolve driver-level crashes on Android Chrome devices.
+- **Vector Back Button UI (`BackIcon.tsx`):** Replaced legacy unicode arrows across all screens with a glassmorphic SVG vector component.
+
+### September 12, 2026: Clearance Rules Engine Revamp — Contextual Applicability Model
+- **Anthropometric Model (`clearance.ts`, `rules.ts`):** Sourced thresholds from *Time-Saver Standards for Interior Design* (DeChiara et al., 2001).
+- **Contextual Preconditions:** Suppressed false-positive wall checks for furniture placed against walls (Rule L1) and eliminated zero-width yellow thresholds on binary rules (L5, D4).
+- **Spatial Impact Formulation:** Codified the weighted impact formula ($S = VSW \times \text{Shortfall} \times \text{Edge Length}$).
+
+### September 10, 2026: Soft Collisions, Overlap Warnings & Architectural Confinement
+- **Soft Collision Math (`floorPlanDrag.ts`):** Replaced hard drag rollbacks with soft overlap warnings (`⚠️ Notice: Furniture pieces are overlapping`), allowing residents to freely adjust pieces while the clearance engine detects $0\,\text{cm}$ gaps.
+- **Strict Bedroom, Kitchen & Bathroom Confinement:** Enforced absolute hard barriers at the bedroom divider ($Z = 3.40\,\text{m}$) and kitchen/bathroom boundary ($X = 2.60\,\text{m}$), rejecting invalid drops with instant rollback.
+- **Single-Tap Room Entry Corner Anchor Alignment:** Streamlined AR placement by replacing the cumbersome 2-point calibration with a single tap at the unit's entry door corner.
+- **Removed Obsolete UI:** Purged the on-screen 4-way D-Pad and Reset button in favor of direct dragging and the 50-step undo stack.
+
+### September 1–7, 2026: Main Walkway Obstruction Engine & Empathetic Reporting Vocabulary
+- **Walkway Obstruction Alerts (`walkways.ts`, `WorkspaceScreen.tsx`):** Geometric corridor tracking ($X \in [2.15, 2.95]\,\text{m}$) with real-time toast alerts on obstruction.
+- **Empathetic Reporting Reframe (`ReportScreen.tsx`, `statusVocabulary.ts`):** Replaced deficit terminology with constructive guidance (*"Extra space suggested"* instead of *"Needs attention"*; *"You made N spots more comfortable"*).
+
+### August 2026: Authentication Overhaul, Supabase Layout Autosave & UI Modernization
+- **Streamlined Auth:** Removed guest mode; introduced username auth mapped to Supabase with debounced layout autosave (`useAutosaveLayout`) and session resume capability.
+- **Visual Modernization:** Added frosted glassmorphism, brand gradient typography, and custom design tokens across all views.
+
+---
+
+## Environment Configuration & Setup
+
+### Prerequisites
+
+- **Node.js:** v18.0.0 or higher
+- **Package Manager:** `npm` (v9+)
+- **Mobile Device (for AR):** Android device running Google Chrome with Google Play Services for AR (ARCore) installed.
+
+### Environment Variables
+
+Create a `.env.local` file in the project root:
 
 ```env
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-## Install and Run
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/capDMCA/Habi3D-Project.git
+cd Habi3D-Project
+
+# Install dependencies
 npm install
+
+# Start local development server
 npm run dev
 ```
 
-Build:
+### Build & Lint
 
 ```bash
+# Type check and production build
 npm run build
-```
 
-Lint:
-
-```bash
+# Run ESLint checks
 npm run lint
 ```
 
-## Android WebXR Testing
+---
 
-Use Android Chrome with Google Play Services for AR installed. WebXR requires HTTPS, so test through the deployed Vercel URL for full AR behavior.
+## Testing & WebXR Verification
 
-Recommended test path:
+1. **Local Desktop Testing:**
+   - Launch `npm run dev` and open `http://localhost:5173`.
+   - Log in with any username (e.g., `resident1`).
+   - Add furniture items in `FurnitureInputScreen` (e.g., 1 Sofa, 1 Dining Table, 4 Dining Chairs).
+   - In `PositionMapScreen`, click **Place in room** (desktop fallback simulates coordinates) or confirm items.
+   - In `WorkspaceScreen`, drag pieces across the floor plan, inspect directional gap compass badges, test walkway corridor notifications, toggle into the 3D dollhouse preview, and export the PDF report.
 
-1. Open the Vercel HTTPS URL on Android Chrome.
-2. Start a session.
-3. Confirm unit type and dimensions.
-4. Add at least two furniture items.
-5. Use AR measurement or manual dimensions.
-6. Map furniture positions in AR.
-7. Run analysis.
-8. Confirm overlay zones appear between furniture edges, not at item centers.
-9. Follow recommendation steps.
-10. Submit evaluation and download the PDF report.
-
-## Supabase Tables Used
-
-- `participants`
-- `sus_responses`
-- `post_survey_responses`
-- `space_utilization_scores`
-
-The app can still run locally without an active participant ID, but database inserts require valid Supabase environment variables and table access.
-
-## Notes
-
-- Furniture positions are stored in WebXR world meters.
-- Furniture dimensions are stored in centimeters.
-- The clearance engine currently uses axis-aligned bounding boxes.
-- L-shape clearance uses an approximate rectangular bounding box by design.
-- Rotation is stored visually and for later use, but clearance math currently ignores rotated bounding boxes.
-- The overlay is called the Spatial Clearance Visualization Overlay.
+2. **WebXR AR Device Testing (Android Chrome):**
+   - WebXR requires **HTTPS**. Test using the deployed production URL (e.g., on Vercel) or forward your local port over HTTPS (e.g., via `ngrok` or Chrome remote debugging).
+   - Open Chrome on your Android device and navigate to the HTTPS URL.
+   - Log in and proceed to **Position Furniture**.
+   - Tap **Place in room** to launch the WebXR AR session.
+   - Tap the room's physical entrance corner when prompted: `"📍 Tap the room entry corner to align"`.
+   - Aim the device at the floor to track the semi-transparent ghost mesh, tap to lock position, adjust the yaw slider, and confirm.
+   - Verify that dining chairs batch-replicate into distinct, non-overlapping items upon returning to the 2D workspace.

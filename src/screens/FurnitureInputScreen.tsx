@@ -616,13 +616,20 @@ export default function FurnitureInputScreen() {
         <div className="spacer" />
 
         {items.length > 0 && (
-          <button
-            className="btn btn-primary"
-            onClick={() => navigateTo('positionMap')}
-            style={{ marginBottom: 'var(--space-sm)' }}
-          >
-            Position Furniture ({items.length} item{items.length === 1 ? '' : 's'})
-          </button>
+          <div style={{ display: 'grid', gap: 10, marginBottom: 'var(--space-sm)' }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => navigateTo('positionMap')}
+            >
+              📷 Position Furniture in AR ({items.length} item{items.length === 1 ? '' : 's'})
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => navigateTo('workspace')}
+            >
+              Open 2D Workspace Directly
+            </button>
+          </div>
         )}
       </div>
 

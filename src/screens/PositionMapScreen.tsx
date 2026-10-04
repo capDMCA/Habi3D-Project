@@ -2,17 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { createXRStore, XR, XRDomOverlay, useXRHitTest, XROrigin } from '@react-three/xr';
 import * as THREE from 'three';
-import { createFurnitureShape } from '../ar/shapeLibrary';
 import {
   deriveCalibration as baseDeriveCalibration,
   applyCalibration,
   type CalibrationTransform,
 } from '../ar/calibration';
+import {
+  validatePlacement,
+  type PlacementValidationResult,
+} from '../ar/placementValidation';
+import PlacementMesh from '../ar/PlacementMesh';
+import ARCorrectionIndicator from '../ar/ARCorrectionIndicator';
+import { runClearanceAnalysis } from '../engine/clearance';
 import { useFurnitureStore, getDefaultRoomPosition } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useViolationStore } from '../stores/violationStore';
 import Spinner from '../components/Spinner';
 import BackIcon from '../components/BackIcon';
-import { fontFamily, numeric } from '../components/tokens';
+import { fontFamily, numeric, color as t } from '../components/tokens';
 import type { FurnitureItem } from '../types';
 
 interface XRHitTestResult {
@@ -144,97 +151,12 @@ function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
 }
 
-function makeLabelTexture(label: string): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-
-  const context = canvas.getContext('2d');
-  if (context) {
-    context.fillStyle = 'rgba(17, 24, 39, 0.88)';
-    context.roundRect(12, 18, 488, 92, 18);
-    context.fill();
-    context.fillStyle = '#ffffff';
-    context.font = '700 38px Inter, Arial, sans-serif';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(label.slice(0, 22), 256, 64);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function FloatingLabel({
-  label,
-  y,
-}: {
-  label: string;
-  y: number;
-}) {
-  const texture = useMemo(() => makeLabelTexture(label), [label]);
-
-  useEffect(() => () => texture.dispose(), [texture]);
-
-  return (
-    <sprite position={[0, y, 0]} scale={[0.7, 0.18, 1]}>
-      <spriteMaterial map={texture} transparent depthTest={false} />
-    </sprite>
-  );
-}
-
-function PlacementMesh({
-  item,
-  position,
-  rotationY,
-  mode,
-  showLabel = false,
-}: {
-  item: FurnitureItem;
-  position: { x: number; z: number };
-  rotationY: number;
-  mode: 'ghost' | 'placed';
-  showLabel?: boolean;
-}) {
-  const { geometry, boundingBox } = useMemo(
-    () =>
-      createFurnitureShape(item.shape, {
-        lengthCm: item.lengthCm,
-        widthCm: item.widthCm,
-        heightCm: item.heightCm,
-      }),
-    [item.heightCm, item.lengthCm, item.shape, item.widthCm],
-  );
-
-  useEffect(() => () => geometry.dispose(), [geometry]);
-
-  const opacity = mode === 'ghost' ? 0.5 : 0.9;
-  const meshY = boundingBox.heightM / 2;
-  const labelY = boundingBox.heightM + 0.22;
-
-  return (
-    <group position={[position.x, meshY, position.z]} rotation={[0, rotationY, 0]}>
-      <mesh geometry={geometry}>
-        <meshStandardMaterial
-          color={mode === 'ghost' ? '#38bdf8' : '#2B4E8C'}
-          roughness={0.45}
-          metalness={0.05}
-          transparent={mode === 'ghost'}
-          opacity={opacity}
-          depthWrite={mode !== 'ghost'}
-        />
-      </mesh>
-      {showLabel && <FloatingLabel label={item.label} y={labelY} />}
-    </group>
-  );
-}
-
 function PlacementScene({
   activeItem,
   lockedPosition,
   rotationY,
   placing,
+  validation,
   onPreviewMove,
   onFloorTap,
 }: {
@@ -242,6 +164,7 @@ function PlacementScene({
   lockedPosition: { x: number; z: number } | null;
   rotationY: number;
   placing: boolean;
+  validation: PlacementValidationResult | null;
   onPreviewMove: (position: { x: number; z: number }) => void;
   onFloorTap: (result: XRHitTestResult) => void;
 }) {
@@ -312,13 +235,24 @@ function PlacementScene({
       <XROrigin />
 
       {activeItem && lockedPosition && (
-        <PlacementMesh
-          item={activeItem}
-          position={lockedPosition}
-          rotationY={rotationY}
-          mode={placing ? 'ghost' : 'placed'}
-          showLabel={!placing}
-        />
+        <>
+          <PlacementMesh
+            item={activeItem}
+            position={lockedPosition}
+            rotationY={rotationY}
+            mode={placing ? 'ghost' : 'placed'}
+            status={validation?.status ?? 'valid'}
+            showLabel={!placing}
+          />
+
+          {validation && (
+            <ARCorrectionIndicator
+              position={lockedPosition}
+              correctionVector={validation.correctionVector}
+              status={validation.status}
+            />
+          )}
+        </>
       )}
     </>
   );
@@ -326,10 +260,14 @@ function PlacementScene({
 
 export default function PositionMapScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
+  const activePlacementItemId = useSessionStore((s) => s.activePlacementItemId);
+  const setActivePlacementItemId = useSessionStore((s) => s.setActivePlacementItemId);
   const items = useFurnitureStore((s) => s.items);
   const storeAddItem = useFurnitureStore((s) => s.addItem);
   const updatePosition = useFurnitureStore((s) => s.updatePosition);
   const updateItem = useFurnitureStore((s) => s.updateItem);
+  const refreshViolations = useViolationStore((s) => s.refreshViolations);
+  const setSpaceScoreAfter = useViolationStore((s) => s.setSpaceScoreAfter);
 
   const [arActive, setArActive] = useState(false);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
@@ -339,11 +277,30 @@ export default function PositionMapScreen() {
   const [placing, setPlacing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [arInitializing, setArInitializing] = useState(false);
+  const [xrSupported, setXrSupported] = useState<boolean | null>(null);
 
-  // 2. ADD THREE STATE VARIABLES (after existing useState calls):
   const [anchorCalibration, setAnchorCalibration] = useState<CalibrationTransform | null>(null);
   const [anchorTapMode, setAnchorTapMode] = useState<'waitingForAnchor' | 'placing'>('waitingForAnchor');
   const [deviceYaw, setDeviceYaw] = useState(0);
+
+  // Check WebXR AR capability on mount
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && 'xr' in navigator && navigator.xr) {
+      navigator.xr
+        .isSessionSupported('immersive-ar')
+        .then((supported) => setXrSupported(supported))
+        .catch(() => setXrSupported(false));
+    } else {
+      setXrSupported(false);
+    }
+  }, []);
+
+  // Sync activePlacementItemId from sessionStore if passed
+  useEffect(() => {
+    if (activePlacementItemId && items.some((it) => it.id === activePlacementItemId)) {
+      setActiveItemId(activePlacementItemId);
+    }
+  }, [activePlacementItemId, items]);
 
   useEffect(() => {
     return xrPlacementStore.subscribe((state, prevState) => {
@@ -368,6 +325,18 @@ export default function PositionMapScreen() {
   const visibleActivePosition = placing ? previewPosition : lockedPosition;
   const allPlaced = items.length > 0 && unpositionedItems.length === 0 && !activeItem;
 
+  // Lightweight placement validation against the floor plan layout
+  const currentValidation: PlacementValidationResult | null = useMemo(() => {
+    if (!activeItem || !visibleActivePosition) return null;
+    return validatePlacement({
+      candidateItem: activeItem,
+      arPosition: visibleActivePosition,
+      rotationY,
+      allExistingItems: items,
+      calibration: anchorCalibration,
+    });
+  }, [activeItem, visibleActivePosition, rotationY, items, anchorCalibration]);
+
   const addItem = useCallback(
     (payload: FurnitureItem) => {
       const exists = items.some((it) => it.id === payload.id);
@@ -391,6 +360,7 @@ export default function PositionMapScreen() {
   async function startPlacement(item: FurnitureItem) {
     setErrorMsg('');
     setActiveItemId(item.id);
+    setActivePlacementItemId(item.id);
     setPreviewPosition(null);
     setLockedPosition(isPositioned(item) ? { x: item.posX, z: item.posZ } : null);
     setRotationDeg(radiansToDegrees(item.rotationY));
@@ -404,7 +374,11 @@ export default function PositionMapScreen() {
       await xrPlacementStore.enterAR();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setErrorMsg(message);
+      setErrorMsg(
+        xrSupported === false
+          ? 'Immersive AR is not supported on this device/browser. You can place and arrange your furniture directly in the 2D Workspace.'
+          : message,
+      );
       setActiveItemId(null);
       setPlacing(false);
     } finally {
@@ -412,10 +386,21 @@ export default function PositionMapScreen() {
     }
   }
 
+  function handleDirect2DPlacement(item: FurnitureItem) {
+    if (!isPositioned(item)) {
+      const def = getDefaultRoomPosition(item.category, item.label);
+      updatePosition(item.id, def.posX, def.posZ, 0);
+      updateItem(item.id, { roomId: def.roomId });
+    }
+    setActivePlacementItemId(null);
+    navigateTo('workspace');
+  }
+
   function stopAR() {
     xrPlacementStore.getState().session?.end();
     setArActive(false);
     setActiveItemId(null);
+    setActivePlacementItemId(null);
     setPreviewPosition(null);
     setLockedPosition(null);
     setPlacing(false);
@@ -424,23 +409,34 @@ export default function PositionMapScreen() {
     setDeviceYaw(0);
   }
 
-  // 3. ADD NEW FUNCTION (before handleConfirmPlacement):
   const handleAnchorTap = (hitTestResult: XRHitTestResult) => {
     const ENTRY_DOOR_BLUEPRINT = { x: 0.2, z: 0.1 };
     try {
       const viewer = frame.getViewerPose(xrReferenceSpace);
-      if (!viewer?.transform) { showToast("⚠️ Unable to read device orientation. Try again."); return; }
+      if (!viewer?.transform) {
+        showToast('⚠️ Unable to read device orientation. Try again.');
+        return;
+      }
       const quat = viewer.transform.orientation;
-      const yaw = Math.atan2(2 * (quat.w * quat.z + quat.x * quat.y), 1 - 2 * (quat.y * quat.y + quat.z * quat.z));
-      const calibration = deriveCalibration({ arPoint: { x: hitTestResult.pose.position.x, z: hitTestResult.pose.position.z }, blueprintPoint: ENTRY_DOOR_BLUEPRINT, yaw });
+      const yaw = Math.atan2(
+        2 * (quat.w * quat.z + quat.x * quat.y),
+        1 - 2 * (quat.y * quat.y + quat.z * quat.z),
+      );
+      const calibration = deriveCalibration({
+        arPoint: { x: hitTestResult.pose.position.x, z: hitTestResult.pose.position.z },
+        blueprintPoint: ENTRY_DOOR_BLUEPRINT,
+        yaw,
+      });
       setAnchorCalibration(calibration);
       setDeviceYaw(yaw);
       setAnchorTapMode('placing');
-      showToast("✓ Room anchor set. Now place furniture.");
-    } catch (error) { console.error("Calibration failed:", error); showToast("⚠️ Anchor tap failed. Try again."); }
+      showToast('✓ Room anchor set. Move phone to position furniture.');
+    } catch (error) {
+      console.error('Calibration failed:', error);
+      showToast('⚠️ Anchor tap failed. Try again.');
+    }
   };
 
-  // 4. REPLACE handleTapToPlace():
   const handleTapToPlace = (hitTestResult: XRHitTestResult) => {
     if (anchorTapMode === 'waitingForAnchor') {
       handleAnchorTap(hitTestResult);
@@ -455,23 +451,33 @@ export default function PositionMapScreen() {
     setLockedPosition(null);
   }
 
-  // 5. REPLACE handleConfirmPlacement():
   const handleConfirmPlacement = () => {
     if (!lockedPosition || !anchorCalibration) {
-      showToast("⚠️ Please set room anchor and place furniture first.");
+      showToast('⚠️ Please set room anchor and place furniture first.');
       return;
     }
+
     try {
       const defaultPos = getDefaultRoomPosition(itemPayload.category, itemPayload.label);
       const isDining = defaultPos.roomId === 'dining';
 
-      const blueprintCoord = applyCalibration({ x: lockedPosition.x, z: lockedPosition.z }, anchorCalibration);
+      const blueprintCoord = applyCalibration(
+        { x: lockedPosition.x, z: lockedPosition.z },
+        anchorCalibration,
+      );
       let safeX = blueprintCoord.x;
       let safeZ = blueprintCoord.z;
 
-      // Validate bounds and fall back to default room center if out-of-bounds or NaN
+      // Validate bounds and fall back to room defaults if out-of-bounds or NaN
       if (isDining) {
-        if (Number.isNaN(safeX) || Number.isNaN(safeZ) || safeZ < 6.9 || safeZ > 8.9 || safeX < 0 || safeX > 2.7) {
+        if (
+          Number.isNaN(safeX) ||
+          Number.isNaN(safeZ) ||
+          safeZ < 6.9 ||
+          safeZ > 8.9 ||
+          safeX < 0 ||
+          safeX > 2.7
+        ) {
           safeX = defaultPos.posX;
           safeZ = defaultPos.posZ;
         } else {
@@ -479,7 +485,14 @@ export default function PositionMapScreen() {
           safeZ = Math.max(7.2, Math.min(safeZ, 8.6));
         }
       } else {
-        if (Number.isNaN(safeX) || Number.isNaN(safeZ) || safeZ < 3.3 || safeZ > 7.1 || safeX < 0 || safeX > 2.7) {
+        if (
+          Number.isNaN(safeX) ||
+          Number.isNaN(safeZ) ||
+          safeZ < 3.3 ||
+          safeZ > 7.1 ||
+          safeX < 0 ||
+          safeX > 2.7
+        ) {
           safeX = defaultPos.posX;
           safeZ = defaultPos.posZ;
         } else {
@@ -543,20 +556,30 @@ export default function PositionMapScreen() {
         });
       }
 
+      // Run full post-placement design analysis against the updated layout
+      const updatedItems = useFurnitureStore.getState().items;
+      const fullAnalysis = runClearanceAnalysis(updatedItems, 510, 880);
+      refreshViolations(fullAnalysis.violations);
+      setSpaceScoreAfter(fullAnalysis.spaceScoreBefore);
+
+      setActivePlacementItemId(null);
       stopAR();
       navigateTo('workspace');
     } catch (error) {
-      console.error("Placement failed:", error);
-      showToast("⚠️ Placement failed. Try again.");
+      console.error('Placement failed:', error);
+      showToast('⚠️ Placement failed. Try again.');
     }
   };
-
 
   return (
     <>
       <div className="screen">
         <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('furnitureInput')} aria-label="Go back">
+          <button
+            className="back-btn"
+            onClick={() => navigateTo('furnitureInput')}
+            aria-label="Go back"
+          >
             <BackIcon />
           </button>
           <div className="screen-header-info">
@@ -570,10 +593,43 @@ export default function PositionMapScreen() {
           <div className="progress-step active" />
         </div>
 
+        {/* Graceful Fallback Banner if WebXR AR is unsupported */}
+        {xrSupported === false && (
+          <div
+            className="card"
+            style={{
+              borderColor: 'rgba(59, 130, 246, 0.3)',
+              background: 'rgba(59, 130, 246, 0.05)',
+              padding: '16px',
+            }}
+          >
+            <p className="card-title" style={{ color: t.brand, marginBottom: 4 }}>
+              AR Not Available On This Device
+            </p>
+            <p className="card-subtitle" style={{ lineHeight: 1.45, marginBottom: 12 }}>
+              WebXR AR is supported on compatible mobile devices (e.g. Chrome on Android). You can
+              position, rotate, and check your furniture directly in the interactive 2D Workspace.
+            </p>
+            <button className="btn btn-primary" onClick={() => navigateTo('workspace')}>
+              Open 2D Workspace
+            </button>
+          </div>
+        )}
+
         {errorMsg && (
-          <div className="card" style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)' }}>
-            <p className="card-title" style={{ color: 'var(--danger)' }}>AR Placement Failed</p>
-            <p className="form-error" style={{ marginBottom: 0 }}>{errorMsg}</p>
+          <div
+            className="card"
+            style={{ borderColor: 'var(--danger-border)', background: 'var(--danger-bg)' }}
+          >
+            <p className="card-title" style={{ color: 'var(--danger)' }}>
+              AR Placement Notice
+            </p>
+            <p className="form-error" style={{ marginBottom: 10 }}>
+              {errorMsg}
+            </p>
+            <button className="btn btn-secondary" onClick={() => navigateTo('workspace')}>
+              Continue in 2D Workspace
+            </button>
           </div>
         )}
 
@@ -596,8 +652,10 @@ export default function PositionMapScreen() {
             <div className="card-header">
               <div className="card-icon card-icon-success">OK</div>
               <div>
-                <p className="card-title">{items.length} items placed in your room</p>
-                <p className="card-subtitle">Positions and rotations are stored for analysis.</p>
+                <p className="card-title">{items.length} items placed in your layout</p>
+                <p className="card-subtitle">
+                  Positions and rotations are stored. You can fine-tune in 2D or re-open AR placement.
+                </p>
               </div>
             </div>
             <button className="btn btn-primary" onClick={() => navigateTo('workspace')}>
@@ -606,50 +664,86 @@ export default function PositionMapScreen() {
           </div>
         )}
 
-        {unpositionedItems.length > 0 && (
+        {/* List of items that need placement or can be re-placed */}
+        {items.length > 0 && (
           <>
             <div className="card card-sm">
-              <p className="card-title">Items Needing Position</p>
+              <p className="card-title">Select Item to Place in AR</p>
               <p className="card-subtitle">
-                {unpositionedItems.length} of {items.length} item
-                {items.length === 1 ? '' : 's'} still need placement.
+                {unpositionedItems.length > 0
+                  ? `${unpositionedItems.length} of ${items.length} item${
+                      items.length === 1 ? '' : 's'
+                    } still need placement.`
+                  : 'All items placed. Tap any piece to re-position with AR guidance.'}
               </p>
             </div>
 
-            {unpositionedItems.map((item) => (
-              <div className="card" key={item.id}>
-                <div className="card-header">
-                  <div className="card-icon card-icon-primary">{item.label.slice(0, 1).toUpperCase()}</div>
-                  <div>
-                    <p className="card-title">
-                      {item.label}
-                      {item.quantity && item.quantity > 1 ? ` (x${item.quantity})` : ''}
-                    </p>
-                    <p className="card-subtitle">
-                      {item.shape} | {item.lengthCm} x {item.widthCm} x {item.heightCm}cm
-                    </p>
+            {items.map((item) => {
+              const placed = isPositioned(item);
+              return (
+                <div
+                  className="card"
+                  key={item.id}
+                  style={{
+                    borderLeft: placed ? `4px solid ${t.comfortFg}` : `4px solid ${t.brand}`,
+                  }}
+                >
+                  <div className="card-header">
+                    <div
+                      className={`card-icon ${
+                        placed ? 'card-icon-success' : 'card-icon-primary'
+                      }`}
+                    >
+                      {item.label.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="card-title">
+                        {item.label}
+                        {item.quantity && item.quantity > 1 ? ` (x${item.quantity})` : ''}
+                      </p>
+                      <p className="card-subtitle">
+                        {item.shape} | {item.lengthCm} × {item.widthCm} × {item.heightCm} cm
+                        {placed ? ' · Placed' : ' · Needs Placement'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => startPlacement(item)}
+                      disabled={arInitializing}
+                      style={{ flex: 1 }}
+                    >
+                      {arInitializing && activeItemId === item.id ? (
+                        <>
+                          <Spinner />
+                          Opening camera…
+                        </>
+                      ) : placed ? (
+                        '📷 Re-position in AR'
+                      ) : (
+                        '📷 Place in AR'
+                      )}
+                    </button>
+
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => handleDirect2DPlacement(item)}
+                      title="Arrange on 2D floor plan"
+                      style={{ flex: 1 }}
+                    >
+                      ✏️ Arrange in 2D
+                    </button>
                   </div>
                 </div>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => startPlacement(item)}
-                  disabled={arInitializing}
-                >
-                  {arInitializing && activeItemId === item.id ? (
-                    <>
-                      <Spinner />
-                      Setting up your camera…
-                    </>
-                  ) : (
-                    'Place in room'
-                  )}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
       </div>
 
+      {/* AR Viewport & Live Guidance DOM Overlay */}
       <div
         style={{
           position: 'fixed',
@@ -667,6 +761,7 @@ export default function PositionMapScreen() {
                 lockedPosition={visibleActivePosition}
                 rotationY={rotationY}
                 placing={placing}
+                validation={currentValidation}
                 onPreviewMove={setPreviewPosition}
                 onFloorTap={handleTapToPlace}
               />
@@ -681,25 +776,70 @@ export default function PositionMapScreen() {
                   fontFamily,
                 }}
               >
+                {/* Mode Indicator Pill (Top Center) */}
                 {anchorTapMode === 'waitingForAnchor' && (
-                  <div style={{ position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#fbbf24', color: '#78350f', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 500, zIndex: 100 }}>
-                    📍 Tap the room entry corner to align
-                  </div>
-                )}
-                {anchorTapMode === 'placing' && (
-                  <div style={{ position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', backgroundColor: '#34d399', color: '#065f46', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 500, zIndex: 100 }}>
-                    ✓ Room aligned. Now place furniture.
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '12px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      backgroundColor: '#fbbf24',
+                      color: '#78350f',
+                      padding: '8px 18px',
+                      borderRadius: '24px',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      zIndex: 100,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    }}
+                  >
+                    📍 Step 1: Tap entry door corner to align unit
                   </div>
                 )}
 
+                {anchorTapMode === 'placing' && currentValidation && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '12px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      backgroundColor:
+                        currentValidation.status === 'valid'
+                          ? '#10b981'
+                          : currentValidation.status === 'warning'
+                          ? '#f59e0b'
+                          : '#ef4444',
+                      color: '#ffffff',
+                      padding: '7px 18px',
+                      borderRadius: '24px',
+                      fontSize: '13px',
+                      fontWeight: 750,
+                      zIndex: 100,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    {currentValidation.status === 'valid'
+                      ? '✓ Valid Placement'
+                      : currentValidation.status === 'warning'
+                      ? '⚠️ Suboptimal Clearance'
+                      : '✕ Cannot Place Here'}
+                  </div>
+                )}
+
+                {/* Designer Guidance Card (Top Floating HUD) */}
                 <div
                   style={{
                     position: 'absolute',
-                    top: 56,
-                    left: 16,
-                    right: 16,
+                    top: 54,
+                    left: 14,
+                    right: 14,
                     display: 'flex',
-                    gap: 12,
+                    gap: 10,
                     alignItems: 'flex-start',
                     pointerEvents: 'auto',
                   }}
@@ -707,56 +847,89 @@ export default function PositionMapScreen() {
                   <div
                     style={{
                       flex: 1,
-                      background: 'rgba(17, 24, 39, 0.86)',
+                      background: 'rgba(17, 24, 39, 0.88)',
+                      backdropFilter: 'blur(8px)',
                       color: 'white',
-                      padding: '10px 12px',
-                      borderRadius: 8,
+                      padding: '12px 14px',
+                      borderRadius: 12,
                       fontSize: 13,
                       lineHeight: 1.45,
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
                     }}
                   >
-                    <strong>{activeItem?.label ?? 'Furniture placement'}</strong>
-                    <br />
-                    {anchorTapMode === 'waitingForAnchor'
-                      ? 'Tap the room entry corner on the floor to align the blueprint frame.'
-                      : placing
-                      ? 'Move your phone until the preview sits on the real furniture position, then tap the floor.'
-                      : 'Adjust rotation to match the real furniture, then confirm placement.'}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <strong style={{ fontSize: 14, color: '#f8fafc' }}>
+                        {activeItem?.label ?? 'Furniture placement'}
+                      </strong>
+                      <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                        {currentValidation?.roomName ?? 'Mulberry Place'}
+                      </span>
+                    </div>
+
+                    {anchorTapMode === 'waitingForAnchor' ? (
+                      <p style={{ margin: 0, color: '#e2e8f0', fontSize: 12.5 }}>
+                        Aim at the floor near the unit entrance corner and tap to align the floor plan.
+                      </p>
+                    ) : currentValidation ? (
+                      <div>
+                        {/* What is wrong & What to do */}
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', marginBottom: 2 }}>
+                          {currentValidation.problem}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: '#cbd5e1' }}>
+                          👉 {currentValidation.action}
+                        </div>
+                        {/* Why it helps */}
+                        {currentValidation.reason && (
+                          <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 4 }}>
+                            💡 {currentValidation.reason}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0, color: '#cbd5e1' }}>
+                        Move phone over the floor to preview placement.
+                      </p>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'auto' }}>
-                    <button
-                      type="button"
-                      onClick={stopAR}
-                      style={{
-                        background: '#ef4444',
-                        color: 'white',
-                        border: 0,
-                        borderRadius: 8,
-                        minHeight: 44,
-                        padding: '0 14px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700,
-                      }}
-                    >
-                      Exit
-                    </button>
-                  </div>
+
+                  <button
+                    type="button"
+                    onClick={stopAR}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.9)',
+                      color: 'white',
+                      border: 0,
+                      borderRadius: 10,
+                      minHeight: 44,
+                      padding: '0 14px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 750,
+                      fontSize: 13,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    }}
+                  >
+                    Exit
+                  </button>
                 </div>
 
+                {/* Bottom Control Sheet: Rotation & Confirmation */}
                 {activeItem && !placing && (
                   <div
                     style={{
                       position: 'absolute',
-                      left: 16,
-                      right: 16,
-                      bottom: 24,
-                      background: 'rgba(255, 255, 255, 0.94)',
+                      left: 14,
+                      right: 14,
+                      bottom: 20,
+                      background: 'rgba(255, 255, 255, 0.96)',
+                      backdropFilter: 'blur(12px)',
                       color: '#111827',
-                      borderRadius: 8,
+                      borderRadius: 14,
                       padding: 14,
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
+                      boxShadow: '0 12px 36px rgba(0,0,0,0.3)',
                       pointerEvents: 'auto',
                     }}
                   >
@@ -767,40 +940,47 @@ export default function PositionMapScreen() {
                         justifyContent: 'space-between',
                         fontSize: 13,
                         fontWeight: 700,
-                        marginBottom: 8,
+                        marginBottom: 6,
                       }}
                     >
-                      Rotation
-                      <span style={numeric}>{rotationDeg} deg</span>
+                      <span>Adjust Rotation</span>
+                      <span style={numeric}>{rotationDeg}°</span>
                     </label>
+
                     <input
                       id="rotation-slider"
                       type="range"
                       min="0"
                       max="360"
-                      step="1"
+                      step="5"
                       value={rotationDeg}
                       onChange={(event) => setRotationDeg(Number(event.target.value))}
                       style={{ width: '100%', marginBottom: 12 }}
                     />
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       <button
                         type="button"
                         className="btn btn-secondary"
                         onClick={handleReplace}
                         disabled={placing}
-                        style={{ minHeight: 46 }}
+                        style={{ minHeight: 46, fontWeight: 700 }}
                       >
                         Re-place
                       </button>
+
                       <button
                         type="button"
                         className="btn btn-primary"
                         onClick={handleConfirmPlacement}
                         disabled={!lockedPosition || placing}
-                        style={{ minHeight: 46 }}
+                        style={{
+                          minHeight: 46,
+                          fontWeight: 700,
+                          background: currentValidation?.status === 'invalid' ? '#f59e0b' : undefined,
+                        }}
                       >
-                        Confirm placement
+                        Confirm Placement
                       </button>
                     </div>
                   </div>
