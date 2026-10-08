@@ -270,14 +270,20 @@ export default function PositionMapScreen() {
   const setSpaceScoreAfter = useViolationStore((s) => s.setSpaceScoreAfter);
 
   const [arActive, setArActive] = useState(false);
-  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [activeItemId, setActiveItemId] = useState<string | null>(() =>
+    activePlacementItemId && items.some((it) => it.id === activePlacementItemId)
+      ? activePlacementItemId
+      : null,
+  );
   const [previewPosition, setPreviewPosition] = useState<{ x: number; z: number } | null>(null);
   const [lockedPosition, setLockedPosition] = useState<{ x: number; z: number } | null>(null);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [placing, setPlacing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [arInitializing, setArInitializing] = useState(false);
-  const [xrSupported, setXrSupported] = useState<boolean | null>(null);
+  const [xrSupported, setXrSupported] = useState<boolean | null>(() =>
+    typeof navigator !== 'undefined' && 'xr' in navigator && navigator.xr ? null : false,
+  );
 
   const [anchorCalibration, setAnchorCalibration] = useState<CalibrationTransform | null>(null);
   const [anchorTapMode, setAnchorTapMode] = useState<'waitingForAnchor' | 'placing'>('waitingForAnchor');
@@ -290,17 +296,17 @@ export default function PositionMapScreen() {
         .isSessionSupported('immersive-ar')
         .then((supported) => setXrSupported(supported))
         .catch(() => setXrSupported(false));
-    } else {
-      setXrSupported(false);
     }
   }, []);
 
-  // Sync activePlacementItemId from sessionStore if passed
-  useEffect(() => {
+  // Sync activePlacementItemId from sessionStore if passed dynamically
+  const [syncedPlacementId, setSyncedPlacementId] = useState(activePlacementItemId);
+  if (activePlacementItemId !== syncedPlacementId) {
+    setSyncedPlacementId(activePlacementItemId);
     if (activePlacementItemId && items.some((it) => it.id === activePlacementItemId)) {
       setActiveItemId(activePlacementItemId);
     }
-  }, [activePlacementItemId, items]);
+  }
 
   useEffect(() => {
     return xrPlacementStore.subscribe((state, prevState) => {

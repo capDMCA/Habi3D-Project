@@ -49,7 +49,7 @@ export default function DesignerAssistant({
       const roomLabel = CONDO_ROOMS.find((r) => r.id === roomId)?.label ?? 'Living Room';
       const g = ruleGuidance(v.ruleCode);
 
-      let whatIsWrong = '';
+      let whatIsWrong: string;
       if (!v.itemBId || v.itemBId === 'wall') {
         const wallText = v.wallSide ? `the ${v.wallSide} wall` : 'the wall';
         whatIsWrong = `Your ${v.furnitureLabel.toLowerCase()} is sitting too close to ${wallText} in the ${roomLabel}.`;

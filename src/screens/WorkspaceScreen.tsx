@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import CondoFloorPlan from '../components/CondoFloorPlan';
-import ClearanceMeter, { BandGlyph } from '../components/ClearanceMeter';
-import BackIcon from '../components/BackIcon';
+import CondoFloorPlan, { type FocusTarget } from '../components/CondoFloorPlan';
+import WorkspaceHeader from '../components/WorkspaceHeader';
+import RecommendationButton from '../components/RecommendationButton';
+import RecommendationSheet from '../components/RecommendationSheet';
+import RecommendationCard from '../components/RecommendationCard';
+import RecommendationPanel from '../components/RecommendationPanel';
+import { useWorkspaceScroll } from '../hooks/useWorkspaceScroll';
 import { color as t, radius, fontFamily } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
-import { ALL_RULE_GUIDANCE, ruleGuidance } from '../engine/ruleGuidance';
-import DesignerAssistant from '../components/DesignerAssistant';
+import { buildWorkspaceRecommendations, type WorkspaceRecommendation } from '../engine/recommendations';
 import { useFurnitureStore } from '../stores/furnitureStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
@@ -88,7 +91,7 @@ function normalizeFurniturePositions(items: FurnitureItem[]): FurnitureItem[] {
 }
 
 // ─── Tab enum ───────────────────────────────────────────────────────────────
-type Tab = 'items' | 'recommendations' | 'rules';
+type PanelTab = 'recommendations' | 'items' | 'rules';
 
 export default function WorkspaceScreen() {
   const navigateTo = useSessionStore((s) => s.navigateTo);
@@ -114,7 +117,14 @@ export default function WorkspaceScreen() {
   // render, only the store writes it gates should.
   const loadedRef = useRef(false);
   const [infeasible, setInfeasible] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('items');
+  const [panelTab, setPanelTab] = useState<PanelTab>('recommendations');
+  const [recSheetOpen, setRecSheetOpen] = useState(false);
+  const [activeRec, setActiveRec] = useState<WorkspaceRecommendation | null>(null);
+  const [isRecResolved, setIsRecResolved] = useState(false);
+  const resolveTimeoutRef = useRef<number | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const { isScrolled } = useWorkspaceScroll({ threshold: 100, containerRef: scrollContainerRef });
+
   const [toast, setToast] = useState<string | null>(null);
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const toastTimeoutRef = useRef<number | null>(null);
@@ -209,6 +219,42 @@ export default function WorkspaceScreen() {
 
   const walkwayStatuses = useMemo(() => computeWalkways(preview), [preview]);
 
+  const recommendationList = useMemo(
+    () => buildWorkspaceRecommendations(analysis.violations, preview, walkwayStatuses),
+    [analysis.violations, preview, walkwayStatuses],
+  );
+
+  const handleSelectRecommendation = useCallback((rec: WorkspaceRecommendation) => {
+    setActiveRec(rec);
+    setSelectedId(rec.furnitureId);
+    setIsRecResolved(false);
+    if (resolveTimeoutRef.current) {
+      window.clearTimeout(resolveTimeoutRef.current);
+      resolveTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleClearActiveRec = useCallback(() => {
+    setActiveRec(null);
+    setIsRecResolved(false);
+    if (resolveTimeoutRef.current) {
+      window.clearTimeout(resolveTimeoutRef.current);
+      resolveTimeoutRef.current = null;
+    }
+  }, []);
+
+  const focusTarget: FocusTarget | null = useMemo(() => {
+    if (!activeRec) return null;
+    return {
+      itemId: activeRec.furnitureId,
+      wallSide: activeRec.wallSide,
+      fixDirectionLabel: activeRec.fixDirectionLabel,
+      fixDirectionCm: activeRec.fixDirectionCm,
+      itemBId: activeRec.itemBId,
+      actionText: activeRec.actionText,
+    };
+  }, [activeRec]);
+
   useEffect(() => {
     if (analysis.violations.length > 0 && recommendations.length === 0) {
       refreshViolations(analysis.violations);
@@ -252,17 +298,6 @@ export default function WorkspaceScreen() {
     setSelectedId(id);
   }, []);
 
-  // WebXR AR Capability detection
-  const [hasARCapability, setHasARCapability] = useState(false);
-  useEffect(() => {
-    if (typeof navigator !== 'undefined' && 'xr' in navigator && navigator.xr) {
-      navigator.xr
-        .isSessionSupported('immersive-ar')
-        .then((supported) => setHasARCapability(supported))
-        .catch(() => setHasARCapability(false));
-    }
-  }, []);
-
   const handleLaunchAR = useCallback(
     (item?: FurnitureItem) => {
       const target = item || selectedItem || preview[0];
@@ -298,8 +333,24 @@ export default function WorkspaceScreen() {
       const fresh = runClearanceAnalysis(useFurnitureStore.getState().items, roomWidthCm, roomLengthCm);
       refreshViolations(fresh.violations);
       setSpaceScoreAfter(fresh.spaceScoreBefore);
+
+      // Check if current active recommendation was resolved
+      if (activeRec && activeRec.furnitureId === changed.id) {
+        const stillViolated = fresh.violations.some((v) =>
+          v.furnitureId === changed.id &&
+          (activeRec.ruleCode ? v.ruleCode === activeRec.ruleCode : true),
+        );
+        if (!stillViolated) {
+          setIsRecResolved(true);
+          if (resolveTimeoutRef.current) window.clearTimeout(resolveTimeoutRef.current);
+          resolveTimeoutRef.current = window.setTimeout(() => {
+            setActiveRec(null);
+            setIsRecResolved(false);
+          }, 1500);
+        }
+      }
     },
-    [roomWidthCm, roomLengthCm, updateItem, updatePosition, markItemTouched, refreshViolations, setSpaceScoreAfter],
+    [roomWidthCm, roomLengthCm, updateItem, updatePosition, markItemTouched, refreshViolations, setSpaceScoreAfter, activeRec],
   );
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
@@ -574,13 +625,6 @@ export default function WorkspaceScreen() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [deleteConfirmationOpen]);
 
-  // Counts for pills
-  const issueCount = analysis.violations.length;
-  const redCount = analysis.violations.filter((v) => v.classification === 'RED').length;
-  const yellowCount = analysis.violations.filter((v) => v.classification === 'YELLOW').length;
-  const greenCount = preview.length - redCount - yellowCount;
-  const blockedWalkwaysCount = walkwayStatuses.filter((w) => w.status === 'RED').length;
-
   const focusedRoom = useMemo(() => {
     if (!focusedRoomId) return null;
     return CONDO_ROOMS.find((r) => r.id === focusedRoomId) ?? null;
@@ -588,66 +632,30 @@ export default function WorkspaceScreen() {
 
   return (
     <div className="wksp-shell" style={shell}>
-      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <header style={header}>
-        <button className="wksp-icon-btn" style={backBtn} onClick={() => navigateTo('positionMap')} aria-label="Go back">
-          <BackIcon />
-        </button>
-        <div style={headerTitleWrap}>
-          {focusedRoom ? (
-            <div style={headerTitleRow}>
-              <span
-                style={{ cursor: 'pointer', color: t.inkSoft, fontWeight: 700, textDecoration: 'underline' }}
-                onClick={() => setFocusedRoomId(null)}
-              >
-                Mulberry Place
-              </span>
-              <span style={{ color: t.inkMute, fontWeight: 500 }}>&gt;</span>
-              <span style={{ color: t.ink, fontWeight: 850 }}>{focusedRoom.label}</span>
-            </div>
-          ) : (
-            <span style={headerTitle}>Mulberry Place</span>
-          )}
-        </div>
-        <button
-          className="wksp-outline-btn"
-          style={preview3DBtn}
-          onClick={() => handleLaunchAR()}
-          title="Place or adjust furniture in AR"
-        >
-          📷 AR Place
-        </button>
-        <button
-          className="wksp-outline-btn"
-          style={preview3DBtn}
-          onClick={() => navigateTo('threeDPreview')}
-        >
-          3D View
-        </button>
-        <button className="wksp-solid-btn" style={finishBtn} onClick={() => navigateTo('report')}>Done</button>
-      </header>
+      {/* ── RESPONSIVE SCROLL-AWARE WORKSPACE HEADER ────────────────────── */}
+      <WorkspaceHeader
+        isScrolled={isScrolled}
+        focusedRoom={focusedRoom}
+        onClearFocusedRoom={() => setFocusedRoomId(null)}
+        onBack={() => navigateTo('positionMap')}
+        onLaunchAR={() => handleLaunchAR()}
+        onOpen3DView={() => navigateTo('threeDPreview')}
+        onDone={() => navigateTo('report')}
+      />
 
       {/* ── SPLIT WORKSPACE ────────────────────────────────────────────────── */}
-      <div style={workspaceLayout}>
-        {/* LEFT COLUMN: INTERACTIVE DIGITAL TWIN FLOOR PLAN (82% WIDTH ON DESKTOP) */}
+      <div style={workspaceLayout} ref={scrollContainerRef}>
+        {/* LEFT COLUMN: INTERACTIVE DIGITAL TWIN FLOOR PLAN (HERO VISUAL FOCUS) */}
         <section style={planPanel}>
-          <div style={pillRow}>
-            {redCount > 0 && <span style={pill(t.attentionBg, t.attentionFg)}>{redCount} Issues</span>}
-            {yellowCount > 0 && <span style={pill(t.tightBg, t.tightFg)}>{yellowCount} Warnings</span>}
-            {blockedWalkwaysCount > 0 && (
-              <span style={pill(t.attentionBg, t.attentionFg)}>{blockedWalkwaysCount} Walkways Blocked</span>
-            )}
-            <span style={pill(t.comfortBg, t.comfortFg)}>{greenCount} Clear</span>
-          </div>
-
           <div style={planContainer}>
             <CondoFloorPlan
               items={preview}
-              highlightItemId={selectedItem?.id}
+              highlightItemId={activeRec?.furnitureId ?? selectedItem?.id}
               itemStatuses={itemStatuses}
               onSelectItem={handleSelectItem}
               focusedRoomId={focusedRoomId}
               onFocusRoom={setFocusedRoomId}
+              focusTarget={focusTarget}
               interactive={
                 selectedItem
                   ? {
@@ -661,6 +669,23 @@ export default function WorkspaceScreen() {
               }
             />
 
+            {/* Contextual Recommendation Card attached near focused problem area */}
+            {activeRec && (
+              <RecommendationCard
+                recommendation={activeRec}
+                isResolved={isRecResolved}
+                onDone={handleClearActiveRec}
+              />
+            )}
+
+            {/* Mobile Floating Recommendations Button */}
+            <div className="wksp-mobile-rec-trigger">
+              <RecommendationButton
+                count={recommendationList.length}
+                onClick={() => setRecSheetOpen(true)}
+                active={recSheetOpen}
+              />
+            </div>
           </div>
 
           {/* Toast Warning */}
@@ -727,339 +752,30 @@ export default function WorkspaceScreen() {
           </div>
         </section>
 
-        {/* RIGHT COLUMN: SANDBOX ASSISTANT & DETAIL VIEW (18% WIDTH ON DESKTOP) */}
-        <section style={sideDrawer}>
-          <div style={tabHeader}>
-            <button
-              className="wksp-tab-btn"
-              style={tabBtn(activeTab === 'items')}
-              onClick={() => setActiveTab('items')}
-            >
-              Items
-            </button>
-            <button
-              className="wksp-tab-btn"
-              style={tabBtn(activeTab === 'recommendations')}
-              onClick={() => setActiveTab('recommendations')}
-            >
-              Fixes{issueCount > 0 ? ` (${issueCount})` : ''}
-            </button>
-            <button
-              className="wksp-tab-btn"
-              style={tabBtn(activeTab === 'rules')}
-              onClick={() => setActiveTab('rules')}
-            >
-              Rules
-            </button>
-          </div>
-
-          <div style={drawerBody}>
-            {/* TAB: Items list */}
-            {activeTab === 'items' && (
-              <div style={scrollContainer}>
-                <DesignerAssistant
-                  violations={analysis.violations}
-                  items={preview}
-                  walkwayStatuses={walkwayStatuses}
-                  onSelectItem={handleSelectItem}
-                  selectedId={selectedItem?.id ?? null}
-                  onLaunchAR={handleLaunchAR}
-                  hasARCapability={hasARCapability}
-                />
-                <h3 style={sectionHeading}>Furniture List</h3>
-                {preview.map((item) => {
-                  const status = itemStatuses[item.id] ?? 'GREEN';
-                  const sel = selectedItem?.id === item.id;
-                  const meta = statusMeta(
-                    status === 'RED' ? 'needs-attention' : status === 'YELLOW' ? 'tight' : 'comfortable',
-                  );
-                  const roomName = CONDO_ROOMS.find((r) => r.id === (item.roomId || getRoomForCategory(item.category, item.label)))?.label ?? '';
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="wksp-list-row"
-                      onClick={() => handleSelectItem(item.id)}
-                      style={{
-                        ...listItemStyle(sel),
-                        borderLeftColor: meta.color,
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, color: t.ink, fontSize: 14 }}>{item.label}</div>
-                        <div style={{ fontSize: 11, color: t.inkSoft, marginTop: 2 }}>{roomName}</div>
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ ...badgeStyle, background: meta.bg, color: meta.color }}>
-                          {status === 'RED' ? 'Needs Attention' : status === 'YELLOW' ? 'Tight' : 'Good'}
-                        </span>
-                        <button
-                          type="button"
-                          className="wksp-icon-btn"
-                          style={{
-                            padding: '3px 7px',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            borderRadius: 6,
-                            border: `1px solid ${t.line}`,
-                            background: '#ffffff',
-                            color: t.brand,
-                            cursor: 'pointer',
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleLaunchAR(item);
-                          }}
-                          title="Place or adjust in AR"
-                        >
-                          📷 AR
-                        </button>
-                      </div>
-
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* TAB: Recommendations list (All in one: Actions, Walkways, Checklist) */}
-            {activeTab === 'recommendations' && (
-              <div style={scrollContainer}>
-                {/* 1. Clearance Recommendations */}
-                <DesignerAssistant
-                  violations={analysis.violations}
-                  items={preview}
-                  walkwayStatuses={walkwayStatuses}
-                  onSelectItem={handleSelectItem}
-                  selectedId={selectedItem?.id ?? null}
-                  onLaunchAR={handleLaunchAR}
-                  hasARCapability={hasARCapability}
-                />
-                <h3 style={sectionHeading}>What to fix</h3>
-                {issueCount === 0 ? (
-                  <div style={successMessage}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-                      <BandGlyph band="GREEN" size={12} />
-                      Every clearance rule passes
-                    </span>
-                  </div>
-                ) : (
-                  analysis.violations.map((v, idx) => {
-                    const g = ruleGuidance(v.ruleCode);
-                    const isRed = v.classification === 'RED';
-                    const bandColor = isRed ? t.attentionFg : t.tightFg;
-                    const isFocused = selectedItem?.id === v.furnitureId;
-
-                    return (
-                      <div
-                        key={v.id}
-                        className="wksp-rec-card"
-                        style={{
-                          ...violationCard,
-                          borderLeftColor: bandColor,
-                          borderColor: isFocused ? bandColor : t.line,
-                          background: isFocused ? t.surface : t.ground,
-                          animationDelay: `${Math.min(idx, 8) * 40}ms`,
-                        }}
-                        onClick={() => handleSelectItem(v.furnitureId)}
-                      >
-                        {/* Status + which piece */}
-                        <div style={recHeaderRow}>
-                          <span style={{ fontWeight: 700, color: t.ink, fontSize: 14 }}>{v.furnitureLabel}</span>
-                          <span
-                            style={{
-                              ...badgeStyle,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              background: isRed ? t.attentionBg : t.tightBg,
-                              color: bandColor,
-                            }}
-                          >
-                            <BandGlyph band={isRed ? 'RED' : 'YELLOW'} size={9} />
-                            {isRed ? 'Too tight' : 'Tight'}
-                          </span>
-                        </div>
-
-                        {/* The rule, in words before codes */}
-                        <p style={recRuleTitle}>{g?.title ?? v.ruleLabel}</p>
-                        <p style={recRequirement}>{g?.requirement ?? v.ruleLabel}</p>
-
-                        {/* Where this measurement sits across the rule's bands */}
-                        {g && <ClearanceMeter guidance={g} measuredCm={v.measuredCm} />}
-
-                        {/* The move that resolves it */}
-                        <div style={{ ...recActionRow, borderColor: bandColor }}>
-                          <span style={{ color: t.inkSoft, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em' }}>
-                            DO THIS
-                          </span>
-                          <span style={{ color: t.ink, fontSize: 13, fontWeight: 700 }}>
-                            Move {v.fixDirectionLabel.toLowerCase()} by {v.fixDirectionCm} cm
-                          </span>
-                          <span style={{ color: t.inkSoft, fontSize: 12 }}>
-                            Otherwise {g?.consequence ?? 'the gap stays tighter than recommended'}.
-                          </span>
-                        </div>
-
-                        <span style={recRuleRef}>Rule {v.ruleCode} · {v.ruleLabel}</span>
-                      </div>
-                    );
-                  })
-                )}
-
-                {/* 2. Walkways access */}
-                <h3 style={{ ...sectionHeading, marginTop: 20 }}>Walkway Access</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-                  {walkwayStatuses.map((w) => {
-                    const isRed = w.status === 'RED';
-                    const isYellow = w.status === 'YELLOW';
-                    return (
-                      <div
-                        key={w.id}
-                        style={{
-                          ...checkRow,
-                          padding: '10px 12px',
-                          borderLeft: `4px solid ${isRed ? t.attentionFg : isYellow ? t.tightFg : t.comfortFg}`,
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 13, color: t.ink }}>{w.label}</div>
-                          <div style={{ fontSize: 11, color: t.inkSoft, marginTop: 2 }}>
-                            {w.clearanceCm} cm (Target: ≥91cm)
-                          </div>
-                        </div>
-                        <span style={{
-                          ...badgeStyle,
-                          background: isRed ? t.attentionBg : isYellow ? t.tightBg : t.comfortBg,
-                          color: isRed ? t.attentionFg : isYellow ? t.tightFg : t.comfortFg,
-                        }}>
-                          {isRed ? 'Blocked' : isYellow ? 'Tight' : 'Clear'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* 3. Room quality checklist */}
-                <h3 style={{ ...sectionHeading, marginTop: 20 }}>Room Checklist</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {[
-                    { label: 'Walking Paths', codes: ['L1', 'L3', 'L4'] },
-                    { label: 'Wall Clearances', codes: ['D1', 'D2', 'D3'] },
-                    { label: 'Dining Areas', codes: ['D4', 'D5'] },
-                    { label: 'TV Clearances', codes: ['L2', 'L5'] },
-                  ].map(({ label, codes }) => {
-                    const hasIssue = analysis.violations.some((v) => codes.includes(v.ruleCode));
-                    return (
-                      <div key={label} style={checkRow}>
-                        <span style={{ fontSize: 13, fontWeight: 500, color: t.ink }}>{label}</span>
-                        <span style={{
-                          ...badgeStyle,
-                          background: hasIssue ? t.tightBg : t.comfortBg,
-                          color: hasIssue ? t.tightFg : t.comfortFg,
-                        }}>
-                          {hasIssue ? 'Needs Work' : 'Good'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* TAB: The 10 clearance rules, with each rule's own bands */}
-            {activeTab === 'rules' && (
-              <div style={scrollContainer}>
-                <h3 style={sectionHeading}>Clearance rules</h3>
-                <p style={{ margin: '0 0 4px', fontSize: 12, color: t.inkSoft, lineHeight: 1.5 }}>
-                  Every gap in your layout is measured against these. A rule passes once its
-                  gap reaches the comfortable range.
-                </p>
-
-                {/* Colour-independent key, stated once for the whole list */}
-                <div style={legendRow}>
-                  {(['RED', 'YELLOW', 'GREEN'] as const).map((band) => (
-                    <span key={band} style={legendItem}>
-                      <BandGlyph band={band} size={9} />
-                      <span style={{ color: t.inkSoft }}>
-                        {band === 'RED' ? 'Too tight' : band === 'YELLOW' ? 'Tight' : 'Comfortable'}
-                      </span>
-                    </span>
-                  ))}
-                </div>
-
-                {(['Living area', 'Dining area'] as const).map((area) => (
-                  <div key={area} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <h4 style={ruleGroupHeading}>{area}</h4>
-                    {ALL_RULE_GUIDANCE.filter((g) => g.area === area).map((g) => {
-                      const breached = analysis.violations.filter((v) => v.ruleCode === g.code);
-                      const worst = breached.some((v) => v.classification === 'RED')
-                        ? 'RED'
-                        : breached.length > 0
-                          ? 'YELLOW'
-                          : 'GREEN';
-
-                      return (
-                        <div
-                          key={g.code}
-                          style={{
-                            ...ruleRefCard,
-                            borderLeft: `4px solid ${
-                              worst === 'RED' ? t.attentionFg : worst === 'YELLOW' ? t.tightFg : t.comfortFg
-                            }`,
-                          }}
-                        >
-                          <div style={recHeaderRow}>
-                            <span style={{ fontWeight: 700, fontSize: 13, color: t.ink }}>{g.title}</span>
-                            <span
-                              style={{
-                                ...badgeStyle,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 5,
-                                background:
-                                  worst === 'RED' ? t.attentionBg : worst === 'YELLOW' ? t.tightBg : t.comfortBg,
-                                color: worst === 'RED' ? t.attentionFg : worst === 'YELLOW' ? t.tightFg : t.comfortFg,
-                              }}
-                            >
-                              <BandGlyph band={worst} size={9} />
-                              {breached.length > 0
-                                ? `${breached.length} to fix`
-                                : 'Passing'}
-                            </span>
-                          </div>
-                          <p style={recRequirement}>{g.requirement}</p>
-                          <div style={ruleBandRow}>
-                            <span style={ruleBandChip}>
-                              <BandGlyph band="RED" size={8} />
-                              under {g.violationThresholdCm} cm
-                            </span>
-                            <span style={ruleBandChip}>
-                              <BandGlyph band="YELLOW" size={8} />
-                              {g.violationThresholdCm}–{g.warningThresholdCm} cm
-                            </span>
-                            <span style={ruleBandChip}>
-                              <BandGlyph band="GREEN" size={8} />
-                              {g.warningThresholdCm} cm and over
-                            </span>
-                          </div>
-                          <span style={recRuleRef}>Rule {g.code}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
-
-                <p style={{ margin: '4px 0 0', fontSize: 11, color: t.inkMute, lineHeight: 1.5 }}>
-                  Thresholds from Time-Saver Standards for Interior Design and Space Planning
-                  (DeChiara, Panero &amp; Zelnik, 2001), Tables 3–4.
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
+        {/* DESKTOP/TABLET RIGHT COLUMN: RECOMMENDATIONS & DETAIL PANEL */}
+        <div className="wksp-desktop-panel" style={{ height: '100%', flexShrink: 0 }}>
+          <RecommendationPanel
+            recommendations={recommendationList}
+            activeTab={panelTab}
+            onTabChange={setPanelTab}
+            selectedId={activeRec?.furnitureId ?? selectedId}
+            onSelectRecommendation={handleSelectRecommendation}
+            items={preview}
+            itemStatuses={itemStatuses}
+            onSelectItem={handleSelectItem}
+            onLaunchAR={handleLaunchAR}
+          />
+        </div>
       </div>
+
+      {/* Mobile Recommendations Bottom Sheet */}
+      <RecommendationSheet
+        isOpen={recSheetOpen}
+        onClose={() => setRecSheetOpen(false)}
+        recommendations={recommendationList}
+        selectedId={activeRec?.furnitureId ?? selectedId}
+        onSelectRecommendation={handleSelectRecommendation}
+      />
 
       {deleteConfirmationOpen && selectedItem && (
         <div
@@ -1120,100 +836,24 @@ const shell: CSSProperties = {
   overflow: 'hidden',
 };
 
-// Single compact row — a title, a back button, a Done button. The old
-// header additionally stacked an h1 + a status subtitle ("N clearance
-// issues · N blocked walkways") beneath it, which is what made the bar tall
-// (measured ~125px / ~15% of a 390×844 viewport before this pass). The
-// subtitle is dropped rather than shrunk: its content is a duplicate of the
-// pill row directly underneath (Issues/Warnings/Walkways/Clear counts) —
-// removing it loses no information, just the repetition.
-const header: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  padding: '6px 12px',
-  minHeight: 52,
-  background: t.surface,
-  borderBottom: `1px solid ${t.line}`,
-  gap: 10,
-  flexShrink: 0,
-};
-
-const headerTitleWrap: CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-};
-
-const headerTitleRow: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  fontSize: 15,
-};
-
-const headerTitle: CSSProperties = {
-  fontSize: 16,
-  fontWeight: 800,
-  color: t.ink,
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  display: 'block',
-};
-
-const backBtn: CSSProperties = {
-  cursor: 'pointer',
-  minWidth: 40,
-  minHeight: 40,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  flexShrink: 0,
-};
-
-const finishBtn: CSSProperties = {
-  background: t.ink,
-  color: t.surface,
-  border: 'none',
-  minHeight: 44,
-  padding: '0 16px',
-  borderRadius: radius.sm,
-  fontWeight: 700,
-  fontSize: 15,
-  cursor: 'pointer',
-  flexShrink: 0,
-};
-
-const preview3DBtn: CSSProperties = {
-  minHeight: 40,
-  padding: '0 12px',
-  borderRadius: radius.sm,
-  border: `1px solid ${t.line}`,
-  background: t.surface,
-  color: t.ink,
-  fontWeight: 700,
-  fontSize: 14,
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-  flexShrink: 0,
-};
-
 const workspaceLayout: CSSProperties = {
   display: 'flex',
   flex: 1,
   flexDirection: 'row',
-  height: 'calc(100vh - 52px)',
+  height: 'calc(100vh - 56px)',
   overflow: 'hidden',
-  flexWrap: 'wrap',
+  position: 'relative',
 };
 
 const planPanel: CSSProperties = {
-  flex: '82% 1 600px', // takes 82% width on desktop
+  flex: '1 1 0%',
   display: 'flex',
   flexDirection: 'column',
-  padding: '12px 16px 16px',
+  padding: '8px 12px 12px',
   overflow: 'hidden',
   height: '100%',
   position: 'relative',
+  minWidth: 0,
 };
 
 const planContainer: CSSProperties = {
@@ -1273,22 +913,6 @@ const planCaption: CSSProperties = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
 };
-
-const pillRow: CSSProperties = {
-  display: 'flex',
-  gap: 10,
-  marginBottom: 10,
-  flexWrap: 'wrap',
-};
-
-const pill = (bg: string, fg: string): CSSProperties => ({
-  fontSize: 14,
-  fontWeight: 700,
-  padding: '6px 14px',
-  borderRadius: '20px',
-  background: bg,
-  color: fg,
-});
 
 const toastBanner: CSSProperties = {
   position: 'absolute',
@@ -1374,223 +998,3 @@ const deleteDialogDeleteBtn: CSSProperties = {
   cursor: 'pointer',
 };
 
-const sideDrawer: CSSProperties = {
-  // Wider than the old 18%: the recommendation cards now carry a rule name, a
-  // banded meter and an action, which crush below ~300px.
-  flex: '0 1 340px',
-  minWidth: 300,
-  background: t.surface,
-  borderLeft: `1px solid ${t.line}`,
-  boxShadow: '-2px 0 8px rgba(0,0,0,0.01)',
-  display: 'flex',
-  flexDirection: 'column',
-  height: '100%',
-};
-
-const tabHeader: CSSProperties = {
-  display: 'flex',
-  borderBottom: `1px solid ${t.line}`,
-  flexShrink: 0,
-  overflowX: 'auto',
-};
-
-const tabBtn = (active: boolean): CSSProperties => ({
-  flex: 1,
-  padding: '14px 10px',
-  border: 'none',
-  background: 'none',
-  fontFamily,
-  fontSize: 14,
-  fontWeight: 700,
-  color: active ? t.ink : t.inkMute,
-  borderBottom: active ? `3px solid ${t.ink}` : '3px solid transparent',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-});
-
-const drawerBody: CSSProperties = {
-  flex: 1,
-  overflow: 'hidden',
-};
-
-const scrollContainer: CSSProperties = {
-  overflowY: 'auto',
-  padding: '16px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-  height: '100%',
-};
-
-const sectionHeading: CSSProperties = {
-  fontSize: 15,
-  fontWeight: 800,
-  color: t.inkMute,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  margin: '0 0 6px',
-};
-
-const listItemStyle = (sel: boolean): CSSProperties => ({
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: '12px 14px',
-  borderRadius: radius.sm,
-  background: sel ? t.surface : t.ground,
-  border: `1px solid ${sel ? t.ink : t.line}`,
-  borderLeft: '4px solid',
-  cursor: 'pointer',
-  transition: 'all 0.15s ease',
-});
-
-const badgeStyle: CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  padding: '4px 10px',
-  borderRadius: '20px',
-  whiteSpace: 'nowrap',
-};
-
-const violationCard: CSSProperties = {
-  padding: '14px 16px',
-  borderRadius: radius.md,
-  background: t.ground,
-  border: `1px solid ${t.line}`,
-  borderLeft: '4px solid',
-  cursor: 'pointer',
-  transition: 'background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease',
-};
-
-const recHeaderRow: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  gap: 8,
-  marginBottom: 8,
-};
-
-const recRuleTitle: CSSProperties = {
-  margin: 0,
-  fontSize: 14,
-  fontWeight: 700,
-  color: t.ink,
-  lineHeight: 1.3,
-};
-
-const recRequirement: CSSProperties = {
-  margin: '4px 0 0',
-  fontSize: 12,
-  color: t.inkSoft,
-  lineHeight: 1.45,
-};
-
-const recActionRow: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 3,
-  marginTop: 12,
-  padding: '10px 12px',
-  borderRadius: radius.sm,
-  background: t.surface,
-  border: '1px solid',
-  borderLeftWidth: 3,
-};
-
-const recRuleRef: CSSProperties = {
-  display: 'block',
-  marginTop: 10,
-  fontSize: 10.5,
-  fontWeight: 600,
-  color: t.inkMute,
-  letterSpacing: '0.03em',
-};
-
-const ruleRefCard: CSSProperties = {
-  padding: '12px 14px',
-  borderRadius: radius.sm,
-  background: t.ground,
-  border: `1px solid ${t.line}`,
-};
-
-const ruleGroupHeading: CSSProperties = {
-  margin: '10px 0 0',
-  fontSize: 12,
-  fontWeight: 800,
-  color: t.inkMute,
-  textTransform: 'uppercase',
-  letterSpacing: '0.06em',
-};
-
-const ruleBandRow: CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '4px 10px',
-  marginTop: 10,
-  fontSize: 11,
-  fontWeight: 600,
-};
-
-const ruleBandChip: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  color: t.inkSoft,
-  whiteSpace: 'nowrap',
-};
-
-const legendRow: CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '6px 14px',
-  padding: '10px 12px',
-  borderRadius: radius.sm,
-  background: t.surface,
-  border: `1px solid ${t.line}`,
-  fontSize: 11,
-  fontWeight: 700,
-};
-
-const legendItem: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 5,
-  whiteSpace: 'nowrap',
-};
-
-const successMessage: CSSProperties = {
-  textAlign: 'center',
-  color: t.comfortFg,
-  fontWeight: 600,
-  padding: '24px 12px',
-  background: t.comfortBg,
-  border: `1px solid ${t.comfortFg}`,
-  borderRadius: radius.sm,
-  fontSize: 16,
-};
-
-const checkRow: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: '12px 14px',
-  borderRadius: radius.sm,
-  background: t.ground,
-  border: `1px solid ${t.line}`,
-  fontSize: 16,
-};
-
-// ─── Status meta helper ─────────────────────────────────────────────────────
-interface StatusMeta {
-  bg: string;
-  color: string;
-}
-
-function statusMeta(type: 'needs-attention' | 'tight' | 'comfortable'): StatusMeta {
-  if (type === 'needs-attention') {
-    return { bg: t.attentionBg, color: t.attentionFg };
-  } else if (type === 'tight') {
-    return { bg: t.tightBg, color: t.tightFg };
-  }
-  return { bg: t.comfortBg, color: t.comfortFg };
-}

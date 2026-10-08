@@ -1,6 +1,6 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-09-30 (Combined Living + Dining Boundary Directional Gap Readouts Architecture & Plan)
+**Last updated:** 2026-10-08 (2D Workspace Recommendations UX Redesign, Mobile Bottom Sheet & Focused Floor Plan Navigation)
 **Project phase:** Phase 3 — AR Floor Hit-Test Placement, Streamlined 2D Planning & Read-Only 3D Visualization
 **Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig)
 
@@ -9,9 +9,82 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-09-30):** Implemented the combined Living + Dining active planning region boundary calculation for the four live directional gap badges (compass readouts) in the 2D workspace. The architectural measurement candidate is now derived from the union of Living + Dining in `CONDO_ROOMS`, canceling out the internal shared divider while strictly terminating directional rays at the perimeter walls facing Kitchen, Bathroom, Bedroom, and exterior perimeters. All 7 acceptance test criteria passed.
+> **Latest Update (2026-10-08):** Redesigned the 2D workspace so that design-rule findings are presented as a simple, mobile-first "Recommendations" experience. Completely removed the AI/Maya/Designer Assistant concept and diagnostic count banners ("Clear", "Issues", "Warnings", walkway pills) from this workflow. Users now see clear, plain-language recommendations and can tap any recommendation to immediately navigate to the exact area of the floor plan where the problem exists. Features smooth camera focus, pulsing furniture/wall highlights, directional correction arrows, a compact contextual card with resolution feedback ("✓ Looks good"), an adaptive 100px scroll-aware header with 20% height compression and glassmorphic backdrop blur, and full mobile (390×844) + desktop panel responsiveness. Zero duplicate rule engines; full reuse of existing spatial analysis.
 
-### Key Recent Changes (September 30, 2026: Combined Living + Dining Boundary Directional Gap Readouts)
+### Key Recent Changes (October 8, 2026: 2D Workspace Recommendations UX Redesign & Mobile-First Focus Flow)
+
+1. **Complete Removal of AI / Maya / Assistant Persona from 2D Planning Workflow**
+   - **Zero Conversational Friction:** Removed Maya avatar, conversational chat layout, chatbot persona, and AI-generated wording from the 2D floor plan editing workflow.
+   - **Pure Spatial Clarity:** Transformed diagnostic technical readouts into calm, direct recommendations without technical jargon (no rule codes like "D1", "L4", or raw threshold formulas like "Clearance = 42 cm" shown by default).
+   - **Engine Reuse:** Completely retained the underlying authoritative 10-rule spatial clearance engine (`src/engine/clearance.ts`, `src/engine/rules.ts`, `src/engine/walkways.ts`) and rule translation layers (`ruleGuidance.ts`).
+
+2. **Plain-Language Actionable Recommendations Translation Layer (`src/engine/recommendations.ts`)**
+   - **Structured Model (`WorkspaceRecommendation`):** Maps internal clearance and walkway violations to actionable user-facing items: `furnitureId`, `furnitureLabel`, `actionText`, `severity` (`RED` | `YELLOW`), `priorityScore`, `ruleCode`, `ruleLabel`, `wallSide`, `itemBId`, `fixDirectionLabel`, `fixDirectionCm`, and 2D vector `directionVector` (`dx, dz`).
+   - **Human-Centric Guidance:** Converts technical findings into clear, direct actions:
+     - *Wall clearance violation:* "Move it slightly away from the wall."
+     - *Walkway obstruction:* "Open up the main walkway."
+     - *Seating area crowding:* "Give the seating area a little more space."
+     - *Zone transition bottleneck:* "Provide more transition room between living and dining."
+     - *Multi-piece collision:* "Give more room between this and the [item]."
+
+3. **Mobile-First Floating Recommendation Trigger & Bottom Sheet (`RecommendationButton.tsx`, `RecommendationSheet.tsx`)**
+   - **Viewport Optimized:** Designed and verified for mobile screens (target 390 × 844 viewport) without horizontal or vertical layout overflow.
+   - **Floating Action Pill:** Floating badge button placed safely above mobile bottom boundaries (`"N Recommendations"` or `"✓ All Clear"`), keeping the floor plan as the dominant visual hero.
+   - **Polished Bottom Sheet:** Tapping the pill slides up a tactile, backdrop-blurred sheet displaying prioritized recommendations. The entire recommendation card is a large, comfortable tap target with category tag, item name, and concise action text.
+
+4. **Interactive Camera Focus & Spatial Highlighting (`src/components/CondoFloorPlan.tsx`)**
+   - **Smooth Auto-Framing:** Tapping any recommendation dismisses the sheet and smoothly pans/zooms the SVG `viewBox` (`targetViewBox`) to center directly on the affected furniture piece and adjacent wall or corridor.
+   - **Pulsing Furniture Glow:** Applies SVG glow filter (`glow-filter-furniture`) and subtle CSS keyframe pulsing (`wksp-furniture-focus-pulse`) on the affected item, creating a luminous accent outline.
+   - **Boundary & Corridor Glow:** Highlights the relevant wall edge or walkway corridor with an animated SVG filter (`glow-filter-wall` / `wksp-wall-focus-glow`) so the user immediately understands which physical boundary is involved.
+   - **Visual Attention Dimming:** Dimmed unrelated furniture pieces to 28% opacity (`opacity: 0.28`), removing visual clutter while maintaining spatial context.
+   - **2D Correction Arrow:** Directly displays an animated SVG directional arrow with a marker head pointing toward open, valid space according to `fixDirectionLabel`.
+
+5. **Compact Contextual Recommendation Card (`RecommendationCard.tsx`)**
+   - **Attached Micro-Card:** Renders a floating, unobtrusive card near the focused area with the affected item name, plain-language action instruction, and a "Done" button.
+   - **Non-Obstructive Layout:** Floated above the bottom toolbar without blocking furniture interaction or drag gestures.
+
+6. **Recommendation → Adjustment → Re-Analysis Loop & Auto-Resolution**
+   - **Real-Time Drag & Re-Compute:** The resident can immediately drag the glowing furniture item. On release (`handleDragEnd` / `commitLayout`), existing clearance and walkway engines automatically re-evaluate in real time.
+   - **Resolution Confirmation:** When the issue is corrected, the contextual card transitions to a subtle positive state (`"✓ Looks good"`), then dismisses after a short delay (1.2s), updating the active recommendation list automatically.
+
+7. **Responsive Scroll-Aware Header (`WorkspaceHeader.tsx`, `useWorkspaceScroll.ts`)**
+   - **Adaptive Compression:** Full height (56px) with transparent background at top of screen (`scrollY < 100px`). Beyond 100px scroll, shrinks by 20% (to 45px), transitioning into a sleek frosted glassmorphism bar (`background: rgba(255, 255, 255, 0.85)`, `backdrop-filter: blur(16px)`, subtle bottom border/shadow).
+   - **Safe-Area Inset Support:** Uses `calc(4px + env(safe-area-inset-top, 0px))` for edge-to-edge mobile screens.
+   - **Preserved Header Controls:** Breadcrumb navigation ("Mulberry Place > Living Room"), "📷 AR Place", "3D View", and "Done" actions cleanly accessible.
+
+8. **Desktop / Tablet Adaptability (`RecommendationPanel.tsx`)**
+   - On screens $>860\text{px}$, recommendations render in a dedicated right-side drawer alongside "Items" and "Rules" tabs.
+   - Shares the exact same recommendation data, camera focus, and highlighting mechanisms across all screen sizes.
+
+9. **Zero-Warning Code Quality Assurance**
+   - Passed `tsc -b && vite build` and `eslint .` with 0 errors and 0 warnings.
+   - Strict typing across all new interfaces (`WorkspaceRecommendation`, `FocusTarget`, `WorkspaceHeaderProps`, `RecommendationSheetProps`).
+
+### Key Prior Changes (October 5, 2026: AR Placement Guidance Workflow & Designer Assistant Integration)
+
+1. **Lightweight AR Placement Validation Layer (`src/ar/placementValidation.ts`)**
+   - **Architectural Separation:** Avoids invoking the heavy full 10-rule design analysis on every camera movement frame. Instead, executes fast sub-millisecond geometric and zone checks (`validatePlacement`).
+   - **Three-Tier Status Classification:** Classifies placements as `valid` (comfortable room placement), `warning` (suboptimal fit: tight buffer $<45\text{cm}$, dining table close to wall, or main walkway corridor intrusion), or `invalid` (crossing unit boundaries, entering restricted rooms, or overlapping existing furniture).
+   - **Empathetic Resident Language:** Converts technical data into clear, empathetic guidance without exposing rule codes (e.g. D1) or collision terminology: *"A little close to the wall for dining chairs"* → *"Pull the dining table about 25 cm farther away from the wall"* → *"Leaves plenty of room to pull chairs out and sit comfortably"*.
+   - **Coordinate Correction Vector:** Calculates the optimal directional offset (`dx, dz`) and translates it into AR session local space (`arDx, arDz`) via `rotateDeltaToAr()` for 3D visualization.
+
+2. **3D AR Visual Feedback & Animated Correction Indicator (`src/ar/PlacementMesh.tsx`, `src/ar/ARCorrectionIndicator.tsx`)**
+   - **Status-Aware Ghost Mesh:** Dynamically shifts colors based on validation status: Emerald green (`#10b981`) for valid, warm amber (`#f59e0b`) for warning, and crimson red (`#ef4444`) for invalid.
+   - **Floor Footprint Projection:** Projects a translucent floor-level contact outline beneath the ghost mesh, visually anchoring the footprint to the real room floor.
+   - **3D Animated Directional Arrow:** Renders an animated, pulsing Three.js directional arrow and floating 3D distance label (`"Shift N cm"`) pointing toward clear, valid floor space when placement is invalid or suboptimal.
+
+3. **Enhanced AR Placement Screen Flow & WebXR Fallback (`src/screens/PositionMapScreen.tsx`)**
+   - **Device Capability Detection:** Gated by `navigator.xr.isSessionSupported('immersive-ar')`. If immersive AR is unavailable on the device, presents an informative notice and a direct fallback button to the 2D Workspace.
+   - **Dual Action Cards:** Shows both "📷 Place in AR" and "✏️ Arrange in 2D" for every item, supporting seamless round-trips for both unpositioned and already-placed pieces.
+   - **Mobile AR DOM Overlay HUD:** Live frosted glassmorphic card displaying real-time Designer advice, room classification, and confirmation controls.
+   - **Post-Placement State Flow:** On confirmed placement, converts AR coordinates to blueprint space via `applyCalibration()`, saves to `furnitureStore`, automatically triggers `runClearanceAnalysis()`, updates `violationStore`, and navigates to the 2D Workspace.
+
+4. **Designer Assistant Component in 2D Workspace (`src/components/DesignerAssistant.tsx`, `src/screens/WorkspaceScreen.tsx`)**
+   - **Maya — Interior Design Guide:** Rendered at the top of the side drawer, presenting priority-ranked advice in plain language (What is wrong → What should I do → Why it helps).
+   - **Interactive Actions:** Features a *"Highlight Piece"* button that focuses the item on the 2D canvas and an *"Adjust in AR"* button that directly re-enters AR mode for that specific item.
+   - **Header & Toolbar Integration:** Added *"📷 AR Place"* to the workspace header and *"📷 AR Mode"* to the plan toolbar for instant switching between 2D and AR.
+
+### Key Prior Changes (September 30, 2026: Combined Living + Dining Boundary Directional Gap Readouts)
 
 1. **Root Cause Analysis (`floorPlanDrag.ts:edgeGaps`)**
    - **Original Implementation:** `edgeGaps` initialized its wall distance candidates against the overall condominium bounding envelope (`UNIT_WIDTH_CM = 510`, `UNIT_HEIGHT_CM = 880`, `west: a.minX`, `north: a.minZ`, `east: UNIT_WIDTH_CM / 100 - a.maxX`, `south: UNIT_HEIGHT_CM / 100 - a.maxZ`).
@@ -1390,4 +1463,25 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 * **Verification Harness:** Automated mathematical assertion suite in `scratch/verify_edge_gaps.ts` testing boundary extraction, stepped geometry cancellation, interval subtraction, rotation handling, and all 7 acceptance test cases.
 * **Build & Lint Verification:** `npm run build` completed with 1,140 modules transformed. Focused ESLint on `src/components/floorPlanDrag.ts` and `src/components/CondoFloorPlan.tsx` passed with 0 errors and 0 warnings.
 * **Protected Scope Verification:** No changes to `src/engine/clearance.ts` (10-rule clearance standards), `src/engine/walkways.ts`, `src/ar/`, `ThreeDPreviewScreen.tsx`, `DollhouseFloorPlan.tsx`, `useAutosaveLayout.ts`, or report generation.
+
+### 7.8 Verification & Testing Matrix: AR Placement Guidance Workflow, Real-Time Validation & Designer Assistant (FT-AR-01 to FT-AR-08)
+
+| Test ID | Functionality Tested | Detailed Test Procedure | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`FT-AR-01`** | **AR Entry & Capability Fallback** | Checked `navigator.xr.isSessionSupported('immersive-ar')` across desktop Chrome and mobile environments; tested both "Place in AR" and "Arrange in 2D" buttons. | Devices lacking WebXR AR display a clear fallback notice with direct access to the 2D Workspace without throwing unhandled exceptions. | On non-AR devices, `xrSupported === false` displayed the informational fallback banner with a one-click "Open 2D Workspace" button. `handleDirect2DPlacement()` successfully initialized items with sensible default coordinates. | **Passed** |
+| **`FT-AR-02`** | **Lightweight Movement Validation** | Moved a candidate furniture piece across unit boundaries, near exterior walls, into restricted zones (Bedroom $Z < 3.40\text{m}$, Kitchen/Bathroom $X > 2.60\text{m}$), and overlapping existing items. | Fast validation runs per hit-test frame without lag, correctly categorizing status as Valid, Warning, or Invalid. | `validatePlacement()` executed in $<0.1\text{ms}$. Correctly returned `invalid` for out-of-bounds, bedroom, kitchen, and furniture overlaps, and `warning` for tight spacing ($<45\text{cm}$) and walkway intrusions. | **Passed** |
+| **`FT-AR-03`** | **Visual Feedback & Footprint** | Inspected the 3D ghost mesh color and floor outline during valid, warning, and invalid placement states. | Mesh and floor ring dynamically update colors to reflect validation state (Emerald green for valid, warm amber for warning, crimson red for invalid). | `PlacementMesh` rendered `#10b981` with translucent green floor disc for valid spots, `#f59e0b` for tight spots, and `#ef4444` for invalid areas, providing immediate visual anchoring on the detected floor. | **Passed** |
+| **`FT-AR-04`** | **3D Visual Correction Indicator** | Positioned furniture into an invalid spot (e.g., overlapping sofa or in bedroom) and observed the floor guide. | An animated 3D directional arrow and distance label appear beneath the ghost mesh pointing toward unobstructed, valid floor space. | `ARCorrectionIndicator` rendered a pulsing Three.js cylinder-and-cone arrow pointing along `correctionVector.arDx` and `arDz` with floating 3D text (e.g., `"Shift 40 cm"`), guiding the user outward. | **Passed** |
+| **`FT-AR-05`** | **Empathetic Resident Language** | Verified HUD guidance text in the AR DOM Overlay and Designer Assistant across multiple spatial failure modes. | No technical rule codes (e.g. D1, L4) or collision jargon are exposed; text communicates: What is wrong → What should I do → Why it helps. | HUD displayed plain-language guidance: *"A little close to the wall for dining chairs"* → *"Pull the dining table about 25 cm farther away from the wall"* → *"Leaves plenty of room to pull chairs out and sit comfortably"*. | **Passed** |
+| **`FT-AR-06`** | **Safe Confirmation & Calibration** | Aligned the room with the entry door anchor, tapped to lock ghost position, adjusted the rotation slider, and clicked "Confirm Placement". | Tapped AR hit-test coordinates are converted to plan-frame coordinates ($X, Z$ meters) and committed to the store; full clearance analysis is automatically triggered. | `applyCalibration()` converted AR coordinates to unit blueprint meters; item was saved in `furnitureStore`; `runClearanceAnalysis()` ran against the updated layout; and navigation transitioned to the 2D Workspace. | **Passed** |
+| **`FT-AR-07`** | **2D Designer Assistant Integration** | Entered `WorkspaceScreen` with committed furniture and inspected the side drawer guidance card. | "Maya — Interior Design Guide" appears at the top of the side drawer, presenting priority-ranked advice with "Highlight Piece" and "Adjust in AR" actions. | `DesignerAssistant` displayed layout findings, offered interactive piece highlighting on the 2D floor plan, and displayed celebratory praise (*"Your room layout looks fantastic!"*) when all rules passed. | **Passed** |
+| **`FT-AR-08`** | **Seamless 2D-AR Round-Trip** | Clicked "📷 AR Place" in the header and "📷 AR Mode" in the plan toolbar; dragged pieces in 2D and verified automatic re-analysis. | Users can freely jump back into AR placement for any piece; 2D floor plan drag-and-drop automatically re-runs the full 10-rule clearance engine. | Header and toolbar buttons passed `activePlacementItemId` to `PositionMapScreen`, opening AR targeting that piece; dropping pieces in 2D floor plan immediately recalculated clearances and updated Designer Assistant tips. | **Passed** |
+
+#### Testing Notes (October 5, 2026)
+
+* **Verification Harness:** Executed full type checking and production build (`npm run build`). Vite transformed 1,144 modules and built client bundle in 16.03s with 0 errors.
+* **Component Architecture:** Added `src/ar/placementValidation.ts`, `src/ar/ARCorrectionIndicator.tsx`, `src/ar/PlacementMesh.tsx`, and `src/components/DesignerAssistant.tsx`.
+* **State & Flow Integration:** Extended `sessionStore.ts` with `activePlacementItemId` and updated `PositionMapScreen.tsx` and `WorkspaceScreen.tsx` for seamless two-way routing.
+* **Non-Regression:** The existing 10 clearance standards (`CLEARANCE_RULES`), walkway tracking (`walkways.ts`), 2D drag physics (`floorPlanDrag.ts`), 3D dollhouse visualization (`ThreeDPreviewScreen.tsx`), and Supabase autosave flows remain 100% operational.
+
 

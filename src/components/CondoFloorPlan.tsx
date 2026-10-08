@@ -29,6 +29,16 @@ export interface CondoFloorPlanInteraction {
   onDragEnd: (itemId: string) => void;
 }
 
+export interface FocusTarget {
+  itemId: string;
+  wallSide?: 'west' | 'east' | 'north' | 'south';
+  roomZoneId?: string;
+  fixDirectionLabel?: string;
+  fixDirectionCm?: number;
+  itemBId?: string | 'wall';
+  actionText?: string;
+}
+
 export interface CondoFloorPlanProps {
   items: FurnitureItem[];
   highlightItemId?: string;
@@ -37,6 +47,7 @@ export interface CondoFloorPlanProps {
   onSelectItem?: (itemId: string) => void;
   focusedRoomId?: string | null;
   onFocusRoom?: (roomId: string | null) => void;
+  focusTarget?: FocusTarget | null;
 }
 
 const PAD_CM = 25;
@@ -83,6 +94,7 @@ export default function CondoFloorPlan({
   onSelectItem,
   focusedRoomId = null,
   onFocusRoom,
+  focusTarget = null,
 }: CondoFloorPlanProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragSession | null>(null);
@@ -138,12 +150,60 @@ export default function CondoFloorPlan({
   // ─── viewBox smooth zoom ────────────────────────────────────────────────────
   const targetViewBox = useMemo(() => {
     const full = { x: -PAD_CM, y: -PAD_CM, w: WIDTH_CM + PAD_CM * 2, h: HEIGHT_CM + PAD_CM * 2 };
+
+    // When focusing a specific recommendation problem area:
+    if (focusTarget) {
+      const item = items.find((it) => it.id === focusTarget.itemId);
+      if (item) {
+        const isRotated90 = Math.abs(Math.sin(item.rotationY)) > 0.5;
+        const directWidthCm = isRotated90 ? item.widthCm : item.lengthCm;
+        const directHeightCm = isRotated90 ? item.lengthCm : item.widthCm;
+        const itemLeft = item.posX * 100 - directWidthCm / 2;
+        const itemTop = item.posZ * 100 - directHeightCm / 2;
+
+        let minX = itemLeft;
+        let maxX = itemLeft + directWidthCm;
+        let minY = itemTop;
+        let maxY = itemTop + directHeightCm;
+
+        // Include correction direction span
+        if (focusTarget.fixDirectionLabel) {
+          const dir = focusTarget.fixDirectionLabel.toLowerCase();
+          const dist = Math.max(focusTarget.fixDirectionCm ?? 30, 40);
+          if (dir.includes('north')) minY -= dist;
+          if (dir.includes('south')) maxY += dist;
+          if (dir.includes('west'))  minX -= dist;
+          if (dir.includes('east'))  maxX += dist;
+        }
+
+        // Include affected wall if specified
+        if (focusTarget.wallSide) {
+          const side = focusTarget.wallSide;
+          if (side === 'west') minX = Math.min(minX, 0);
+          if (side === 'east') maxX = Math.max(maxX, 260);
+          if (side === 'north') minY = Math.min(minY, 340);
+          if (side === 'south') maxY = Math.max(maxY, 880);
+        }
+
+        const pad = 50;
+        const boxW = Math.max(maxX - minX + pad * 2, 230);
+        const boxH = Math.max(maxY - minY + pad * 2, 230);
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+
+        const clampedX = Math.max(-10, Math.min(centerX - boxW / 2, WIDTH_CM - boxW + 10));
+        const clampedY = Math.max(-10, Math.min(centerY - boxH / 2, HEIGHT_CM - boxH + 10));
+
+        return { x: clampedX, y: clampedY, w: boxW, h: boxH };
+      }
+    }
+
     if (!focusedRoomId) return full;
     const room = CONDO_ROOMS.find((r) => r.id === focusedRoomId);
     if (!room) return full;
     const margin = 35;
     return { x: room.x - margin, y: room.y - margin, w: room.width + margin * 2, h: room.height + margin * 2 };
-  }, [focusedRoomId]);
+  }, [focusTarget, focusedRoomId, items]);
 
   const [vb, setVb] = useState(targetViewBox);
   const vbRef = useRef(vb);
@@ -285,6 +345,41 @@ export default function CondoFloorPlan({
         role="img"
         aria-label="Mulberry Place Condo Digital Twin Floor Plan"
       >
+        <defs>
+          {/* Subtle glowing filter for focused furniture */}
+          <filter id="focus-glow-furniture" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="blur" />
+            <feComponentTransfer in="blur" result="glow">
+              <feFuncA type="linear" slope="1.5" />
+            </feComponentTransfer>
+            <feMerge>
+              <feMergeNode in="glow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          {/* Flowing glow filter for affected wall boundaries */}
+          <filter id="focus-glow-wall" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
+          {/* Directional arrowhead marker for correction vectors */}
+          <marker
+            id="arrowhead-correction"
+            markerWidth="8"
+            markerHeight="8"
+            refX="6"
+            refY="4"
+            orient="auto"
+          >
+            <polygon points="0 1, 8 4, 0 7" fill="#2563EB" />
+          </marker>
+        </defs>
+
         {/* Outer unit boundary */}
         <rect x={0} y={0} width={WIDTH_CM} height={HEIGHT_CM} fill="none" stroke={t.roomStroke} strokeWidth={6} rx={8} />
 
@@ -593,6 +688,88 @@ export default function CondoFloorPlan({
           </text>
         </g>
 
+        {/* 2D. GLOWING WALL / BOUNDARY HIGHLIGHT FOR FOCUS RECOMMENDATION */}
+        {focusTarget && (
+          <g style={pointerNone}>
+            {/* West outer boundary wall */}
+            {focusTarget.wallSide === 'west' && (
+              <line
+                x1={0}
+                y1={340}
+                x2={0}
+                y2={880}
+                stroke="#2563EB"
+                strokeWidth={7}
+                strokeLinecap="round"
+                strokeDasharray="12 6"
+                filter="url(#focus-glow-wall)"
+                className="wksp-glowing-wall"
+              />
+            )}
+            {/* East divider wall (separating living/dining from kitchen/bathroom) */}
+            {focusTarget.wallSide === 'east' && (
+              <line
+                x1={260}
+                y1={340}
+                x2={260}
+                y2={880}
+                stroke="#2563EB"
+                strokeWidth={7}
+                strokeLinecap="round"
+                strokeDasharray="12 6"
+                filter="url(#focus-glow-wall)"
+                className="wksp-glowing-wall"
+              />
+            )}
+            {/* North bedroom divider wall */}
+            {focusTarget.wallSide === 'north' && (
+              <line
+                x1={0}
+                y1={340}
+                x2={260}
+                y2={340}
+                stroke="#2563EB"
+                strokeWidth={7}
+                strokeLinecap="round"
+                strokeDasharray="12 6"
+                filter="url(#focus-glow-wall)"
+                className="wksp-glowing-wall"
+              />
+            )}
+            {/* South outer wall */}
+            {focusTarget.wallSide === 'south' && (
+              <line
+                x1={0}
+                y1={880}
+                x2={260}
+                y2={880}
+                stroke="#2563EB"
+                strokeWidth={7}
+                strokeLinecap="round"
+                strokeDasharray="12 6"
+                filter="url(#focus-glow-wall)"
+                className="wksp-glowing-wall"
+              />
+            )}
+            {/* Main entry walkway corridor obstruction */}
+            {focusTarget.actionText && focusTarget.actionText.toLowerCase().includes('walkway') && (
+              <rect
+                x={MAIN_ENTRY_WALKWAY_RECT.x}
+                y={MAIN_ENTRY_WALKWAY_RECT.y}
+                width={MAIN_ENTRY_WALKWAY_RECT.width}
+                height={MAIN_ENTRY_WALKWAY_RECT.height}
+                fill="rgba(37, 99, 235, 0.08)"
+                stroke="#2563EB"
+                strokeWidth={4}
+                strokeDasharray="8 4"
+                filter="url(#focus-glow-wall)"
+                className="wksp-glowing-wall"
+                rx={6}
+              />
+            )}
+          </g>
+        )}
+
         {/* 3. ALIGNMENT GUIDES */}
         {activeGuides.map((g, idx) =>
           g.type === 'x' ? (
@@ -635,7 +812,11 @@ export default function CondoFloorPlan({
           const itemRoomId = item.roomId || getRoomForCategory(item.category, item.label);
 
           // While dragging, keep every piece legible — dimming hides collisions.
-          const isItemDimmed = !draggingId && activeRoomId && activeRoomId !== itemRoomId;
+          // When focusing a recommendation, dim unrelated furniture pieces.
+          const isRecommendationFocused = Boolean(focusTarget && focusTarget.itemId === r.id);
+          const isItemDimmed =
+            (!draggingId && activeRoomId && activeRoomId !== itemRoomId && !focusTarget) ||
+            (!draggingId && focusTarget && focusTarget.itemId !== r.id && focusTarget.itemBId !== r.id);
 
           let fill: string;
           let stroke: string;
@@ -674,7 +855,7 @@ export default function CondoFloorPlan({
             <g
               key={r.id}
               style={{
-                opacity: isItemDimmed ? 0.25 : 1,
+                opacity: isItemDimmed ? 0.28 : 1,
                 transition: 'opacity 0.25s ease',
               }}
             >
@@ -693,14 +874,45 @@ export default function CondoFloorPlan({
                 />
               )}
 
+              {/* Glowing pulsing focus ring around affected recommendation furniture */}
+              {isRecommendationFocused && (
+                r.shape === 'round' ? (
+                  <circle
+                    cx={r.xCm + directWidthCm / 2}
+                    cy={r.yCm + directHeightCm / 2}
+                    r={directRadiusCm + 7}
+                    fill="none"
+                    stroke="#2563EB"
+                    strokeWidth={4}
+                    filter="url(#focus-glow-furniture)"
+                    className="wksp-glow-ring"
+                    style={pointerNone}
+                  />
+                ) : (
+                  <rect
+                    x={r.xCm - 7}
+                    y={r.yCm - 7}
+                    width={directWidthCm + 14}
+                    height={directHeightCm + 14}
+                    rx={8}
+                    fill="none"
+                    stroke="#2563EB"
+                    strokeWidth={4}
+                    filter="url(#focus-glow-furniture)"
+                    className="wksp-glow-ring"
+                    style={pointerNone}
+                  />
+                )
+              )}
+
               {r.shape === 'round' ? (
                 <circle
                   cx={r.xCm + directWidthCm / 2}
                   cy={r.yCm + directHeightCm / 2}
                   r={directRadiusCm}
                   fill={fill}
-                  stroke={stroke}
-                  strokeWidth={isSelected || isDragging ? 4 : 2}
+                  stroke={isRecommendationFocused ? '#2563EB' : stroke}
+                  strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
                   style={{
                     transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
                     pointerEvents: 'none',
@@ -713,8 +925,8 @@ export default function CondoFloorPlan({
                   width={directWidthCm}
                   height={directHeightCm}
                   fill={fill}
-                  stroke={stroke}
-                  strokeWidth={isSelected || isDragging ? 4 : 2}
+                  stroke={isRecommendationFocused ? '#2563EB' : stroke}
+                  strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
                   rx={4}
                   style={{
                     transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
@@ -735,6 +947,76 @@ export default function CondoFloorPlan({
               >
                 {r.label}
               </text>
+
+              {/* 2D Animated Correction Arrow */}
+              {isRecommendationFocused && focusTarget?.fixDirectionLabel && (() => {
+                const ft = focusTarget;
+                if (!ft || !ft.fixDirectionLabel) return null;
+                const dir = ft.fixDirectionLabel.toLowerCase();
+                const arrowDist = Math.max(ft.fixDirectionCm ?? 30, 42);
+                const cx = r.xCm + directWidthCm / 2;
+                const cy = r.yCm + directHeightCm / 2;
+                let startX = cx;
+                let startY = cy;
+                let endX = cx;
+                let endY = cy;
+
+                if (dir.includes('north')) {
+                  startY = r.yCm;
+                  endY = startY - arrowDist;
+                } else if (dir.includes('south')) {
+                  startY = r.yCm + directHeightCm;
+                  endY = startY + arrowDist;
+                } else if (dir.includes('west')) {
+                  startX = r.xCm;
+                  endX = startX - arrowDist;
+                } else if (dir.includes('east')) {
+                  startX = r.xCm + directWidthCm;
+                  endX = startX + arrowDist;
+                }
+
+                const badgeX = (startX + endX) / 2;
+                const badgeY = (startY + endY) / 2;
+                const arrowSymbol = dir.includes('north') ? '↑' : dir.includes('south') ? '↓' : dir.includes('west') ? '←' : '→';
+
+                return (
+                  <g key="correction-arrow" style={pointerNone} className="wksp-correction-arrow">
+                    <line
+                      x1={startX}
+                      y1={startY}
+                      x2={endX}
+                      y2={endY}
+                      stroke="#2563EB"
+                      strokeWidth={3.5}
+                      strokeLinecap="round"
+                      markerEnd="url(#arrowhead-correction)"
+                    />
+                    <g transform={`translate(${badgeX}, ${badgeY})`}>
+                      <rect
+                        x={-38}
+                        y={-12}
+                        width={76}
+                        height={24}
+                        rx={12}
+                        fill="#2563EB"
+                        stroke="#ffffff"
+                        strokeWidth={1.5}
+                      />
+                      <text
+                        x={0}
+                        y={0}
+                        fontSize={11}
+                        fontWeight={800}
+                        fill="#ffffff"
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                      >
+                        {`${arrowSymbol} ${ft.fixDirectionCm ?? 25} cm`}
+                      </text>
+                    </g>
+                  </g>
+                );
+              })()}
 
               {/* Oversized transparent hit target — a near-zero alpha fill still
                   receives pointer events and makes small pieces easy to grab. */}
