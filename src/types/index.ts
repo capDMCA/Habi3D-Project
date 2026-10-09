@@ -18,6 +18,8 @@ export type FurnitureCategory =
   | 'tv_stand'
   | 'dining_table'
   | 'dining_chair'
+  | 'bed'
+  | 'wardrobe'
   | 'cabinet'
   | 'side_table'
   | 'work_desk'
@@ -48,7 +50,7 @@ export interface RoomDimensions {
 export interface ClearanceRule {
   id: string;
   name: string;
-  category: 'living' | 'dining';
+  category: 'living' | 'dining' | 'bedroom' | 'general';
   violationThresholdCm: number;
   warningThresholdCm: number;
   description: string;
@@ -71,8 +73,8 @@ export interface Violation {
   furnitureLabel: string;
   itemBId?: string | 'wall';
   wallSide?: 'west' | 'east' | 'north' | 'south';
+  roomId?: string;
   fixDirectionLabel: string;
   fixDirectionCm: number;
   resolved: boolean;
 }
-

@@ -90,6 +90,7 @@ export default function ReportScreen() {
     return CONDO_ROOMS.filter((r) => roomsWithFurniture.has(r.id)).map((r) => ({
       id: r.id,
       label: r.label,
+      validationLevel: r.validationLevel,
       status: worstByRoom.get(r.id) ?? 'GREEN',
     }));
   }, [items, violations]);
@@ -181,7 +182,12 @@ export default function ReportScreen() {
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {roomStatuses.map((r) => (
-              <RoomStatusRow key={r.id} label={r.label} status={r.status} />
+              <RoomStatusRow
+                key={r.id}
+                label={r.label}
+                status={r.status}
+                validationLevel={r.validationLevel}
+              />
             ))}
           </div>
         </section>
@@ -232,7 +238,15 @@ export default function ReportScreen() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function RoomStatusRow({ label, status }: { label: string; status: RoomStatus }) {
+function RoomStatusRow({
+  label,
+  status,
+  validationLevel,
+}: {
+  label: string;
+  status: RoomStatus;
+  validationLevel?: 'full' | 'bedroom' | 'limited';
+}) {
   const wordFor: Record<RoomStatus, string> = {
     RED: 'Extra space suggested',
     YELLOW: 'A bit tight',
@@ -249,6 +263,13 @@ function RoomStatusRow({ label, status }: { label: string; status: RoomStatus })
     GREEN: t.comfortBg,
   };
 
+  const levelTag =
+    validationLevel === 'limited'
+      ? 'Limited Analysis'
+      : validationLevel === 'bedroom'
+      ? 'Bedroom Standards'
+      : 'Full Validation';
+
   return (
     <div
       style={{
@@ -260,7 +281,10 @@ function RoomStatusRow({ label, status }: { label: string; status: RoomStatus })
       }}
     >
       <div style={{ width: 10, height: 10, borderRadius: '50%', background: colorFor[status], flexShrink: 0 }} />
-      <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: t.ink }}>{label}</span>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: t.ink }}>{label}</span>
+        <span style={{ fontSize: 11, color: t.inkMute }}>{levelTag}</span>
+      </div>
       <span
         style={{
           fontSize: 12,

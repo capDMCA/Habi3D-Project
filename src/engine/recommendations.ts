@@ -2,12 +2,14 @@ import type { FurnitureItem, Violation } from '../types';
 import type { WalkwayStatus } from './walkways';
 import { isItemInMainWalkway } from './walkways';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
+import { ruleGuidance } from './ruleGuidance';
 
 export interface WorkspaceRecommendation {
   id: string;
   furnitureId: string;
   furnitureLabel: string;
   actionText: string;
+  problemReason: string;
   severity: 'RED' | 'YELLOW';
   priorityScore: number;
   ruleCode?: string;
@@ -55,7 +57,7 @@ export function buildWorkspaceRecommendations(
     const item = items.find((it) => it.id === v.furnitureId);
     if (!item) continue;
 
-    const roomId = item.roomId || getRoomForCategory(item.category, item.label);
+    const roomId = v.roomId || item.roomId || getRoomForCategory(item.category, item.label);
     const roomLabel = CONDO_ROOMS.find((r) => r.id === roomId)?.label ?? 'Living Room';
 
     let actionText: string;
@@ -66,7 +68,11 @@ export function buildWorkspaceRecommendations(
     if (!v.itemBId || v.itemBId === 'wall') {
       // Wall proximity
       if (v.ruleCode === 'D1' || v.ruleCode === 'D2') {
-        actionText = 'Move it slightly away from the wall.';
+        actionText = 'Move the table slightly away from the wall to allow chair pull-out.';
+      } else if (v.ruleCode === 'B1') {
+        actionText = 'Shift the bed outward to create comfortable side walking space.';
+      } else if (v.ruleCode === 'B2') {
+        actionText = 'Move the wardrobe away from the wall to allow doors to swing open.';
       } else if (v.ruleCode === 'L4' || v.ruleCode === 'L1') {
         actionText = 'Open up the main walkway.';
       } else {
@@ -75,17 +81,26 @@ export function buildWorkspaceRecommendations(
     } else if (otherItem) {
       // Furniture collision / crowding
       if (v.ruleCode === 'L3') {
-        actionText = 'Give the seating area a little more space.';
+        actionText = 'Give the conversational seating pieces a little more breathing room.';
       } else if (v.ruleCode === 'L5') {
         actionText = 'Provide more transition room between living and dining.';
       } else if (v.ruleCode === 'D5') {
         actionText = `Give more room between this and the ${otherItem.label.toLowerCase()}.`;
+      } else if (v.ruleCode === 'B1') {
+        actionText = `Leave at least 61 cm between the bed and the ${otherItem.label.toLowerCase()}.`;
+      } else if (v.ruleCode === 'B2') {
+        actionText = `Ensure wardrobe doors have clearance from the ${otherItem.label.toLowerCase()}.`;
       } else {
         actionText = `Move it slightly away from the ${otherItem.label.toLowerCase()}.`;
       }
     } else {
       actionText = 'Adjust placement to increase clearance.';
     }
+
+    const guidance = v.ruleCode ? ruleGuidance(v.ruleCode) : null;
+    const problemReason = guidance
+      ? `Currently, ${guidance.consequence}.`
+      : 'Clearance is tighter than recommended standards.';
 
     const vector = directionToVector(v.fixDirectionLabel, v.fixDirectionCm);
 
@@ -94,6 +109,7 @@ export function buildWorkspaceRecommendations(
       furnitureId: v.furnitureId,
       furnitureLabel: v.furnitureLabel,
       actionText,
+      problemReason,
       severity: v.classification === 'RED' ? 'RED' : 'YELLOW',
       priorityScore: v.priorityScore,
       ruleCode: v.ruleCode,
@@ -126,7 +142,8 @@ export function buildWorkspaceRecommendations(
           id: `walkway-${w.id}-${intrudingItem.id}`,
           furnitureId: intrudingItem.id,
           furnitureLabel: intrudingItem.label,
-          actionText: 'Open up the main walkway.',
+          actionText: 'Open up the main walkway corridor.',
+          problemReason: 'Furniture is encroaching on primary circulation between rooms.',
           severity: 'RED',
           priorityScore: 95, // High priority
           ruleCode: 'L4',

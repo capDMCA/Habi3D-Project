@@ -1,17 +1,31 @@
 import type { FurnitureItem } from '../types';
-import { toBounds, effectiveWidthCm, type ItemBounds } from '../engine/clearance';
+import { toBounds, type ItemBounds } from '../engine/clearance';
 import { CONDO_ROOMS } from '../data/condoLayout';
 import {
-  isItemInBedroom,
-  isItemInKitchenOrBathroom,
   overlappingItemIds,
   roomIdForItem,
-  BEDROOM_DIVIDER_WALL_Z_M,
   UNIT_WIDTH_CM,
   UNIT_HEIGHT_CM,
 } from '../components/floorPlanDrag';
 import { isItemInMainWalkway } from '../engine/walkways';
 import { applyCalibration, type CalibrationTransform } from './calibration';
+
+/**
+ * AR SENSOR ACCURACY CAVEAT & PHYSICAL OBSTACLE LIMITATION:
+ * 1. WebXR plane/hit-test detection provides assistive estimates of floor geometry
+ *    and distances. Measurements should be treated as assistive planning estimates,
+ *    not survey-grade or guaranteed measurements.
+ * 2. Obstacle detection is purely based on virtual layout geometry (other placed
+ *    furniture models and condo blueprint boundaries). Real-world dynamic physical
+ *    obstacles (such as existing tenant belongings or moving persons) are NOT
+ *    sensed by the camera/depth feed in this version.
+ */
+export const AR_SENSOR_LIMITATIONS = {
+  isPhysicalObstacleDetectionSupported: false,
+  sensorType: 'WebXR Hit Test & Plane Detection',
+  measurementAccuracy: 'Assistive Estimate (±2-5cm typical)',
+  virtualGeometryValidationOnly: true,
+} as const;
 
 export type PlacementStatus = 'valid' | 'warning' | 'invalid';
 
@@ -126,7 +140,6 @@ export function validatePlacement({
   );
 
   const candidateBounds = toBounds(candidate);
-  const halfWidthM = effectiveWidthCm(candidate) / 200;
   const maxUnitXM = UNIT_WIDTH_CM / 100;
   const maxUnitZM = UNIT_HEIGHT_CM / 100;
 
@@ -179,33 +192,29 @@ export function validatePlacement({
     };
   }
 
-  // ── CHECK 2: Restricted Room Zones (Bedrooms, Balcony, Kitchen, Bathroom) ──
-  const inBedroom = isItemInBedroom(candidate);
-  if (inBedroom) {
-    // The bedroom barrier is at z = 3.40m. Needs to move south (z > 3.40m)
-    const requiredZ = BEDROOM_DIVIDER_WALL_Z_M + halfWidthM + 0.2;
-    const fixDz = Math.max(0.4, requiredZ - candidate.posZ);
-    const distCm = Math.round(fixDz * 100);
-    const { arDx, arDz } = rotateDeltaToAr(0, fixDz, calibration);
-
+  // ── CHECK 2: Room Placement & Boundary Compatibility ──
+  if (!currentRoom) {
+    const fixDx = 0.3;
+    const fixDz = 0.3;
+    const { arDx, arDz } = rotateDeltaToAr(fixDx, fixDz, calibration);
     return {
       status: 'invalid',
-      title: 'Bedroom boundary',
-      problem: `This area is reserved for the bedroom.`,
-      action: `Move the ${candidate.label.toLowerCase()} forward into the living or dining area.`,
-      reason: 'Living and dining furniture should be arranged in the main living spaces.',
-      roomName: 'Bedroom',
+      title: 'Outside room boundary',
+      problem: `This position is outside recognized condo rooms.`,
+      action: `Move the ${candidate.label.toLowerCase()} into a supported room area.`,
+      reason: 'Furniture must be placed within designated condo spaces.',
+      roomName: 'Outside boundary',
       isOverlapping: false,
       overlappingItemLabels: [],
       isRestrictedZone: true,
-      isOutOfBounds: false,
+      isOutOfBounds: true,
       isNearWall: false,
       isWalkwayBlocked: false,
       correctionVector: {
-        dx: 0,
+        dx: fixDx,
         dz: fixDz,
         direction: 'south',
-        distanceCm: distCm,
+        distanceCm: 35,
         arDx,
         arDz,
       },
@@ -213,20 +222,21 @@ export function validatePlacement({
     };
   }
 
-  const inKitchenOrBath = isItemInKitchenOrBathroom(candidate);
-  if (inKitchenOrBath) {
-    // Kitchen / bath is on the east side (x > 2.6m). Needs to move west
-    const fixDx = -0.55;
-    const distCm = 55;
-    const { arDx, arDz } = rotateDeltaToAr(fixDx, 0, calibration);
+  // Check room compatibility (e.g. bed in kitchen or bathroom, living furniture in bathroom)
+  const isBedroomItem = candidate.category === 'bed' || candidate.category === 'wardrobe';
+  const isBathroom = currentRoomId === 'bathroom';
+  const isKitchen = currentRoomId === 'kitchen';
 
+  if (isBathroom) {
+    const fixDx = -0.55;
+    const { arDx, arDz } = rotateDeltaToAr(fixDx, 0, calibration);
     return {
       status: 'invalid',
-      title: 'Service area boundary',
-      problem: `This spot intrudes into the kitchen or bathroom entry.`,
-      action: `Slide the ${candidate.label.toLowerCase()} to the left into the open dining or living room.`,
-      reason: 'Keeps doors, counters, and utility paths completely clear.',
-      roomName: currentRoomId === 'kitchen' ? 'Kitchen' : 'Bathroom',
+      title: 'Bathroom area',
+      problem: `Living or bedroom furniture cannot be placed in the bathroom.`,
+      action: `Move the ${candidate.label.toLowerCase()} into the living, dining, or bedroom area.`,
+      reason: 'Bathrooms are reserved for fixed sanitary fixtures.',
+      roomName: 'Bathroom',
       isOverlapping: false,
       overlappingItemLabels: [],
       isRestrictedZone: true,
@@ -237,12 +247,75 @@ export function validatePlacement({
         dx: fixDx,
         dz: 0,
         direction: 'west',
-        distanceCm: distCm,
+        distanceCm: 55,
         arDx,
         arDz,
       },
       blueprintPosition: blueprintPos,
     };
+  }
+
+  if (isBedroomItem && (currentRoomId === 'living' || currentRoomId === 'dining' || isKitchen)) {
+    const fixDz = -0.6;
+    const { arDx, arDz } = rotateDeltaToAr(0, fixDz, calibration);
+    return {
+      status: 'warning',
+      title: 'Room assignment note',
+      problem: `${candidate.label} is currently in the ${roomName}.`,
+      action: `Consider moving the ${candidate.label.toLowerCase()} into Bedroom 1 or Bedroom 2.`,
+      reason: 'Sleeping and personal storage pieces are best suited for bedroom suites.',
+      roomName,
+      isOverlapping: false,
+      overlappingItemLabels: [],
+      isRestrictedZone: false,
+      isOutOfBounds: false,
+      isNearWall: false,
+      isWalkwayBlocked: false,
+      correctionVector: {
+        dx: 0,
+        dz: fixDz,
+        direction: 'north',
+        distanceCm: 60,
+        arDx,
+        arDz,
+      },
+      blueprintPosition: blueprintPos,
+    };
+  }
+
+  // Bedroom-specific clearance check in AR: Bed access (Rule B1)
+  if (candidate.category === 'bed' && (currentRoomId === 'bedroom1' || currentRoomId === 'bedroom2')) {
+    const roomMinX = currentRoom.x / 100;
+    const leftGap = candidateBounds.minX - roomMinX;
+
+    if (leftGap > 0.05 && leftGap < 0.61) {
+      const neededCm = Math.round((0.65 - leftGap) * 100);
+      const pushDx = neededCm / 100;
+      const { arDx, arDz } = rotateDeltaToAr(pushDx, 0, calibration);
+      return {
+        status: 'warning',
+        title: 'Bed side access (Rule B1)',
+        problem: `Bed side clearance is ${Math.round(leftGap * 100)} cm (under 61 cm).`,
+        action: `Shift the bed ${neededCm} cm away from the wall for comfortable bed-making passage.`,
+        reason: 'Architectural standards require 61–75 cm for comfortable bed-making access.',
+        roomName,
+        isOverlapping: false,
+        overlappingItemLabels: [],
+        isRestrictedZone: false,
+        isOutOfBounds: false,
+        isNearWall: true,
+        isWalkwayBlocked: false,
+        correctionVector: {
+          dx: pushDx,
+          dz: 0,
+          direction: 'east',
+          distanceCm: neededCm,
+          arDx,
+          arDz,
+        },
+        blueprintPosition: blueprintPos,
+      };
+    }
   }
 
   // ── CHECK 3: Furniture Overlaps ──

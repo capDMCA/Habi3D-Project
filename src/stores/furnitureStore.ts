@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { FurnitureItem, FurnitureCategory } from '../types';
-import { getRoomForCategory } from '../data/condoLayout';
+import { getRoomForCategory, ROOM_CENTERS } from '../data/condoLayout';
 
 interface FurnitureState {
   items: FurnitureItem[];
@@ -14,24 +14,22 @@ interface FurnitureState {
   setItems: (items: FurnitureItem[]) => void;
 }
 
-/** Center of the Living Room polygon (X: 0..2.60m, Z: 3.40..7.00m) */
-export const LIVING_ROOM_CENTER_POS = {
-  posX: 1.3,
-  posZ: 5.2,
-};
+export const LIVING_ROOM_CENTER_POS = ROOM_CENTERS.living;
+export const DINING_ROOM_CENTER_POS = ROOM_CENTERS.dining;
 
-export const DINING_ROOM_CENTER_POS = {
-  posX: 1.3,
-  posZ: 7.9,
-  roomId: 'dining' as const,
-  rotationY: 0,
-};
-
-export function getDefaultRoomPosition(category: string, label: string = '') {
-  if (getRoomForCategory(category as FurnitureCategory, label) === 'dining') {
-    return DINING_ROOM_CENTER_POS;
-  }
-  return { ...LIVING_ROOM_CENTER_POS, roomId: 'living' as const, rotationY: 0 };
+export function getDefaultRoomPosition(
+  category: string,
+  label: string = '',
+  preferredRoomId?: string,
+): { posX: number; posZ: number; roomId: string; rotationY: number } {
+  const roomId = preferredRoomId || getRoomForCategory(category as FurnitureCategory, label);
+  const center = ROOM_CENTERS[roomId] ?? ROOM_CENTERS.living;
+  return {
+    posX: center.posX,
+    posZ: center.posZ,
+    roomId: center.roomId,
+    rotationY: 0,
+  };
 }
 
 export const useFurnitureStore = create<FurnitureState>((set) => ({
@@ -50,6 +48,7 @@ export const useFurnitureStore = create<FurnitureState>((set) => ({
             ? item.posZ / 100
             : item.posZ
           : 0;
+      const targetRoom = item.roomId || getRoomForCategory(item.category, item.label);
       return {
         items: [
           ...state.items,
@@ -60,7 +59,7 @@ export const useFurnitureStore = create<FurnitureState>((set) => ({
             heightCm: item.heightCm,
             posX,
             posZ,
-            roomId: item.roomId ?? 'living',
+            roomId: targetRoom,
           },
         ],
       };

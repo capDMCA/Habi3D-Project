@@ -1,9 +1,9 @@
 import type { ClearanceRule } from '../types';
 
 /**
- * 10 Interior Design Clearance Rules
+ * Interior Design Clearance Rules
  * Source: Time-Saver Standards for Interior Design and Space Planning
- *         (DeChiara, Panero & Zelnik, 2001), pp. 61–90
+ *         (DeChiara, Panero & Zelnik, 2001), pp. 61–90, 110–125
  *
  * All clearance values converted from imperial to metric.
  *
@@ -14,6 +14,7 @@ import type { ClearanceRule } from '../types';
  *
  * L1–L5: Living Room Rules (Table 3)
  * D1–D5: Dining Room Rules (Table 4)
+ * B1–B2: Bedroom Rules (Time-Saver Standards Bedroom Planning)
  */
 export const clearanceRules: ClearanceRule[] = [
   // ── Living Room Rules (Table 3) ──────────────────────────────
@@ -109,6 +110,26 @@ export const clearanceRules: ClearanceRule[] = [
     description:
       'Clearance between dining table and base cabinet, buffet, or storage piece',
   },
+
+  // ── Bedroom Rules (Time-Saver Standards Bedroom Planning) ────
+  {
+    id: 'B1',
+    name: 'Bed Access & Circulation',
+    category: 'bedroom',
+    violationThresholdCm: 61,   // RED: < 61 cm
+    warningThresholdCm: 76,     // YELLOW: 61–75 cm · GREEN: ≥ 76 cm
+    description:
+      'Clearance alongside bed for making the bed and walking access',
+  },
+  {
+    id: 'B2',
+    name: 'Wardrobe Clearance',
+    category: 'bedroom',
+    violationThresholdCm: 61,   // RED: < 61 cm
+    warningThresholdCm: 91,     // YELLOW: 61–90 cm · GREEN: ≥ 91 cm
+    description:
+      'Clearance in front of wardrobe or closet for door opening and dressing',
+  },
 ];
 
 export const CLEARANCE_RULES = clearanceRules;
@@ -147,12 +168,6 @@ export function computePriorityScore(
  *
  *   Shortfall = Required Threshold − Measured Clearance
  *   Affected Edge = length of the furniture edge facing the clearance gap
- *
- *   For Rule L5 (conversation area), shortfall = 244 cm − measured zone depth,
- *   and affected edge = sofa face width.
- *
- * Ref: area-based impact scoring consistent with Dong et al. [36]
- *      interior space layout optimization metrics.
  */
 
 /** Calculate spatial impact in cm² */

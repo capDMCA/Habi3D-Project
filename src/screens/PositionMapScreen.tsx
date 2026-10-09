@@ -15,6 +15,7 @@ import PlacementMesh from '../ar/PlacementMesh';
 import ARCorrectionIndicator from '../ar/ARCorrectionIndicator';
 import { runClearanceAnalysis } from '../engine/clearance';
 import { useFurnitureStore, getDefaultRoomPosition } from '../stores/furnitureStore';
+import { CONDO_ROOMS } from '../data/condoLayout';
 import { useSessionStore } from '../stores/sessionStore';
 import { useViolationStore } from '../stores/violationStore';
 import Spinner from '../components/Spinner';
@@ -465,7 +466,8 @@ export default function PositionMapScreen() {
 
     try {
       const defaultPos = getDefaultRoomPosition(itemPayload.category, itemPayload.label);
-      const isDining = defaultPos.roomId === 'dining';
+      const targetRoomId = itemPayload.roomId || defaultPos.roomId;
+      const targetRoom = CONDO_ROOMS.find((r) => r.id === targetRoomId) ?? CONDO_ROOMS.find((r) => r.id === 'living')!;
 
       const blueprintCoord = applyCalibration(
         { x: lockedPosition.x, z: lockedPosition.z },
@@ -474,43 +476,34 @@ export default function PositionMapScreen() {
       let safeX = blueprintCoord.x;
       let safeZ = blueprintCoord.z;
 
-      // Validate bounds and fall back to room defaults if out-of-bounds or NaN
-      if (isDining) {
-        if (
-          Number.isNaN(safeX) ||
-          Number.isNaN(safeZ) ||
-          safeZ < 6.9 ||
-          safeZ > 8.9 ||
-          safeX < 0 ||
-          safeX > 2.7
-        ) {
-          safeX = defaultPos.posX;
-          safeZ = defaultPos.posZ;
-        } else {
-          safeX = Math.max(0.3, Math.min(safeX, 2.3));
-          safeZ = Math.max(7.2, Math.min(safeZ, 8.6));
-        }
+      // Validate bounds against target room boundaries (in meters)
+      const roomMinX = targetRoom.x / 100;
+      const roomMaxX = (targetRoom.x + targetRoom.width) / 100;
+      const roomMinZ = targetRoom.y / 100;
+      const roomMaxZ = (targetRoom.y + targetRoom.height) / 100;
+
+      const padX = Math.min(0.25, (roomMaxX - roomMinX) * 0.15);
+      const padZ = Math.min(0.25, (roomMaxZ - roomMinZ) * 0.15);
+
+      if (
+        Number.isNaN(safeX) ||
+        Number.isNaN(safeZ) ||
+        safeX < roomMinX ||
+        safeX > roomMaxX ||
+        safeZ < roomMinZ ||
+        safeZ > roomMaxZ
+      ) {
+        safeX = defaultPos.posX;
+        safeZ = defaultPos.posZ;
       } else {
-        if (
-          Number.isNaN(safeX) ||
-          Number.isNaN(safeZ) ||
-          safeZ < 3.3 ||
-          safeZ > 7.1 ||
-          safeX < 0 ||
-          safeX > 2.7
-        ) {
-          safeX = defaultPos.posX;
-          safeZ = defaultPos.posZ;
-        } else {
-          safeX = Math.max(0.3, Math.min(safeX, 2.3));
-          safeZ = Math.max(3.6, Math.min(safeZ, 6.8));
-        }
+        safeX = Math.max(roomMinX + padX, Math.min(safeX, roomMaxX - padX));
+        safeZ = Math.max(roomMinZ + padZ, Math.min(safeZ, roomMaxZ - padZ));
       }
 
       const qty = itemPayload.quantity && itemPayload.quantity > 1 ? itemPayload.quantity : 1;
 
       if (qty > 1) {
-        const baseLabel = itemPayload.label.replace(/\s*\d+$/, '').trim() || 'Dining Chair';
+        const baseLabel = itemPayload.label.replace(/\s*\d+$/, '').trim() || itemPayload.label;
         const rows = Math.ceil(qty / 2);
 
         for (let i = 0; i < qty; i++) {
@@ -521,13 +514,8 @@ export default function PositionMapScreen() {
 
           let itemX = safeX + dx;
           let itemZ = safeZ + dz;
-          if (isDining) {
-            itemX = Math.max(0.3, Math.min(itemX, 2.3));
-            itemZ = Math.max(7.15, Math.min(itemZ, 8.65));
-          } else {
-            itemX = Math.max(0.3, Math.min(itemX, 2.3));
-            itemZ = Math.max(3.55, Math.min(itemZ, 6.85));
-          }
+          itemX = Math.max(roomMinX + padX, Math.min(itemX, roomMaxX - padX));
+          itemZ = Math.max(roomMinZ + padZ, Math.min(itemZ, roomMaxZ - padZ));
 
           if (i === 0) {
             addItem({
@@ -536,7 +524,7 @@ export default function PositionMapScreen() {
               posX: itemX,
               posZ: itemZ,
               rotationY: deviceYaw,
-              roomId: defaultPos.roomId,
+              roomId: targetRoom.id,
               quantity: 1,
             });
           } else {
@@ -547,7 +535,7 @@ export default function PositionMapScreen() {
               posX: itemX,
               posZ: itemZ,
               rotationY: deviceYaw,
-              roomId: defaultPos.roomId,
+              roomId: targetRoom.id,
               quantity: 1,
             });
           }
@@ -558,7 +546,7 @@ export default function PositionMapScreen() {
           posX: safeX,
           posZ: safeZ,
           rotationY: deviceYaw,
-          roomId: defaultPos.roomId,
+          roomId: targetRoom.id,
         });
       }
 

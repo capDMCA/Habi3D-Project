@@ -16,6 +16,8 @@ const CATEGORY_COLORS: Record<FurnitureCategory, string> = {
   cabinet: '#865D69',
   side_table: '#A87943',
   work_desk: '#526B7A',
+  bed: '#3B6A82',
+  wardrobe: '#6E5268',
   other: '#69727A',
 };
 
@@ -211,10 +213,34 @@ function CurvedModel({
   );
 }
 
+function BedModel({ length, width, height, color }: ModelDimensions) {
+  const headboardThickness = Math.min(0.12, width * 0.08);
+  const headboardHeight = height;
+  const mattressHeight = height * 0.55;
+  const mattressDepth = width - headboardThickness;
+
+  return (
+    <group>
+      <BoxPart
+        size={[length, headboardHeight, headboardThickness]}
+        position={[0, headboardHeight / 2, -width / 2 + headboardThickness / 2]}
+        color={color}
+      />
+      <BoxPart
+        size={[length * 0.96, mattressHeight, mattressDepth]}
+        position={[0, mattressHeight / 2, headboardThickness / 2]}
+        color="#DCE3EC"
+      />
+    </group>
+  );
+}
+
 function RectangularModel({ item, ...dimensions }: ModelDimensions & { item: FurnitureItem }) {
   switch (item.category) {
     case 'sofa':
       return <SofaModel {...dimensions} />;
+    case 'bed':
+      return <BedModel {...dimensions} />;
     case 'coffee_table':
     case 'dining_table':
     case 'side_table':
@@ -224,6 +250,7 @@ function RectangularModel({ item, ...dimensions }: ModelDimensions & { item: Fur
       return <ChairModel {...dimensions} />;
     case 'tv_stand':
     case 'cabinet':
+    case 'wardrobe':
     case 'other':
     default:
       return (

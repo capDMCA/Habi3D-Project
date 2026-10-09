@@ -1,61 +1,48 @@
-# Habi3D — WebXR Spatial Clearance Analysis & Layout Optimization
+# Habi3D — AR-Assisted Condo Furniture-Planning & Spatial-Layout Evaluation System
 
-Habi3D is a Web-based Augmented Reality (WebXR) and interactive spatial planning application designed for furniture clearance analysis and circulation optimization in Philippine condominium units. Built as an architectural and interior design thesis project, Habi3D is specifically tailored to standard 2-bedroom units at **Mulberry Place, Acacia Estates, Taguig City** ($5.10\,\text{m} \times 8.80\,\text{m}$).
+## System Objective
 
-Rather than acting as a design-from-scratch CAD package, Habi3D evaluates and enhances existing living and dining layouts. It digitizes real-world furniture, maps items to real physical floor coordinates in AR, checks clearances against 10 codified interior design rules, flags circulation bottlenecks in an interactive 2D workspace, provides a read-only 3D dollhouse perspective, and delivers priority-ranked sequential recommendations with client-side PDF reporting.
-
----
-
-## Table of Contents
-
-- [Core Purpose](#core-purpose)
-- [Target Scope & Floor Plan](#target-scope--floor-plan)
-- [Tech Stack](#tech-stack)
-- [System Architecture & End-to-End User Flow](#system-architecture--end-to-end-user-flow)
-  - [1. Authentication & Session Lifecycle](#1-authentication--session-lifecycle)
-  - [2. Furniture Inventory & AR Measurement](#2-furniture-inventory--ar-measurement)
-  - [3. WebXR AR Floor Placement & Single-Tap Alignment](#3-webxr-ar-floor-placement--single-tap-alignment)
-  - [4. Interactive 2D Workspace](#4-interactive-2d-workspace)
-  - [5. Read-Only 3D Dollhouse Layout Preview](#5-read-only-3d-dollhouse-layout-preview)
-  - [6. Constructive Evaluation & PDF Report Export](#6-constructive-evaluation--pdf-report-export)
-- [Codified 10 Clearance Rules Matrix](#codified-10-clearance-rules-matrix)
-  - [Contextual Applicability Model](#contextual-applicability-model)
-  - [Rule Specifications](#rule-specifications)
-  - [Priority Ranking & Remediation Formula](#priority-ranking--remediation-formula)
-- [Project Directory Structure](#project-directory-structure)
-- [Changelog & System Evolution](#changelog--system-evolution)
-- [Environment Configuration & Setup](#environment-configuration--setup)
-- [Testing & WebXR Verification](#testing--webxr-verification)
+**To develop and evaluate Habi3D as an AR-assisted condo furniture-planning and spatial-layout evaluation system that supports furniture placement across the target condo unit, checks applicable spatial constraints and circulation requirements, and provides location-specific recommendations that help users identify and correct layout problems through an integrated AR and 2D workspace.**
 
 ---
 
-## Core Purpose
+## Core Purpose & Workflow
 
-In compact urban condominium units, layout adjustments can drastically affect circulation, accessibility, and human comfort. Habi3D systematically answers:
+In compact urban condominium units, layout adjustments can drastically affect circulation, accessibility, and human comfort. Habi3D implements an integrated, cyclic layout improvement workflow:
 
-1. **Which furniture items violate interior design clearance standards?**
-2. **Which bottlenecks are most critical and should be resolved first?**
-3. **How far and in what direction should each piece be adjusted?**
-4. **Is the primary entrance-to-bedroom walkway corridor obstructed?**
-5. **How does the layout improve after applying recommendations?**
+$$\text{Place furniture} \longrightarrow \text{Evaluate layout} \longrightarrow \text{Identify problem} \longrightarrow \text{Show recommendation} \longrightarrow \text{Focus affected area} \longrightarrow \text{Adjust furniture} \longrightarrow \text{Re-evaluate layout}$$
+
+Rather than acting as a static CAD package or conversational chatbot, Habi3D delivers actionable planning utility:
+1. **Digitize Real Furniture**: Input physical dimensions directly or measure using WebXR assistive camera estimation.
+2. **AR-Assisted Placement**: Preview, rotate, and validate furniture against real floor geometry and condo boundaries before committing coordinates.
+3. **Multi-Room Spatial Analysis**: Evaluate layouts across the entire condo unit using room-appropriate architectural rules (*Time-Saver Standards for Interior Design*) without indiscriminate rule application.
+4. **Actionable Recommendations**: Directly access findings via a mobile-friendly bottom sheet or desktop side panel, focus the problem area with camera auto-framing and directional correction arrows, and adjust furniture in 2D or AR.
+5. **Dynamic Re-Analysis**: Re-evaluate the layout immediately upon furniture movement, clearing resolved findings.
 
 ---
 
 ## Target Scope & Floor Plan
 
-Habi3D focuses on the **Mulberry Place 2-Bedroom Unit** layout:
+Habi3D models the complete standard 2-bedroom condominium unit at **Mulberry Place, Acacia Estates, Taguig City** ($5.10\,\text{m} \times 8.80\,\text{m}$ / $510\,\text{cm} \times 880\,\text{cm}$):
 
-- **Total Dimensions:** $5.10\,\text{m}$ (width, $X$) $\times 8.80\,\text{m}$ (depth, $Z$) ($510\,\text{cm} \times 880\,\text{cm}$).
-- **Active Planning Rooms:** 
-  - **Living Room:** $X \in [0.00, 2.60]\,\text{m}$, $Z \in [3.40, 7.00]\,\text{m}$
-  - **Dining Room:** $X \in [0.00, 2.60]\,\text{m}$, $Z \in [7.00, 8.80]\,\text{m}$
-  - *(Combined active region forms an open continuous zone of $2.60\,\text{m} \times 5.40\,\text{m}$)*
-- **Restricted Architectural Zones (Non-Plannable):**
-  - **Bedroom Hallway Divider:** Rigid structural barrier at $Z = 3.40\,\text{m}$ (separating Bedrooms 1 & 2 and Balcony).
-  - **Bathroom Zone:** $X \in [2.60, 5.10]\,\text{m}$, $Z \in [4.60, 6.20]\,\text{m}$.
-  - **Kitchen Zone:** $X \in [2.60, 5.10]\,\text{m}$, $Z \in [6.20, 8.80]\,\text{m}$.
-  - **Storage / Utility:** $X \in [2.60, 5.10]\,\text{m}$, $Z \in [3.40, 4.60]\,\text{m}$.
+### Supported Rooms & Validation Levels
+
+1. **Living Room** ($2.60\,\text{m} \times 3.60\,\text{m}$): **Full Validation** — Codified interior design rules L1–L5 (sofa-coffee table, conversation clearances, TV rack viewing distance, and circulation).
+2. **Dining Room** ($2.60\,\text{m} \times 1.80\,\text{m}$): **Full Validation** — Codified dining rules D1–D5 (chair pull-out, wall clearance, serving passage, and table boundaries).
+3. **Bedroom 1 (Master)** ($2.50\,\text{m} \times 2.40\,\text{m}$): **Bedroom Circulation Standards** — Rules B1 (Bed access and side circulation, $\ge 61\,\text{cm}$) and B2 (Wardrobe door and front clearance, $\ge 61\,\text{cm}$).
+4. **Bedroom 2** ($2.60\,\text{m} \times 2.40\,\text{m}$): **Bedroom Circulation Standards** — Rules B1 and B2.
+5. **Kitchen** ($2.50\,\text{m} \times 2.60\,\text{m}$): **Architectural Baseline (Limited Analysis)** — Clear boundary and fixed fixture checks, clearly designated in reports.
+6. **Bathroom** ($2.50\,\text{m} \times 1.60\,\text{m}$): **Sanitary Zone Baseline (Limited Analysis)** — Restricted zone for non-sanitary furniture, limited clearance analysis.
+7. **Balcony** ($5.10\,\text{m} \times 1.00\,\text{m}$): **Exterior Perimeter Baseline (Limited Analysis)** — Unit boundary checks.
+8. **Storage / Utility** ($2.50\,\text{m} \times 1.20\,\text{m}$): **Utility Baseline (Limited Analysis)** — Baseline boundary and storage assignment.
 - **Main Walkway Corridor:** Pedestrian thoroughfare spanning from the main entrance door ($Z = 8.80\,\text{m}$) to the bedroom hall ($Z = 3.40\,\text{m}$) across $X \in [2.15, 2.95]\,\text{m}$ ($80\,\text{cm}$ width).
+
+---
+
+## AR Sensor Capabilities & Explicit Limitations
+
+- **Assistive Measurement Accuracy**: WebXR plane and hit-test detection provides assistive estimates of floor geometry and distances (typical accuracy $\pm 2\text{–}5\,\text{cm}$). These are assistive planning estimates, not survey-grade or guaranteed measurements.
+- **Virtual Geometry Validation**: Collision, boundary, and clearance checks validate against virtual furniture geometry and the condo blueprint. Real-world dynamic physical obstacles (existing tenant belongings or moving persons) are **not** sensed by the camera or depth sensors in this version.
 
 ---
 

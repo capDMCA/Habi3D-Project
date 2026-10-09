@@ -4,11 +4,17 @@
 
 ---
 
-## 1. Overview
+## 1. Overview & System Objective
 
-Habi3D is a decision-support tool for residents of a specific real condominium unit — Mulberry Place, Bengaline, Acacia Estates, Taguig City — to check whether their living/dining furniture layout meets recognized interior-design clearance standards, and to see, in priority order, what to adjust and by how much. A resident declares their furniture (by category, shape, and dimensions — typed or AR-measured), places it either by dragging it on a 2D floor plan or by tapping its real position in AR, and the app runs it against 10 clearance rules drawn from *Time-Saver Standards for Interior Design* (DeChiara, Panero & Zelnik, 2001). The app never moves furniture on the resident's behalf — it surfaces what's tight, ranks it by how much it matters, and lets the resident decide.
+**Revised Objective:** To develop and evaluate Habi3D as an AR-assisted condo furniture-planning and spatial-layout evaluation system that supports furniture placement across the target condo unit, checks applicable spatial constraints and circulation requirements, and provides location-specific recommendations that help users identify and correct layout problems through an integrated AR and 2D workspace.
 
-**Scope:** one fixed unit configuration only — a 2-bedroom Mulberry Place unit, living area 600×500cm and dining area 500×390cm (researcher estimates, `src/data/roomData.ts`). There is no unit picker; every session starts from this same fixed geometry. The clearance rules and the app's interaction model only ever concern the living and dining areas — the other rooms in the unit (bedrooms, kitchen, bathroom, balcony, storage) exist on the 2D plan as placement zones with their own category restrictions, but no clearance rule ever fires inside them.
+Habi3D is an integrated decision-support tool tailored to the standard 2-bedroom condominium unit at **Mulberry Place, Bengaline, Acacia Estates, Taguig City** ($5.10\,\text{m} \times 8.80\,\text{m}$ / $510\,\text{cm} \times 880\,\text{cm}$). A resident declares their furniture (by category, shape, and dimensions — typed or AR-measured), places it either by dragging it on the 2D floor plan or by placing and rotating it in WebXR AR, and the app runs it against applicable clearance rules drawn from *Time-Saver Standards for Interior Design* (DeChiara, Panero & Zelnik, 2001).
+
+**Target Condo Scope & Room Validation:** The system supports all 8 rooms across the unit:
+- **Living Room & Dining Room**: Full validation using codified rules L1–L5 and D1–D5.
+- **Bedroom 1 & Bedroom 2**: Bedroom circulation standards using rules B1 (Bed Access & Circulation, $\ge 61\,\text{cm}$) and B2 (Wardrobe Clearance, $\ge 61\,\text{cm}$).
+- **Kitchen, Bathroom, Balcony, Storage**: Architectural boundary and fixture baselines clearly designated as having limited analysis.
+Rules are strictly scoped by room to prevent cross-room false positives (e.g. living room rules do not compare bedroom items across walls).
 
 ---
 

@@ -9,11 +9,8 @@ import {
   clampToUnit,
   snapFree,
   edgeGaps,
-  itemIntersectsRoomZone,
   overlappingItemIds,
   roomIdForItem,
-  isItemInBedroom,
-  isItemInKitchenOrBathroom,
   UNIT_WIDTH_CM,
   UNIT_HEIGHT_CM,
   type AlignmentGuide,
@@ -103,7 +100,6 @@ export default function CondoFloorPlan({
   const [activeGuides, setActiveGuides] = useState<AlignmentGuide[]>([]);
   const [collidingIds, setCollidingIds] = useState<string[]>([]);
   const [dropRoomId, setDropRoomId] = useState<string | null>(null);
-  const [dragPreview, setDragPreview] = useState<FurnitureItem | null>(null);
 
   // Fresh refs for window listeners, which outlive any single render.
   const itemsRef = useRef(items);
@@ -143,7 +139,6 @@ export default function CondoFloorPlan({
 
   const activeGaps = useMemo(() => {
     if (!activeGapItem) return null;
-    if (isItemInBedroom(activeGapItem) || isItemInKitchenOrBathroom(activeGapItem)) return null;
     return edgeGaps(activeGapItem, items);
   }, [activeGapItem, items]);
 
@@ -179,10 +174,16 @@ export default function CondoFloorPlan({
         // Include affected wall if specified
         if (focusTarget.wallSide) {
           const side = focusTarget.wallSide;
-          if (side === 'west') minX = Math.min(minX, 0);
-          if (side === 'east') maxX = Math.max(maxX, 260);
-          if (side === 'north') minY = Math.min(minY, 340);
-          if (side === 'south') maxY = Math.max(maxY, 880);
+          const rId = item.roomId || getRoomForCategory(item.category, item.label);
+          const rZone = CONDO_ROOMS.find((r) => r.id === rId);
+          const rX = rZone ? rZone.x : 0;
+          const rY = rZone ? rZone.y : 0;
+          const rW = rZone ? rZone.width : WIDTH_CM;
+          const rH = rZone ? rZone.height : HEIGHT_CM;
+          if (side === 'west') minX = Math.min(minX, rX);
+          if (side === 'east') maxX = Math.max(maxX, rX + rW);
+          if (side === 'north') minY = Math.min(minY, rY);
+          if (side === 'south') maxY = Math.max(maxY, rY + rH);
         }
 
         const pad = 50;
@@ -306,7 +307,6 @@ export default function CondoFloorPlan({
       setActiveGuides(snapped.guides);
       setCollidingIds(overlappingItemIds(preview, itemsRef.current));
       setDropRoomId(roomIdForItem(preview));
-      setDragPreview(preview);
 
       interactiveRef.current?.onDragMove(drag.itemId, placed.posX, placed.posZ);
     };
@@ -322,7 +322,6 @@ export default function CondoFloorPlan({
       setActiveGuides([]);
       setCollidingIds([]);
       setDropRoomId(null);
-      setDragPreview(null);
       // Only a real drag (crossed the threshold, so onDragStart already
       // fired) reaches onDragEnd — a plain click never committed anything
       // to begin with, so there's nothing to finalize.
@@ -429,24 +428,13 @@ export default function CondoFloorPlan({
           const isHighlighted = activeRoomId === room.id;
           const isDropTarget = dropRoomId === room.id;
           const isDimmed = focusedRoomId && focusedRoomId !== room.id;
-          const isRuleRoom = room.id === 'living' || room.id === 'dining';
-          const isOverlappedByDrag = dragPreview
-            ? itemIntersectsRoomZone(dragPreview, room.id)
-            : false;
-          const isBlockedDropTarget = !isRuleRoom && (dropRoomId === room.id || isOverlappedByDrag);
+          const isRuleRoom = room.validationLevel !== 'limited';
 
           const baseFillOpacity = isRuleRoom ? t.roomFillOpacityActive : t.roomFillOpacityMuted;
-          // Label opacity is NOT reduced for muted rooms — a "Kitchen" label
-          // that's too faint to read isn't muted, it's broken. The fill wash
-          // alone carries the active/muted distinction; every room's name
-          // stays equally legible, since knowing what a room IS stays useful
-          // even where clearance rules don't apply. (Tried reducing label
-          // opacity too, first pass — white text against the near-white plan
-          // background at ~0.25 opacity was functionally invisible.)
-          const labelOpacity = isRoomActive ? t.roomLabelOpacityActive : 0.4;
+          const labelOpacity = isRoomActive ? t.roomLabelOpacityActive : 0.55;
 
-          const strokeColor = isBlockedDropTarget ? '#ef4444' : isDropTarget || isHighlighted ? t.ink : t.roomStroke;
-          const strokeW = isBlockedDropTarget ? 4 : isDropTarget ? 4 : isHighlighted ? 3 : 1.5;
+          const strokeColor = isDropTarget || isHighlighted ? t.ink : t.roomStroke;
+          const strokeW = isDropTarget ? 3.5 : isHighlighted ? 3 : 1.5;
 
           // Living's south wall and dining's north wall are the same
           // real-world wall (living ends at y=700, dining starts at
@@ -473,8 +461,8 @@ export default function CondoFloorPlan({
                 y={room.y}
                 width={room.width}
                 height={room.height}
-                fill={isBlockedDropTarget ? '#ef4444' : room.bgColor}
-                fillOpacity={isBlockedDropTarget ? 0.28 : isDropTarget ? 0.22 : baseFillOpacity}
+                fill={room.bgColor}
+                fillOpacity={isDropTarget ? 0.24 : baseFillOpacity}
                 stroke={omitEdge ? 'none' : strokeColor}
                 strokeWidth={strokeW}
                 style={{
@@ -494,8 +482,8 @@ export default function CondoFloorPlan({
               )}
               <text
                 x={room.x + room.width / 2}
-                y={room.y + room.height / 2}
-                fontSize={24}
+                y={room.y + room.height / 2 - 8}
+                fontSize={21}
                 fontWeight={800}
                 fill={room.textColor}
                 textAnchor="middle"
@@ -504,6 +492,23 @@ export default function CondoFloorPlan({
                 style={pointerNone}
               >
                 {room.label}
+              </text>
+              <text
+                x={room.x + room.width / 2}
+                y={room.y + room.height / 2 + 13}
+                fontSize={10.5}
+                fontWeight={700}
+                fill={room.textColor}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                opacity={Math.max(0.7, labelOpacity)}
+                style={pointerNone}
+              >
+                {room.validationLevel === 'full'
+                  ? '• Clearance Standards (L/D)'
+                  : room.validationLevel === 'bedroom'
+                  ? '• Bedroom Standards (B1–B2)'
+                  : '• Limited Analysis (Perimeter)'}
               </text>
             </g>
           );
@@ -593,180 +598,89 @@ export default function CondoFloorPlan({
           </text>
         </g>
 
-        {/* 2B. BEDROOM BOUNDARY WALL BLOCKER (y = 340cm) */}
+        {/* 2B. ARCHITECTURAL PARTITION WALLS */}
         <g style={pointerNone}>
-          {/* Solid structural wall line separating Bedroom 2 and Living */}
+          {/* Wall separating Bedroom 2 and Living (y = 340cm, x: 0..260cm) */}
           <line
             x1={0}
             y1={340}
             x2={260}
             y2={340}
             stroke="#0f172a"
-            strokeWidth={5}
+            strokeWidth={4.5}
             strokeLinecap="round"
           />
-          {/* Wall blocker pill badge */}
-          <rect
-            x={55}
-            y={328}
-            width={150}
-            height={24}
-            rx={12}
-            fill="#0f172a"
-            stroke="#ffffff"
-            strokeWidth={2}
-          />
-          <text
-            x={130}
-            y={344}
-            fontSize={9.5}
-            fontWeight={800}
-            fill="#f8fafc"
-            letterSpacing={0.6}
-            textAnchor="middle"
-          >
-            BEDROOM WALL BLOCKER
-          </text>
-        </g>
-
-        {/* 2C. KITCHEN & BATHROOM FIXED ZONE BLOCKERS */}
-        <g style={pointerNone}>
-          {/* Solid structural wall line separating Living/Dining from Bathroom and Kitchen */}
+          {/* Divider wall separating West and East zones (x = 260cm, y: 100..880cm) */}
           <line
             x1={260}
-            y1={460}
+            y1={100}
             x2={260}
             y2={880}
             stroke="#0f172a"
-            strokeWidth={5}
+            strokeWidth={4.5}
             strokeLinecap="round"
           />
-          {/* Bathroom fixed zone blocker badge */}
-          <rect
-            x={300}
-            y={568}
-            width={170}
-            height={24}
-            rx={12}
-            fill="#0f172a"
-            stroke="#ffffff"
-            strokeWidth={2}
-          />
-          <text
-            x={385}
-            y={584}
-            fontSize={9.5}
-            fontWeight={800}
-            fill="#f8fafc"
-            letterSpacing={0.6}
-            textAnchor="middle"
-          >
-            BATHROOM - FIXED ZONE
-          </text>
-
-          {/* Kitchen fixed zone blocker badge */}
-          <rect
-            x={305}
-            y={780}
-            width={160}
-            height={24}
-            rx={12}
-            fill="#0f172a"
-            stroke="#ffffff"
-            strokeWidth={2}
-          />
-          <text
-            x={385}
-            y={796}
-            fontSize={9.5}
-            fontWeight={800}
-            fill="#f8fafc"
-            letterSpacing={0.6}
-            textAnchor="middle"
-          >
-            KITCHEN - FIXED ZONE
-          </text>
         </g>
 
-        {/* 2D. GLOWING WALL / BOUNDARY HIGHLIGHT FOR FOCUS RECOMMENDATION */}
-        {focusTarget && (
+        {/* 2C. GLOWING WALL / BOUNDARY HIGHLIGHT FOR FOCUS RECOMMENDATION */}
+        {focusTarget && focusTarget.wallSide && (() => {
+          const targetItem = items.find((it) => it.id === focusTarget.itemId);
+          const rId = targetItem?.roomId || (targetItem ? getRoomForCategory(targetItem.category, targetItem.label) : null);
+          const rZone = rId ? CONDO_ROOMS.find((r) => r.id === rId) : null;
+          const rX = rZone ? rZone.x : 0;
+          const rY = rZone ? rZone.y : 0;
+          const rW = rZone ? rZone.width : WIDTH_CM;
+          const rH = rZone ? rZone.height : HEIGHT_CM;
+
+          let x1 = rX;
+          let y1 = rY;
+          let x2 = rX + rW;
+          let y2 = rY;
+
+          if (focusTarget.wallSide === 'west') {
+            x1 = rX; y1 = rY; x2 = rX; y2 = rY + rH;
+          } else if (focusTarget.wallSide === 'east') {
+            x1 = rX + rW; y1 = rY; x2 = rX + rW; y2 = rY + rH;
+          } else if (focusTarget.wallSide === 'north') {
+            x1 = rX; y1 = rY; x2 = rX + rW; y2 = rY;
+          } else if (focusTarget.wallSide === 'south') {
+            x1 = rX; y1 = rY + rH; x2 = rX + rW; y2 = rY + rH;
+          }
+
+          return (
+            <g style={pointerNone}>
+              <line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke="#2563EB"
+                strokeWidth={7}
+                strokeLinecap="round"
+                strokeDasharray="12 6"
+                filter="url(#focus-glow-wall)"
+                className="wksp-glowing-wall"
+              />
+            </g>
+          );
+        })()}
+
+        {/* Main entry walkway corridor obstruction */}
+        {focusTarget && focusTarget.actionText && focusTarget.actionText.toLowerCase().includes('walkway') && (
           <g style={pointerNone}>
-            {/* West outer boundary wall */}
-            {focusTarget.wallSide === 'west' && (
-              <line
-                x1={0}
-                y1={340}
-                x2={0}
-                y2={880}
-                stroke="#2563EB"
-                strokeWidth={7}
-                strokeLinecap="round"
-                strokeDasharray="12 6"
-                filter="url(#focus-glow-wall)"
-                className="wksp-glowing-wall"
-              />
-            )}
-            {/* East divider wall (separating living/dining from kitchen/bathroom) */}
-            {focusTarget.wallSide === 'east' && (
-              <line
-                x1={260}
-                y1={340}
-                x2={260}
-                y2={880}
-                stroke="#2563EB"
-                strokeWidth={7}
-                strokeLinecap="round"
-                strokeDasharray="12 6"
-                filter="url(#focus-glow-wall)"
-                className="wksp-glowing-wall"
-              />
-            )}
-            {/* North bedroom divider wall */}
-            {focusTarget.wallSide === 'north' && (
-              <line
-                x1={0}
-                y1={340}
-                x2={260}
-                y2={340}
-                stroke="#2563EB"
-                strokeWidth={7}
-                strokeLinecap="round"
-                strokeDasharray="12 6"
-                filter="url(#focus-glow-wall)"
-                className="wksp-glowing-wall"
-              />
-            )}
-            {/* South outer wall */}
-            {focusTarget.wallSide === 'south' && (
-              <line
-                x1={0}
-                y1={880}
-                x2={260}
-                y2={880}
-                stroke="#2563EB"
-                strokeWidth={7}
-                strokeLinecap="round"
-                strokeDasharray="12 6"
-                filter="url(#focus-glow-wall)"
-                className="wksp-glowing-wall"
-              />
-            )}
-            {/* Main entry walkway corridor obstruction */}
-            {focusTarget.actionText && focusTarget.actionText.toLowerCase().includes('walkway') && (
-              <rect
-                x={MAIN_ENTRY_WALKWAY_RECT.x}
-                y={MAIN_ENTRY_WALKWAY_RECT.y}
-                width={MAIN_ENTRY_WALKWAY_RECT.width}
-                height={MAIN_ENTRY_WALKWAY_RECT.height}
-                fill="rgba(37, 99, 235, 0.08)"
-                stroke="#2563EB"
-                strokeWidth={4}
-                strokeDasharray="8 4"
-                filter="url(#focus-glow-wall)"
-                className="wksp-glowing-wall"
-                rx={6}
-              />
-            )}
+            <rect
+              x={MAIN_ENTRY_WALKWAY_RECT.x}
+              y={MAIN_ENTRY_WALKWAY_RECT.y}
+              width={MAIN_ENTRY_WALKWAY_RECT.width}
+              height={MAIN_ENTRY_WALKWAY_RECT.height}
+              fill="rgba(37, 99, 235, 0.08)"
+              stroke="#2563EB"
+              strokeWidth={4}
+              strokeDasharray="8 4"
+              filter="url(#focus-glow-wall)"
+              className="wksp-glowing-wall"
+              rx={6}
+            />
           </g>
         )}
 
@@ -1038,7 +952,7 @@ export default function CondoFloorPlan({
         })}
 
         {/* 5. LIVE GAP READOUTS on the dragged or selected piece */}
-        {activeGapItem && activeGaps && !isItemInBedroom(activeGapItem) && !isItemInKitchenOrBathroom(activeGapItem) && (() => {
+        {activeGapItem && activeGaps && (() => {
           const dr = rects.find((r) => r.id === activeGapItem.id);
           if (!dr) return null;
           const cx = dr.xCm + dr.wCm / 2;

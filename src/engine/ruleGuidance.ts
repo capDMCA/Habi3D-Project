@@ -2,7 +2,7 @@ import { CLEARANCE_RULES } from './rules';
 import type { ClearanceRule } from '../types';
 
 /**
- * The user-facing layer over the 10 clearance rules.
+ * The user-facing layer over the clearance rules.
  *
  * `rules.ts` holds the measurements and citations; this holds the words a
  * resident reads. Every rule answers three questions in plain language:
@@ -10,7 +10,7 @@ import type { ClearanceRule } from '../types';
  *   requirement — what you have to do to satisfy it
  *   consequence — what goes wrong when you don't
  *
- * Rule codes (L1, D3, …) stay available for traceability back to the source
+ * Rule codes (L1, D3, B1, …) stay available for traceability back to the source
  * standard, but they are never the primary label in the UI.
  */
 
@@ -22,7 +22,7 @@ export interface RuleGuidance {
   requirement: string;
   consequence: string;
   /** Where this rule applies, for grouping in the reference list. */
-  area: 'Living area' | 'Dining area';
+  area: 'Living area' | 'Dining area' | 'Bedroom area' | 'Circulation';
   violationThresholdCm: number;
   warningThresholdCm: number;
 }
@@ -78,7 +78,24 @@ const COPY: Record<string, { title: string; requirement: string; consequence: st
     requirement: 'Leave at least 122 cm between the dining table and any base cabinet or buffet.',
     consequence: 'base cabinet drawers or doors cannot open fully without hitting the table',
   },
+  B1: {
+    title: 'Bed Access & Circulation',
+    requirement: 'Leave at least 76 cm (minimum 61 cm) alongside the bed for making the bed and walking.',
+    consequence: 'the space alongside the bed is too cramped to walk or make the bed comfortably',
+  },
+  B2: {
+    title: 'Wardrobe Clearance',
+    requirement: 'Leave at least 91 cm (minimum 61 cm) in front of wardrobes and closets for door opening and dressing.',
+    consequence: 'wardrobe doors cannot open fully or dressing space is restricted',
+  },
 };
+
+function ruleCategoryToArea(cat: ClearanceRule['category']): RuleGuidance['area'] {
+  if (cat === 'living') return 'Living area';
+  if (cat === 'dining') return 'Dining area';
+  if (cat === 'bedroom') return 'Bedroom area';
+  return 'Circulation';
+}
 
 const GUIDANCE: Record<string, RuleGuidance> = Object.fromEntries(
   CLEARANCE_RULES.map((rule: ClearanceRule) => {
@@ -94,7 +111,7 @@ const GUIDANCE: Record<string, RuleGuidance> = Object.fromEntries(
         title: copy.title,
         requirement: copy.requirement,
         consequence: copy.consequence,
-        area: rule.category === 'living' ? 'Living area' : 'Dining area',
+        area: ruleCategoryToArea(rule.category),
         violationThresholdCm: rule.violationThresholdCm,
         warningThresholdCm: rule.warningThresholdCm,
       } satisfies RuleGuidance,

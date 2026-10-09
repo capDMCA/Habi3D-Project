@@ -133,23 +133,15 @@ export function overlappingItemIds(item: FurnitureItem, items: FurnitureItem[]):
 }
 
 /**
- * Dividing wall separating the bedrooms and balcony (z < 3.40m / y < 340cm)
+ * Dividing wall coordinate separating the bedrooms and balcony (z < 3.40m / y < 340cm)
  * from the Living and Dining areas.
  */
 export const BEDROOM_DIVIDER_WALL_Z_M = 3.40;
 
 /**
- * Checks whether an item's footprint crosses into the bedroom/balcony area.
- * The bedroom wall barrier is at z = 3.40m (y = 340cm).
- * Any item whose bounding box intrudes past this wall into the bedroom zone (z < 3.40m)
- * or whose assigned room is bedroom1, bedroom2, or balcony is considered in the bedroom.
+ * Helper to check whether an item's current location belongs to the bedroom or balcony zones.
  */
 export function isItemInBedroom(item: FurnitureItem): boolean {
-  const b = toBounds(item);
-  const epsilon = 0.01; // 1cm tolerance for touching the wall
-  if (b.minZ < BEDROOM_DIVIDER_WALL_Z_M - epsilon) {
-    return true;
-  }
   const rId = roomIdForItem(item);
   return rId === 'bedroom1' || rId === 'bedroom2' || rId === 'balcony';
 }
@@ -195,16 +187,17 @@ export function isItemInKitchenOrBathroom(item: FurnitureItem): boolean {
 }
 
 /**
- * Checks whether an item is placed strictly within the allowed Living or Dining rooms.
+ * Checks whether an item is placed within the Living or Dining rooms.
  */
 export function isItemInLivingOrDining(item: FurnitureItem): boolean {
-  if (isItemInBedroom(item)) return false;
-  if (isItemInKitchenOrBathroom(item)) return false;
   const rId = roomIdForItem(item);
   return rId === 'living' || rId === 'dining';
 }
 
-/** True when this one piece sits inside the unit, not in a bedroom or blocked zone. Furniture overlaps are allowed as soft constraints. */
+/**
+ * Validates that this furniture piece sits safely inside the unit boundary.
+ * Supports all rooms across the entire condo unit.
+ */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function canPlace(item: FurnitureItem, _items: FurnitureItem[] = []): boolean {
   const b = toBounds(item);
@@ -215,11 +208,7 @@ export function canPlace(item: FurnitureItem, _items: FurnitureItem[] = []): boo
     b.maxX <= UNIT_WIDTH_CM / 100 + epsilon &&
     b.maxZ <= UNIT_HEIGHT_CM / 100 + epsilon;
 
-  return (
-    insideUnit &&
-    !isItemInBedroom(item) &&
-    !isItemInKitchenOrBathroom(item)
-  );
+  return insideUnit;
 }
 
 // ─── Snapping ─────────────────────────────────────────────────────────────────
@@ -566,9 +555,8 @@ export function getActivePlanningBoundary(): ActivePlanningBoundary {
 
 /**
  * Distance in cm from each side of a piece to the nearest thing on that side —
- * another piece's facing edge, or the nearest boundary of the active Living + Dining
- * planning region (stopping at Kitchen, Bathroom, Bedroom, or exterior walls).
- * Powers the live gap readouts.
+ * another piece's facing edge, or the nearest boundary of its room / unit.
+ * Powers the live gap readouts across all rooms in the condo.
  */
 export interface EdgeGaps {
   west: number;
@@ -578,49 +566,21 @@ export interface EdgeGaps {
 }
 
 export function edgeGaps(item: FurnitureItem, items: FurnitureItem[]): EdgeGaps {
-  if (isItemInBedroom(item) || isItemInKitchenOrBathroom(item)) {
-    return { west: 0, east: 0, north: 0, south: 0 };
-  }
-
   const a = toBounds(item);
-  const boundary = getActivePlanningBoundary();
+  const roomId = roomIdForItem(item);
+  const room = CONDO_ROOMS.find((r) => r.id === roomId);
 
-  let west = Infinity;
-  let east = Infinity;
-  let north = Infinity;
-  let south = Infinity;
+  const roomMinX = room ? room.x / 100 : 0;
+  const roomMaxX = room ? (room.x + room.width) / 100 : UNIT_WIDTH_CM / 100;
+  const roomMinZ = room ? room.y / 100 : 0;
+  const roomMaxZ = room ? (room.y + room.height) / 100 : UNIT_HEIGHT_CM / 100;
 
-  // 1. Measure against the valid outer perimeter of the active Living + Dining union
-  for (const seg of boundary.vertical) {
-    const spansZ = Math.min(a.maxZ, seg.maxZ) - Math.max(a.minZ, seg.minZ) > 0;
-    if (!spansZ) continue;
+  let west = Math.max(0, a.minX - roomMinX);
+  let east = Math.max(0, roomMaxX - a.maxX);
+  let north = Math.max(0, a.minZ - roomMinZ);
+  let south = Math.max(0, roomMaxZ - a.maxZ);
 
-    if (seg.facing === 'west' && a.maxX > seg.x) {
-      west = Math.min(west, a.minX - seg.x);
-    } else if (seg.facing === 'east' && a.minX < seg.x) {
-      east = Math.min(east, seg.x - a.maxX);
-    }
-  }
-
-  for (const seg of boundary.horizontal) {
-    const spansX = Math.min(a.maxX, seg.maxX) - Math.max(a.minX, seg.minX) > 0;
-    if (!spansX) continue;
-
-    if (seg.facing === 'north' && a.maxZ > seg.z) {
-      north = Math.min(north, a.minZ - seg.z);
-    } else if (seg.facing === 'south' && a.minZ < seg.z) {
-      south = Math.min(south, seg.z - a.maxZ);
-    }
-  }
-
-  const gaps: EdgeGaps = {
-    west: Number.isFinite(west) ? west : a.minX,
-    east: Number.isFinite(east) ? east : UNIT_WIDTH_CM / 100 - a.maxX,
-    north: Number.isFinite(north) ? north : a.minZ,
-    south: Number.isFinite(south) ? south : UNIT_HEIGHT_CM / 100 - a.maxZ,
-  };
-
-  // 2. Measure against facing edges of other furniture pieces
+  // Measure against facing edges of other furniture pieces
   for (const other of items) {
     if (other.id === item.id) continue;
     const b = toBounds(other);
@@ -630,20 +590,20 @@ export function edgeGaps(item: FurnitureItem, items: FurnitureItem[]): EdgeGaps 
     const spansX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX) > 0;
 
     if (spansZ) {
-      if (b.maxX <= a.minX) gaps.west = Math.min(gaps.west, a.minX - b.maxX);
-      if (b.minX >= a.maxX) gaps.east = Math.min(gaps.east, b.minX - a.maxX);
+      if (b.maxX <= a.minX) west = Math.min(west, a.minX - b.maxX);
+      if (b.minX >= a.maxX) east = Math.min(east, b.minX - a.maxX);
     }
     if (spansX) {
-      if (b.maxZ <= a.minZ) gaps.north = Math.min(gaps.north, a.minZ - b.maxZ);
-      if (b.minZ >= a.maxZ) gaps.south = Math.min(gaps.south, b.minZ - a.maxZ);
+      if (b.maxZ <= a.minZ) north = Math.min(north, a.minZ - b.maxZ);
+      if (b.minZ >= a.maxZ) south = Math.min(south, b.minZ - a.maxZ);
     }
   }
 
   return {
-    west: Math.round(gaps.west * 100),
-    east: Math.round(gaps.east * 100),
-    north: Math.round(gaps.north * 100),
-    south: Math.round(gaps.south * 100),
+    west: Math.round(west * 100),
+    east: Math.round(east * 100),
+    north: Math.round(north * 100),
+    south: Math.round(south * 100),
   };
 }
 
@@ -689,7 +649,7 @@ export function packItemsIntoRoom(items: FurnitureItem[], room: RoomZone): Furni
     // A piece wider than its room would otherwise be laid out through the
     // building's outer wall; the unit envelope is the one hard boundary.
     const inUnit = clampToUnit(item, posX, posZ);
-    return { ...item, posX: inUnit.posX, posZ: inUnit.posZ };
+    return { ...item, posX: inUnit.posX, posZ: inUnit.posZ, roomId: room.id };
   });
 }
 
@@ -726,7 +686,7 @@ export function clampToRoom(item: FurnitureItem, room: RoomZone): { posX: number
   return { posX, posZ };
 }
 
-/** Whole-layout validity check used by the legacy single-room sandbox. */
+/** Whole-layout validity check used by the single-room sandbox. */
 export function isFeasible(
   items: FurnitureItem[],
   roomWidthCm: number,

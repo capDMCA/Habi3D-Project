@@ -1,6 +1,7 @@
 import type { FurnitureCategory, FurnitureItem, GapClassificationLevel, Violation } from '../types';
 import { CLEARANCE_RULES, classifyGap, computePriorityScore } from './rules';
 import { WALKWAY_PATHS } from './walkways';
+import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 
 export type WallSide = 'west' | 'east' | 'north' | 'south';
 
@@ -90,10 +91,6 @@ export type LayoutViolation =
   | { kind: 'OUT_OF_BOUNDS'; itemId: string }
   | { kind: 'OVERLAP'; itemIdA: string; itemIdB: string };
 
-// Metres. 1 cm of slack so an item flush against a wall (gap ≈ 0) or two
-// items touching edge-to-edge do NOT register as violations — only a real
-// excursion past the wall or a positive-area overlap does. This tolerance
-// also absorbs the float noise from effectiveLength/Width at odd angles.
 const FEASIBILITY_EPSILON_M = 0.01;
 
 /**
@@ -125,7 +122,6 @@ export function findLayoutViolation(
       const b = bounds[j];
       const overlapX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
       const overlapZ = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ);
-      // Positive overlap on BOTH axes = genuine footprint intersection.
       if (overlapX > e && overlapZ > e) {
         return { kind: 'OVERLAP', itemIdA: a.item.id, itemIdB: b.item.id };
       }
@@ -150,24 +146,42 @@ function getPairGap(a: ItemBounds, b: ItemBounds): PairGap {
 }
 
 function getWallGaps(bounds: ItemBounds, roomWidthM: number, roomLengthM: number): WallGap[] {
+  const item = bounds.item;
+  const roomId = item.roomId || getRoomForCategory(item.category, item.label);
+  const room = CONDO_ROOMS.find((r) => r.id === roomId);
+
+  // If item is within its condo room zone in the real layout (unit length >= 8m)
+  const isInsideCondoRoom =
+    room &&
+    roomLengthM >= 8.0 &&
+    bounds.minX >= room.x / 100 - 0.5 &&
+    bounds.maxX <= (room.x + room.width) / 100 + 0.5 &&
+    bounds.minZ >= room.y / 100 - 0.5 &&
+    bounds.maxZ <= (room.y + room.height) / 100 + 0.5;
+
+  const minX_m = isInsideCondoRoom && room ? room.x / 100 : 0;
+  const maxX_m = isInsideCondoRoom && room ? (room.x + room.width) / 100 : roomWidthM;
+  const minZ_m = isInsideCondoRoom && room ? room.y / 100 : 0;
+  const maxZ_m = isInsideCondoRoom && room ? (room.y + room.height) / 100 : roomLengthM;
+
   return [
     {
-      measuredCm: Math.round(bounds.minX * 100),
+      measuredCm: Math.max(0, Math.round((bounds.minX - minX_m) * 100)),
       wallSide: 'west',
       directionLabel: 'toward the east wall',
     },
     {
-      measuredCm: Math.round((roomWidthM - bounds.maxX) * 100),
+      measuredCm: Math.max(0, Math.round((maxX_m - bounds.maxX) * 100)),
       wallSide: 'east',
       directionLabel: 'toward the west wall',
     },
     {
-      measuredCm: Math.round(bounds.minZ * 100),
+      measuredCm: Math.max(0, Math.round((bounds.minZ - minZ_m) * 100)),
       wallSide: 'north',
       directionLabel: 'toward the south wall',
     },
     {
-      measuredCm: Math.round((roomLengthM - bounds.maxZ) * 100),
+      measuredCm: Math.max(0, Math.round((maxZ_m - bounds.maxZ) * 100)),
       wallSide: 'south',
       directionLabel: 'toward the north wall',
     },
@@ -202,6 +216,7 @@ function makeViolation(params: {
 }): Violation {
   const severityWeight = params.classification === 'RED' ? 3 : 1;
   const shortfallCm = Math.max(0, Math.round(params.requiredCm - params.measuredCm));
+  const roomId = params.item.roomId || getRoomForCategory(params.item.category, params.item.label);
 
   return {
     id: `${params.ruleCode}-${params.item.id}-${params.measuredCm}-${params.fixDirectionLabel}`,
@@ -222,6 +237,7 @@ function makeViolation(params: {
     furnitureLabel: params.item.label,
     itemBId: params.itemBId,
     wallSide: params.wallSide,
+    roomId,
     fixDirectionLabel: params.fixDirectionLabel,
     fixDirectionCm: Math.max(0, Math.round(params.requiredCm - params.measuredCm + 5)),
     resolved: false,
@@ -343,6 +359,14 @@ function isDiningItem(item: FurnitureItem): boolean {
   return DINING_CATEGORIES.includes(item.category);
 }
 
+function isBedItem(item: FurnitureItem): boolean {
+  return item.category === 'bed';
+}
+
+function isWardrobeItem(item: FurnitureItem): boolean {
+  return item.category === 'wardrobe';
+}
+
 function pairAppliesToD4(a: FurnitureItem, b: FurnitureItem): boolean {
   return (
     (a.category === 'dining_chair' && !itemMatches(b, ['dining_table', 'dining_chair'])) ||
@@ -361,11 +385,19 @@ export function runClearanceAnalysis(
   const classifications: GapClassification[] = [];
   const violations: Violation[] = [];
 
-  // ── 1. Pair Checks (L1, L2, L3, L5, D4, D5) ──────────────────────────────
+  // Helper to determine an item's room
+  function getItemRoom(item: FurnitureItem): string {
+    return item.roomId || getRoomForCategory(item.category, item.label);
+  }
+
+  // ── 1. Pair Checks (L1, L2, L3, L5, D4, D5, B1, B2) ──────────────────────
   for (let i = 0; i < bounds.length; i += 1) {
     for (let j = i + 1; j < bounds.length; j += 1) {
       const a = bounds[i];
       const b = bounds[j];
+      const aRoom = getItemRoom(a.item);
+      const bRoom = getItemRoom(b.item);
+      const isSameRoom = aRoom === bRoom;
 
       const isSofaCoffee =
         (a.item.category === 'sofa' && b.item.category === 'coffee_table') ||
@@ -388,23 +420,27 @@ export function runClearanceAnalysis(
         (isLivingItem(a.item) && isDiningItem(b.item)) ||
         (isDiningItem(a.item) && isLivingItem(b.item));
 
-      // L1: Main Trafficway — evaluates clearance across major circulation routes,
-      // excluding intimate grouping pieces, dining table-chair pairs, and living-dining transitions (handled by L5).
-      if (!isSofaCoffee && !isSofaSide && !isDiningPair && !isTableCabinet && !isLivingAndDining) {
-        addPairCheck({ ruleCode: 'L1', a, b, classifications, violations });
-      }
+      // ── LIVING ROOM PAIR RULES (only if both are in living, or for synthetic single-room tests) ──
+      const appliesLiving = (isSameRoom && aRoom === 'living') || (roomLengthM < 8.0 && (isLivingItem(a.item) || isLivingItem(b.item)));
+      if (appliesLiving) {
+        // L1: Main Trafficway — evaluates clearance across major circulation routes,
+        // excluding intimate grouping pieces, dining table-chair pairs, and living-dining transitions (handled by L5).
+        if (!isSofaCoffee && !isSofaSide && !isDiningPair && !isTableCabinet && !isLivingAndDining) {
+          addPairCheck({ ruleCode: 'L1', a, b, classifications, violations });
+        }
 
-      // L2: General Circulation (sofa to coffee table / companion seating legroom)
-      if (isSofaCoffee) {
-        addPairCheck({ ruleCode: 'L2', a, b, classifications, violations });
-      }
+        // L2: General Circulation (sofa to coffee table / companion seating legroom)
+        if (isSofaCoffee) {
+          addPairCheck({ ruleCode: 'L2', a, b, classifications, violations });
+        }
 
-      // L3: Furniture Grouping (clearance between seating / conversation pieces)
-      if (
-        GROUPING_CATEGORIES.includes(a.item.category) &&
-        GROUPING_CATEGORIES.includes(b.item.category)
-      ) {
-        addPairCheck({ ruleCode: 'L3', a, b, classifications, violations });
+        // L3: Furniture Grouping (clearance between seating / conversation pieces)
+        if (
+          GROUPING_CATEGORIES.includes(a.item.category) &&
+          GROUPING_CATEGORIES.includes(b.item.category)
+        ) {
+          addPairCheck({ ruleCode: 'L3', a, b, classifications, violations });
+        }
       }
 
       // L5: Living-Dining Transition (clearance between living item and dining item)
@@ -412,24 +448,44 @@ export function runClearanceAnalysis(
         addPairCheck({ ruleCode: 'L5', a, b, classifications, violations });
       }
 
-      // D4: Passage Only (behind dining chairs / around dining pieces to other items)
-      if (pairAppliesToD4(a.item, b.item)) {
-        addPairCheck({ ruleCode: 'D4', a, b, classifications, violations });
+      // ── DINING ROOM PAIR RULES (only if both are in dining, or for synthetic single-room tests) ──
+      const appliesDining = (isSameRoom && aRoom === 'dining') || (roomLengthM < 8.0 && (isDiningItem(a.item) || isDiningItem(b.item)));
+      if (appliesDining) {
+        // D4: Passage Only (behind dining chairs / around dining pieces to other items)
+        if (pairAppliesToD4(a.item, b.item)) {
+          addPairCheck({ ruleCode: 'D4', a, b, classifications, violations });
+        }
+
+        // D5: Table to Base Cabinet
+        if (isTableCabinet) {
+          addPairCheck({ ruleCode: 'D5', a, b, classifications, violations });
+        }
       }
 
-      // D5: Table to Base Cabinet
-      if (isTableCabinet) {
-        addPairCheck({ ruleCode: 'D5', a, b, classifications, violations });
+      // ── BEDROOM PAIR RULES (B1, B2) ──
+      const appliesBedroom =
+        (isSameRoom && (aRoom === 'bedroom1' || aRoom === 'bedroom2')) ||
+        (roomLengthM < 8.0 && (isBedItem(a.item) || isBedItem(b.item) || isWardrobeItem(a.item) || isWardrobeItem(b.item)));
+
+      if (appliesBedroom) {
+        // B1: Bed to companion furniture clearance (bed to side table, wardrobe, or desk)
+        if (isBedItem(a.item) || isBedItem(b.item)) {
+          addPairCheck({ ruleCode: 'B1', a, b, classifications, violations });
+        }
+        // B2: Wardrobe door swing clearance to opposing furniture
+        if (isWardrobeItem(a.item) || isWardrobeItem(b.item)) {
+          addPairCheck({ ruleCode: 'B2', a, b, classifications, violations });
+        }
       }
     }
   }
 
-  // ── 2. Wall Checks (D1, D2, D3) ──────────────────────────────────────────
-  // Note: Generic furniture-to-wall checks for L1 are SUPPRESSED. Furniture placed
-  // flat against a wall (e.g. sofa, console) does not violate trafficways.
+  // ── 2. Wall Checks (D1, D2, D3, B1, B2) ──────────────────────────────────
   bounds.forEach((entry) => {
+    const itemRoom = getItemRoom(entry.item);
+
     // D1: Chair Access — dining table to wall clearance for chair pullout
-    if (entry.item.category === 'dining_table') {
+    if (entry.item.category === 'dining_table' && (itemRoom === 'dining' || roomLengthM < 8.0)) {
       addWallCheck({
         ruleCode: 'D1',
         bounds: entry,
@@ -440,10 +496,38 @@ export function runClearanceAnalysis(
     }
 
     // D2 & D3: Dining chair to wall / passage / serving clearance
-    if (entry.item.category === 'dining_chair') {
+    if (entry.item.category === 'dining_chair' && (itemRoom === 'dining' || roomLengthM < 8.0)) {
       const closest = getClosestWallGap(entry, roomWidthM, roomLengthM);
       addWallCheck({ ruleCode: 'D2', bounds: entry, wallGap: closest, classifications, violations });
       addWallCheck({ ruleCode: 'D3', bounds: entry, wallGap: closest, classifications, violations });
+    }
+
+    // B1: Bed side wall clearance (measures access along the bed sides)
+    if (entry.item.category === 'bed' && (itemRoom === 'bedroom1' || itemRoom === 'bedroom2' || roomLengthM < 8.0)) {
+      const gaps = getWallGaps(entry, roomWidthM, roomLengthM);
+      const isNorthSouth = Math.abs(Math.sin(entry.item.rotationY)) < 0.707;
+      const sideGaps = isNorthSouth
+        ? gaps.filter((g) => g.wallSide === 'west' || g.wallSide === 'east')
+        : gaps.filter((g) => g.wallSide === 'north' || g.wallSide === 'south');
+      const targetGaps = sideGaps.length > 0 ? sideGaps : gaps;
+      const closestSide = targetGaps.sort((a, b) => a.measuredCm - b.measuredCm)[0];
+      if (closestSide) {
+        addWallCheck({ ruleCode: 'B1', bounds: entry, wallGap: closestSide, classifications, violations });
+      }
+    }
+
+    // B2: Wardrobe front / door wall clearance
+    if (entry.item.category === 'wardrobe' && (itemRoom === 'bedroom1' || itemRoom === 'bedroom2' || roomLengthM < 8.0)) {
+      const gaps = getWallGaps(entry, roomWidthM, roomLengthM);
+      const isNorthSouth = Math.abs(Math.sin(entry.item.rotationY)) < 0.707;
+      const frontGaps = isNorthSouth
+        ? gaps.filter((g) => g.wallSide === 'south' || g.wallSide === 'north')
+        : gaps.filter((g) => g.wallSide === 'east' || g.wallSide === 'west');
+      const targetGaps = frontGaps.length > 0 ? frontGaps : gaps;
+      const closestFront = targetGaps.sort((a, b) => a.measuredCm - b.measuredCm)[0];
+      if (closestFront) {
+        addWallCheck({ ruleCode: 'B2', bounds: entry, wallGap: closestFront, classifications, violations });
+      }
     }
   });
 

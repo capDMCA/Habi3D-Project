@@ -30,6 +30,8 @@ const CATEGORIES: Array<{
   { key: 'sofa', label: 'Sofa', rules: ['L1', 'L2', 'L3', 'L5'], shapes: ['rectangle'] },
   { key: 'tv_stand', label: 'TV Rack', rules: ['L1', 'L4'], shapes: ['rectangle'] },
   { key: 'cabinet', label: 'Cabinet / Storage', rules: ['L1', 'L3'], shapes: ['rectangle'] },
+  { key: 'bed', label: 'Bed (Queen / Single)', rules: ['B1'], shapes: ['rectangle'] },
+  { key: 'wardrobe', label: 'Wardrobe / Closet', rules: ['B2'], shapes: ['rectangle'] },
   { key: 'side_table', label: 'Side Table', rules: ['L1', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
   { key: 'coffee_table', label: 'Coffee Table', rules: ['L2', 'L3'], shapes: ['rectangle', 'round', 'oval'] },
   { key: 'work_desk', label: 'Work Desk / Study Table', rules: ['L1', 'L3'], shapes: ['rectangle'] },
@@ -388,7 +390,9 @@ export default function FurnitureInputScreen() {
                 onClick={() => {
                   setCategory(option.key);
                   if (!label) setLabel(option.label);
-                  if (shape && !option.shapes.includes(shape as FurnitureShape)) {
+                  if (option.shapes.length === 1) {
+                    setShape(option.shapes[0]);
+                  } else if (shape && !option.shapes.includes(shape as FurnitureShape)) {
                     setShape('');
                   }
                 }}
