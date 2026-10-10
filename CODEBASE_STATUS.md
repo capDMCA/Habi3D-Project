@@ -1,6 +1,6 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-10-09 (System Revision — Address Panel Comments: Objective Revision, Whole-Condo 8-Room Support, Codified Bedroom Standards B1/B2, Functional AR Pipeline & Actionable Recommendations UX)
+**Last updated:** 2026-10-10 (Furniture Catalog Expansion — 57+ Presets Across All 8 Rooms, Appliances, Electrical & Decorative Objects, Non-Standard Shapes [Rectangle, Round, Oval, L-Shape], Wall-Mounted vs. Floor-Standing Vertical Elevation Isolation)
 **Project phase:** Phase 3 — AR Floor Hit-Test Placement, Streamlined 2D Planning & Read-Only 3D Visualization
 **Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig, 5.10m × 8.80m, 8 Rooms)
 
@@ -9,16 +9,97 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-10-09 — System Revision Addressing Panel Comments):** Revised the Habi3D system architecture, spatial scope, and user experience to address evaluation panel feedback:
-> 1. **Revised System Objective:** Formulated Habi3D as a domain-grounded spatial decision-support system executing a closed-loop optimization workflow: **Place furniture → evaluate layout → identify problem → show recommendation → focus affected area → adjust furniture → re-evaluate layout → confirm resolution**.
-> 2. **Whole-Condo Unit Support:** Expanded scope to all 8 architectural rooms of the Mulberry Place Bengaline 2BR unit ($5.10\,\text{m} \times 8.80\,\text{m}$), removing artificial drop blockers across bedrooms, kitchen, bathroom, balcony, and storage.
-> 3. **Codified Bedroom Standards (B1 & B2) & Room-Scoped Rule Isolation:** Codified *Time-Saver Standards for Interior Design* Rule **B1** (Bed Access Clearance $\ge 61\,\text{cm}$) and Rule **B2** (Wardrobe Clearance $\ge 61\,\text{cm}$). Scoped pairwise and wall clearance checks by room (`aRoom === bRoom`), completely eliminating false cross-partition interactions between isolated rooms. Attached `roomId` to each `Violation` record.
-> 4. **Multi-Tier Validation Transparency:** Clearly distinguished validation depth across rooms (`full` for Living/Dining, `bedroom` for Bedrooms 1/2, and `limited` for Kitchen/Bathroom/Balcony/Storage) across the UI, 2D floor plan, and validation reports.
-> 5. **Value-Added AR Workflow & Explicit Sensor Limitations:** Grounded AR as the physical placement gateway into the 2D planning pipeline, featuring single-tap entry anchor alignment (`ENTRY_DOOR_BLUEPRINT = { x: 0.2, z: 0.1 }`), WebXR plane hit-testing, ghost preview, rotation slider, calibrated coordinate transfer, and whole-condo room clamping. Exported `AR_SENSOR_LIMITATIONS` in `src/ar/placementValidation.ts` to transparently disclose sensor drift, physical obstacle constraints, and lighting limits without making unrealistic physical obstacle detection claims.
-> 6. **Actionable Recommendations UX:** Auto-framing camera navigation (`targetViewBox`), wall/furniture pulsing glow, directional correction arrows with delta cm, floating mobile sheet, and automatic re-analysis resolution.
-> 7. **Expanded Furniture Data Model & 3D Dollhouse:** Added `bed` and `wardrobe` categories to `FurnitureCategory`, `FurnitureInputScreen`, and `DollhouseFurniture` with procedural `BedModel` (mattress + headboard).
+> **Latest Update (2026-10-10 — Furniture Catalog Expansion, Appliances, Electrical & Decorative Objects, Custom Shapes & Wall-Mounted Spatial Support):**
+> 1. **Comprehensive 8-Room Furniture & Appliance Catalog:** Built `src/data/furnitureCatalog.ts` featuring 57+ curated presets grouped into 8 domains covering Living Room, Bedrooms 1/2, Dining, Kitchen, Bathroom, Balcony, Storage/Hallway, and Electrical/Household. Expanded `FurnitureCategory` with `armchair`, `appliance`, `electrical`, `mirror`, `plant`, `bathroom_fixture`, and `storage_rack`.
+> 2. **Multi-Geometry Footprints & Shapes:** Native support for `rectangle`, `round` (circle), `oval` (ellipse), and `l-shape` (polygon) footprints across 2D floor plans (`CondoFloorPlan.tsx`, `FloorPlan2D.tsx`), PDF report generation (`pdfReport.ts`), and the 3D dollhouse (`DollhouseFurniture.tsx`).
+> 3. **Wall-Mounted vs. Floor-Standing Spatial Differentiation:** Introduced `PlacementType = 'floor' | 'wall'`, `mountHeightCm`, and `wallSide` in `FurnitureItem`. Elevated wall items (such as wall-mounted TVs and air-conditioners) utilize vertical overlap checks (`isVerticalOverlap()`), preventing false collisions with low floor consoles beneath them and exempting overhead AC units ($>180\,\text{cm}$) from blocking pedestrian walkway corridors (Rule L4).
+> 4. **Redesigned Furniture Input Screen:** Modernized `FurnitureInputScreen.tsx` with category domain tabs, instant preset search/filter cards, custom item creation mode, 8-room target picker, wall/floor placement toggle with mounting height inputs, shape selector, editable default dimensions, rotation orientation selector ($0^\circ, 90^\circ, 180^\circ, 270^\circ$), quantity stepper ($1\text{–}10$), live 3D `ShapePreview`, and summary review card before placement.
+> 5. **Procedural 3D Dollhouse Enhancements:** Added rich procedural 3D models in `DollhouseFurniture.tsx` for appliances (refrigerators, washers, microwaves, ovens, water dispensers), electrical fixtures (pedestal/desk fans, floor lamps, wall ACs, TVs), bathroom vanities, hampers, storage racks, standing/wall mirrors, plants, and armchairs; wall-mounted items are elevated to their true mounting height ($y = \text{mountHeightCm} / 100$).
+> 6. **Clearance Isolation & Zero Regressions:** Verified that newly added appliances and electrical fixtures participate strictly in room boundary and physical overlap checks without triggering inapplicable dining or bedroom clearance rules (B1, B2, D1–D5). All 8 test suites in `systemRevision.test.ts` pass (23 assertions), and production build and ESLint pass with 0 errors and 0 warnings.
+> 7. **Mobile 2D Workspace Actionable Insights Hub (Improvements, Items, & Rules):** Resolved the mobile invisibility of layout inspection details by introducing `MobileWorkspaceHub.tsx` (a persistent 3-button navigation dock) and expanding `RecommendationSheet.tsx` to support all three tabs: **Actionable Improvements** (prioritized recommendation cards with tap-to-focus and auto-framing), **Placed Furniture Items** (complete item inventory with room locations, dimensions, wall-mount badges, and direct AR launch), and **Interior Design Standards** (all 12 codified rules from Time-Saver Standards). Added a quick-access toolbar toggle directly on mobile viewports.
 
-### Key Recent Changes (October 9, 2026: Habi3D System Revision — Address Panel Comments)
+### Key Recent Changes (October 10, 2026: Furniture Catalog Expansion, Appliances, Electrical & Decorative Objects, and Custom Shapes)
+
+1. **Comprehensive 8-Room Catalog Architecture & Domain Categorization (`src/data/furnitureCatalog.ts`)**
+   - **8 Domain Categories:** Built `CATALOG_DOMAINS` covering Living Room, Bedroom, Dining Area, Kitchen & Appliances, Bathroom, Balcony & Outdoor, Storage & Hallway, and Electrical & Household.
+   - **57+ Standardized Presets (`CATALOG_PRESETS`):** Codified realistic default dimensions ($L \times W \times H\,\text{cm}$), default room associations, appropriate footprint shapes, and placement modes (`floor` vs `wall`).
+     - *Living Room:* 3-Seater Sofa ($200 \times 85 \times 80$), L-Sectional Sofa ($240 \times 160 \times 80$), Armchair ($85 \times 80 \times 80$), Accent Chair ($75 \times 75 \times 78$), Coffee Table ($110 \times 55 \times 42$), Round Coffee Table ($80 \times 80 \times 45$), Side Table ($45 \times 45 \times 50$), TV Stand Console ($150 \times 40 \times 48$), Television ($120 \times 15 \times 72$), Bookshelf ($80 \times 32 \times 180$), Storage Cabinet ($90 \times 40 \times 110$), Floor Lamp ($40 \times 40 \times 150$), Indoor Potted Plant ($45 \times 45 \times 120$).
+     - *Bedroom:* Queen Bed ($150 \times 200 \times 95$), Double Bed ($135 \times 190 \times 90$), Single Bed ($90 \times 190 \times 85$), 2-Door Wardrobe ($120 \times 60 \times 190$), 3-Door Wardrobe ($160 \times 60 \times 200$), Bedroom Dresser ($90 \times 45 \times 85$), Bedside Table ($45 \times 40 \times 50$), Full-Length Standing Mirror ($45 \times 40 \times 165$), Study Desk ($110 \times 55 \times 75$), Desk Chair ($55 \times 55 \times 88$), Floor Pedestal Fan ($45 \times 45 \times 125$).
+     - *Dining Area:* Rectangular Dining Table ($140 \times 80 \times 75$), Square Dining Table ($80 \times 80 \times 75$), Round Dining Table ($105 \times 105 \times 75$), Dining Chair ($45 \times 48 \times 85$), Bar Counter Table ($120 \times 45 \times 100$), Bar Stool ($40 \times 40 \times 75$), Sideboard Buffet ($130 \times 42 \times 85$).
+     - *Kitchen & Appliances:* Double-Door Refrigerator ($70 \times 68 \times 175$), Compact Refrigerator ($55 \times 58 \times 145$), Front-Load Washing Machine ($60 \times 60 \times 85$), Countertop Microwave ($50 \times 38 \times 30$), Freestanding Range Oven ($60 \times 60 \times 85$), Water Dispenser ($35 \times 35 \times 105$), Kitchen Pantry Cabinet ($80 \times 40 \times 185$).
+     - *Bathroom:* Bathroom Vanity Sink ($70 \times 50 \times 85$), Compact Vanity ($50 \times 42 \times 85$), Slim Bathroom Cabinet ($35 \times 30 \times 160$), Laundry Hamper ($40 \times 35 \times 60$), Bathroom Standing Mirror ($40 \times 35 \times 150$).
+     - *Balcony & Hallway:* Tiered Shoe Rack ($75 \times 30 \times 85$), Heavy Utility Shelf ($90 \times 40 \times 160$), Wire Storage Rack ($60 \times 35 \times 120$), Large Plant Pot ($45 \times 45 \times 60$), Utility Cabinet ($70 \times 40 \times 90$), Balcony Bistro Table ($60 \times 60 \times 72$), Balcony Folding Chair ($45 \times 45 \times 82$).
+     - *Electrical & Household:* Pedestal Fan ($45 \times 45 \times 125$), Desk Fan ($32 \times 28 \times 45$), Tall Floor Lamp ($40 \times 40 \times 160$), Wall-Mounted Split AC ($95 \times 24 \times 32$, mount $210\,\text{cm}$), Television ($125 \times 12 \times 75$), Wall-Mounted Mirror ($60 \times 5 \times 90$, mount $110\,\text{cm}$).
+   - **Sensible Defaults with Clear Disclosure:** Dimension inputs are explicitly labeled as editable defaults that users can freely customize to reflect their actual measured furniture.
+
+2. **Non-Standard Footprints & Geometry Shapes (`types/index.ts`, `shapeLibrary.ts`, `CondoFloorPlan.tsx`, `DollhouseFurniture.tsx`)**
+   - **Expanded Shapes:** Supported `rectangle`, `round`, `oval`, and `l-shape` values in `FurnitureShape`.
+   - **2D Floor Plan SVG Footprints (`CondoFloorPlan.tsx`, `FloorPlan2D.tsx`):**
+     - `round`: Renders SVG `<circle cx={cx} cy={cy} r={radius} />`.
+     - `oval`: Renders SVG `<ellipse cx={cx} cy={cy} rx={w/2} ry={h/2} />`.
+     - `l-shape`: Evaluates orientation angle and renders 6-point SVG `<polygon points="..." />` matching true L-footprint.
+     - `rectangle`: Standard SVG `<rect />`.
+   - **PDF Vector Document Generation (`pdfReport.ts`):** Added vector ellipse drawing support for `oval` shapes alongside existing rectangle and circle drawing primitives.
+   - **3D Dollhouse Procedural Geometry (`DollhouseFurniture.tsx`):**
+     - Cylinder and capsule geometries for round/oval tables.
+     - Composite L-shaped seat and corner geometry for sectional sofas.
+
+3. **Wall-Mounted vs. Floor-Standing Spatial Differentiation & Elevation Math**
+   - **Data Model Extension:** Added `placementType?: 'floor' | 'wall'`, `mountHeightCm?: number`, and `wallSide?: WallSide` to `FurnitureItem` interface.
+   - **Vertical Overlap Engine (`floorPlanDrag.ts:isVerticalOverlap`):**
+     - Calculates vertical spans: $Y_{\min} = \text{mountHeightCm}$, $Y_{\max} = \text{mountHeightCm} + \text{heightCm}$ (for floor items, $Y_{\min} = 0$).
+     - Vertical overlap condition: $\max(y1_{\min}, y2_{\min}) < \min(y1_{\max}, y2_{\max})$.
+     - Integrated into `overlappingItemIds()`, `canPlace()`, and `findLayoutViolation()`.
+     - *Impact:* A wall-mounted TV installed at height $120\text{–}192\,\text{cm}$ above a floor TV stand console ($0\text{–}48\,\text{cm}$) registers **zero physical collision**, reflecting realistic architectural elevation without false warnings.
+   - **Overhead Walkway Corridor Bypass (`clearance.ts:runClearanceAnalysis`):**
+     - Rule L4 checks pedestrian walkway encroachment; overhead split AC units mounted at height $>180\,\text{cm}$ are explicitly excluded, preventing false walkway obstruction alerts.
+
+4. **Modernized Furniture Input Screen (`src/screens/FurnitureInputScreen.tsx`)**
+   - **Domain Navigation Tabs:** 8 domain pills with responsive horizontal scroll and visual active states.
+   - **Preset Filter & Search:** Real-time search query filtering through preset names and category tags.
+   - **Custom Item Mode:** Dedicated toggle allowing users to enter any custom item name, select shape, assign category, and input exact dimensions.
+   - **Whole-Condo 8-Room Target Selector:** Select from all 8 architectural rooms (`living`, `dining`, `bedroom-1`, `bedroom-2`, `kitchen`, `bathroom`, `balcony`, `storage`).
+   - **Wall/Floor Placement Controls:** Intuitive placement type radio selector; toggling "Wall-Mounted" activates mounting height input ($10\text{–}250\,\text{cm}$, default $120\,\text{cm}$) and wall orientation.
+   - **Shape & Orientation Selectors:** Visual buttons for Rectangle, Round, Oval, and L-Shape, alongside yaw orientation buttons ($0^\circ, 90^\circ, 180^\circ, 270^\circ$).
+   - **Quantity Stepper ($1\text{–}10$):** Touch-friendly increment/decrement stepper for multi-piece additions.
+   - **Live 3D Shape Preview (`ShapePreview`):** Canvas displaying real-time 3D procedural preview of the configured item shape, color, and proportions.
+   - **Summary Review Card:** Comprehensive confirmation card displaying Item Name, Dimensions ($L \times W \times H\,\text{cm}$), Category, Placement Type, Room, and Quantity before committing.
+   - **Preserved WebXR AR Measurement:** In-session camera measurement overlay remains fully accessible with floating decimal precision.
+
+5. **Procedural 3D Dollhouse Geometry Expansion (`src/components/DollhouseFurniture.tsx`)**
+   - **Appliance Models:**
+     - *Refrigerator:* Dual-compartment tall body with upper freezer door, main fridge door, and vertical handles.
+     - *Washing Machine:* White cubic chassis with control console and circular glass drum door porthole.
+     - *Microwave / Oven:* Countertop body with dark glass door window and digital control panel.
+     - *Water Dispenser:* Slim tower chassis with recessed tap alcove.
+   - **Electrical & Fixture Models:**
+     - *Pedestal / Desk Fan:* Disc base, vertical stem, and circular fan cage.
+     - *Floor Lamp:* Weighted disc base, slender rod, and translucent lampshade.
+     - *Wall-Mounted AC Unit:* Compact white indoor blower unit elevated to $y = \text{mountHeightCm} / 100$ with louver grille.
+     - *Television:* Thin dark screen with screen bezel and optional dual feet or wall mounting.
+     - *Bathroom Vanity & Hamper:* Sink basin cutout with dark vanity base; woven wicker hamper box.
+     - *Storage Rack & Shelves:* Multi-tier shelving with horizontal shelf planes.
+     - *Potted Plant:* Terracotta pot cylinder with lush green spherical foliage.
+     - *Armchair:* Proportional cushioned seat, backrest, and dual armrests.
+
+6. **Clearance Engine Isolation & Collision Integrity (`src/engine/clearance.ts`)**
+   - **Rule Isolation:** Clearance rules L1–L5, D1–D5, and B1–B2 are domain-specific. Household appliances (`appliance`), electrical fixtures (`electrical`), decorative plants (`plant`), and bathroom fixtures (`bathroom_fixture`) only participate in room boundary containment and physical 3D bounding collisions.
+   - **Living Seating Grouping:** `armchair` is included alongside `sofa` in conversation seating clearances (Rule L3) and sofa-to-table access (Rule L2).
+   - **Zero False-Positives:** Verified that kitchen refrigerators, washing machines, and fans never trigger inappropriate bed access (B1) or dining service (D3) warnings.
+
+7. **Verification & Test Suite 8 (`src/tests/systemRevision.test.ts`)**
+   - **Suite 8:** 8 comprehensive assertions verifying:
+     - Catalog preset completeness (57+ presets spanning all 8 rooms).
+     - Multi-geometry shape handling (`rectangle`, `round`, `oval`, `l-shape`).
+     - Procedural 3D dollhouse model generation.
+     - Vertical height overlap differentiation (wall TV vs floor console).
+     - Whole-condo room routing across all 8 rooms.
+     - Clearance rule isolation for appliances and electrical items.
+     - Overhead wall AC walkway corridor bypass ($>180\,\text{cm}$).
+   - **Test Results:** 8/8 suites passing (23 total assertions, exit code 0).
+   - **Build & Lint Results:** `npm run build` passed with 0 errors; `npm run lint` passed with 0 errors and 0 warnings.
+
+### Key Prior Changes (October 9, 2026: Habi3D System Revision — Address Panel Comments)
 
 1. **Revised System Objective & Closed-Loop Workflow Formulation**
    - **From Generic Tool to Spatial Decision-Support:** Shifted the system's core identity from an unguided sandbox or conversational assistant to a domain-grounded spatial decision-support system tailored for Philippine high-density condominium units.
@@ -503,6 +584,7 @@ Key milestones and system capabilities include:
 12. **Whole-Condo Scope & Multi-Tier Room Validation Disclosures (`condoLayout.ts` / `ReportScreen.tsx` / `CondoFloorPlan.tsx`):** Unrestricted furniture placement across all 8 architectural rooms of the Mulberry Place Bengaline 2BR unit, paired with transparent multi-tier validation disclosures: `full` for Living/Dining, `bedroom` for Bedrooms 1 and 2, and `limited` for Kitchen, Bathroom, Balcony, and Storage.
 13. **Confirmed Delete & Restoral Lifecycle (`WorkspaceScreen.tsx`):** Accessible confirmation prevents accidental deletion; Cancel is non-mutating, while confirmed deletion uses the established history path so Undo restores both removed and moved furniture items.
 14. **Read-Only 3D Dollhouse Preview (`ThreeDPreviewScreen.tsx` / `ThreeDLayoutPreview.tsx` / `DollhouseFurniture.tsx`):** Isolated visualization of the current layout using procedural room and furniture geometry—including category-specific models for sofas, tables, chairs, desks, storage, and new `BedModel` (mattress + headboard) for bedrooms—an open floor-level Living/Dining divider, direct store reads, responsive orbit/zoom camera controls, and no furniture, clearance, AR, persistence, or report mutations. A previous-screen guard prevents 2D remount normalization after preview navigation.
+15. **Expanded Furniture Catalog, Household Appliances & Non-Standard Geometries (`furnitureCatalog.ts` / `FurnitureInputScreen.tsx` / `DollhouseFurniture.tsx` / `floorPlanDrag.ts`):** Expands the furniture inventory to 57+ presets across 8 domains covering living, bedroom, dining, kitchen & appliances, bathroom, balcony, storage, and electrical/household. Supports custom item definitions, quantity ($1\text{–}10$), non-standard footprints (`rectangle`, `round`, `oval`, `l-shape`), and vertical elevation separation (`mountHeightCm`) for wall-mounted items (TVs, air conditioners, wall mirrors) to eliminate false collisions with floor consoles beneath them and exempt overhead split AC units ($>180\,\text{cm}$) from blocking pedestrian walkway corridors.
 
 ---
 
@@ -530,7 +612,7 @@ src/
   * *Purpose:* Controls active and previous screen navigation (`currentScreen`, `previousScreen`), user identity (`userId`, `username`), authentication state (`authMode`: `'anonymous'` | `'authenticated'`), active session ID, and fixed Mulberry Place unit dimensions. Previous-screen tracking lets the workspace distinguish a read-only 3D return from normal initialization routes.
   * *Key Exports:* `useSessionStore`, `startNewSession()`, `navigateTo()`, `setAuthUser()`.
 * **[furnitureStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/furnitureStore.ts):**
-  * *Purpose:* Maintains the active layout inventory (`items: FurnitureItem[]`). Provides CRUD operations (`addItem`, `updateItem`, `updatePosition`, `removeItem`, `clearAll`) and bulk hydration (`setItems`) when loading saved sessions. Supports unpositioned incoming pieces (`posX: 0, posZ: 0`), dynamic quantity support (`quantity?: number`), category-aware room center assignments (`LIVING_ROOM_CENTER_POS`, `DINING_ROOM_CENTER_POS`, `getDefaultRoomPosition`), and automatically normalizes coordinates in `updateItem` and `updatePosition` (converting values $>10$ cm to meters) to protect unit layout boundaries during 2D workspace handoff.
+  * *Purpose:* Maintains the active layout inventory (`items: FurnitureItem[]`). Provides CRUD operations (`addItem`, `updateItem`, `updatePosition`, `removeItem`, `clearAll`) and bulk hydration (`setItems`) when loading saved sessions. Supports unpositioned incoming pieces (`posX: 0, posZ: 0`), dynamic quantity support (`quantity?: number`), category-aware room center assignments across all 8 rooms (`getDefaultRoomPosition`), expanded `FurnitureCategory` items (`armchair`, `appliance`, `electrical`, `mirror`, `plant`, `bathroom_fixture`, `storage_rack`), custom footprint shapes (`FurnitureShape = 'rectangle' | 'round' | 'oval' | 'l-shape'`), and wall-mounted placement parameters (`placementType?: 'floor' | 'wall'`, `mountHeightCm?: number`, `wallSide?: WallSide`). Automatically normalizes coordinates in `updateItem` and `updatePosition` (converting values $>10$ cm to meters) to protect unit layout boundaries during 2D workspace handoff.
   * *Key Exports:* `useFurnitureStore`, `LIVING_ROOM_CENTER_POS`, `DINING_ROOM_CENTER_POS`, `getDefaultRoomPosition()`.
 * **[violationStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/violationStore.ts):**
   * *Purpose:* Holds active clearance violations, warning recommendations, space score estimates, and session progress state (`initialFindingKeys`, `touchedItemIds`).
@@ -568,8 +650,8 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
       $$\text{effectiveWidth} = \text{lengthCm} \cdot |\sin\theta| + \text{widthCm} \cdot |\cos\theta|$$
       *Conservative Property:* For non-orthogonal orientations, this slightly over-estimates occupied footprint, guaranteeing that clearances are under-reported rather than falsely validated as clear.
     * `toBounds(item: FurnitureItem): ItemBounds`: Converts centimeter item parameters and center position $(posX, posZ)$ into meter-space axis-aligned minimum/maximum coordinates.
-    * `findLayoutViolation(bounds: ItemBounds[], roomWidthM: number, roomLengthM: number): LayoutViolation | null`: High-performance, exception-free collision and boundary predicate. Employs a tolerance epsilon (`FEASIBILITY_EPSILON_M = 0.01` or 1cm) to allow flush wall placement without registering false-positive violations.
-    * `runClearanceAnalysis(items: FurnitureItem[], roomWidthCm: number, roomLengthCm: number): ClearanceResult`: Main entry point. Conducts $O(N^2)$ pairwise checks scoped strictly by room (`aRoom === bRoom`) to isolate spaces and prevent cross-partition false positives. Evaluates L1, L3, L2 for sofa-table pairs, D4 for seated dining passage, D5 for dining furniture pairs, B1 for bed access, and B2 for wardrobe clearance. Conducts wall checks (L1 for all items, D1 for dining tables, D2/D3 for dining chairs, L5 for sofa conversation depth, L4 for main room traffic width, orientation-aware B1 bed side/foot clearance, and B2 wardrobe front clearance). Attaches `roomId` to every violation for multi-room precision.
+    * `findLayoutViolation(bounds: ItemBounds[], roomWidthM: number, roomLengthM: number): LayoutViolation | null`: High-performance, exception-free collision and boundary predicate. Incorporates vertical elevation checking (`isVerticalOverlap()`), allowing elevated wall-mounted objects (e.g. TVs, AC units) to share $(X, Z)$ horizontal footprint space with low floor consoles without triggering false collisions. Employs a tolerance epsilon (`FEASIBILITY_EPSILON_M = 0.01` or 1cm) to allow flush wall placement without registering false-positive violations.
+    * `runClearanceAnalysis(items: FurnitureItem[], roomWidthCm: number, roomLengthCm: number): ClearanceResult`: Main entry point. Conducts $O(N^2)$ pairwise checks scoped strictly by room (`aRoom === bRoom`) to isolate spaces and prevent cross-partition false positives. Evaluates L1, L3, L2 for sofa-table pairs (with `armchair` participating alongside `sofa`), D4 for seated dining passage, D5 for dining furniture pairs, B1 for bed access, and B2 for wardrobe clearance. Clearance rules isolate domain-appropriate objects: appliances, electrical fixtures, mirrors, and plants are verified for room containment and physical non-overlap without generating spurious dining or bedroom rule violations. Walkway corridor checking (Rule L4) automatically excludes overhead wall AC units ($>180\,\text{cm}$). Attaches `roomId` to every violation for multi-room precision.
 
 * **[ruleGuidance.ts](file:///c:/Users/Dell/Habi3D-Project/src/engine/ruleGuidance.ts) — Human-Centered Guidance & Plain-English Translation:**
   * *Purpose:* Cognitive abstraction layer converting technical rule IDs and raw centimeter shortfalls into resident-friendly language, actionable resolution steps ("DO THIS"), and color-blindness safe display ranges for UI clearance meters.
@@ -619,13 +701,13 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
 ### 2.3 2D Floor Plan & Drag Physics (`src/components/`)
 
 * **[CondoFloorPlan.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/CondoFloorPlan.tsx):**
-  * *Purpose:* Interactive SVG floor plan renderer. Renders unit boundaries, muted non-active room shading, lettered/numbered wayfinding reference grids, dimension callouts, rectangular/circular furniture shapes, rotation controls, selection indicators, main walkway corridor overlay, and the architectural bedroom wall blocker (`BEDROOM WALL BLOCKER` along $y = 340\text{ cm}$) with dynamic red warning highlighting for non-allowed room drop targets.
+  * *Purpose:* Interactive SVG floor plan renderer across all 8 rooms. Renders unit boundaries, room validation indicators, lettered/numbered wayfinding reference grids, dimension callouts, multi-shape furniture footprints (rectangles, circles for `round`, ellipses for `oval`, and 6-point polygons for `l-shape`), dashed outline styling and `[WALL <h>cm]` badges for wall-mounted items, rotation controls, selection indicators, and main walkway corridor overlay.
   * *Key Exports:* `CondoFloorPlan` (React Component).
 * **[floorPlanDrag.ts](file:///c:/Users/Dell/Habi3D-Project/src/components/floorPlanDrag.ts):**
-  * *Purpose:* Free-movement physics and drag coordinate engine. Restricts movement within outer wall envelopes, computes live gap readouts, alignment guide snap-lines, collision detection, auto-detects room membership based on center point drop coordinates, and enforces the bedroom boundary barrier (`BEDROOM_DIVIDER_WALL_Z_M = 3.40`, `isItemInBedroom()`, `isItemInLivingOrDining()`). Includes `packItemsIntoRoom()` layout packer.
-  * *Key Exports:* `unitEnvelope`, `packItemsIntoRoom()`, `BEDROOM_DIVIDER_WALL_Z_M`, `isItemInBedroom()`, `isItemInLivingOrDining()`, `canPlace()`, drag handlers.
+  * *Purpose:* Free-movement physics and drag coordinate engine. Restricts movement within outer wall envelopes, computes live gap readouts, alignment guide snap-lines, collision detection with vertical elevation separation (`isVerticalOverlap()`), auto-detects room membership based on center point drop coordinates across all 8 rooms, and includes `packItemsIntoRoom()` layout packer.
+  * *Key Exports:* `unitEnvelope`, `packItemsIntoRoom()`, `isVerticalOverlap()`, `overlappingItemIds()`, `canPlace()`, drag handlers.
 * **[floorPlanGeometry.ts](file:///c:/Users/Dell/Habi3D-Project/src/components/floorPlanGeometry.ts):**
-  * *Purpose:* Converts abstract `FurnitureItem` records into concrete 2D SVG bounding geometry (`PlanRect`), handling rotation transformations and shape types (`rectangle` vs `round`).
+  * *Purpose:* Converts abstract `FurnitureItem` records into concrete 2D SVG bounding geometry (`PlanRect` with `placementType` and `mountHeightCm`), handling rotation transformations and multi-shape footprints (`rectangle`, `round`, `oval`, `l-shape`).
   * *Key Exports:* `projectItems()`, `PlanRect`.
 * **[gridOverlay.ts](file:///c:/Users/Dell/Habi3D-Project/src/components/gridOverlay.ts):**
   * *Purpose:* Computes unit-wide wayfinding grid coordinates (~60cm cells labeled A1 through F8) overlaid on the 2D plan.
@@ -665,8 +747,8 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
   * *Geometry Strategy:* Derives unit dimensions from room extents, renders one floor tile per room, merges collinear edge intervals, and generates deduplicated exterior/interior wall meshes. The shared Living/Dining edge is omitted from raised wall generation and rendered as a subtle floor-level divider derived from the same room coordinates.
 * **[DollhouseFurniture.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/DollhouseFurniture.tsx):**
   * *Purpose:* Converts each `FurnitureItem` into lightweight category-aware procedural meshes.
-  * *Data Mapping:* `lengthCm`, `widthCm`, and `heightCm` are divided by `100`; `posX`, `posZ`, and `rotationY` are consumed directly; `shape` selects rectangular, round/oval, or L-shaped construction.
-  * *Procedural Models & Categories:* Includes specialized procedural models for sofas, coffee tables, dining tables, dining chairs, work desks, storage cabinets, TV stands, and `BedModel` (mattress, platform frame, headboard) for bedrooms, alongside category-specific color tokens (indigo `#6366f1` for beds, purple `#8b5cf6` for wardrobes).
+  * *Data Mapping:* `lengthCm`, `widthCm`, and `heightCm` are divided by `100`; `posX`, `posZ`, and `rotationY` are consumed directly; `shape` selects rectangular, round/oval, or L-shaped construction. Wall-mounted items are elevated to their true vertical mounting height ($y = \text{mountHeightCm} / 100$).
+  * *Procedural Models & Categories:* Includes specialized procedural models for sofas, coffee tables, dining tables, dining chairs, work desks, storage cabinets, TV stands, `BedModel` (mattress, platform frame, headboard), household appliances (refrigerators with dual doors and handles, washing machines with console and drum porthole, countertop microwaves, ovens, water dispensers), electrical fixtures (pedestal/desk fans with fan cage, floor lamps with shade, wall AC units with louver grille, flat-screen televisions), bathroom vanities, hampers, storage racks, standing/wall mirrors, potted plants, and armchairs. Category-specific color tokens ensure instant visual recognition across all 8 rooms.
   * *Read-Only Contract:* Contains no store import and receives one item through props. Meshes define no drag, rotate, resize, delete, add, or room-assignment handlers.
 
 ### 2.6 Design Tokens (`src/components/tokens/`)
@@ -687,7 +769,9 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
 
 ### 2.8 Geometry, Validation & Backend Integration (`src/data/`, `src/utils/` & `src/supabase.ts`)
 
-* **[condoLayout.ts](file:///c:/Users/Dell/Habi3D-Project/src/data/condoLayout.ts):** Geometry specification for Mulberry Place 2BR (`CONDO_ROOMS`: 8 zones). `getRoomForCategory()` routes furniture categories across the entire condominium unit: beds and wardrobes to Bedroom 1 (or Bedroom 2), dining tables/chairs to Dining, and sofas/entertainment/generic items to Living. Defines `validationLevel` (`full` | `bedroom` | `limited`) and `validationNote` for each room, alongside `ROOM_CENTERS` for deterministic room spawning.
+* **[furnitureCatalog.ts](file:///c:/Users/Dell/Habi3D-Project/src/data/furnitureCatalog.ts):** Comprehensive furniture catalog repository containing 57+ presets organized across 8 functional domains (`CATALOG_DOMAINS`): Living Room, Bedroom, Dining Area, Kitchen & Appliances, Bathroom, Balcony & Outdoor, Storage & Hallway, and Electrical & Household. Defines realistic metric default dimensions ($L \times W \times H\,\text{cm}$), default rooms, appropriate footprint shapes (`rectangle`, `round`, `oval`, `l-shape`), and placement modes (`floor` vs `wall`).
+  * *Key Exports:* `CATALOG_DOMAINS`, `CATALOG_PRESETS`, `CatalogPresetItem`.
+* **[condoLayout.ts](file:///c:/Users/Dell/Habi3D-Project/src/data/condoLayout.ts):** Geometry specification for Mulberry Place 2BR (`CONDO_ROOMS`: 8 zones). Defines `allowedCategories` for all 8 rooms, supporting beds, wardrobes, desks, dining sets, appliances, bathroom fixtures, storage racks, and electrical items in their appropriate architectural zones. `getRoomForCategory()` provides fallback room assignment routing, and `ROOM_CENTERS` supplies deterministic coordinates for layout spawning. Defines `validationLevel` (`full` | `bedroom` | `limited`) and `validationNote` for each room.
 * **[furnitureValidation.ts](file:///c:/Users/Dell/Habi3D-Project/src/utils/furnitureValidation.ts):** Dimension validation guard evaluating furniture against Mulberry Living ($260\text{ cm} \times 360\text{ cm}$) and Dining ($260\text{ cm} \times 180\text{ cm}$) boundaries. Identifies oversized pieces ($>360\text{ cm}$ length, $>260\text{ cm}$ width, $>260\text{ cm}$ height).
   * *Key Exports:* `isFurnitureDimensionOversized()`, `findOversizedFurniture()`.
 * **[roomData.ts](file:///c:/Users/Dell/Habi3D-Project/src/data/roomData.ts):** Fixed unit dimensions (`MULBERRY_PLACE_2BR`: Living 350x450cm, Dining 300x350cm).
@@ -764,7 +848,7 @@ workspace (same furnitureStore layout)
 | :--- | :--- | :--- | :--- | :--- |
 | **Landing / Entry** | `src/screens/EntryScreen.tsx` | `'entry'` | **Active** | Primary entry point. Two-tone gradient wordmark ("Habi3D"), frosted glass card, clean authentication hierarchy: **Create Account** (Auth), **Log In** (Auth text link). |
 | **Authentication** | `src/screens/AuthScreen.tsx` | `'auth'` | **Active** | Manages user sign-up and login using username input mapped internally to `${username}@habi3d.local`. Checks Supabase `saved_sessions` for existing layout; prompts user to Resume existing layout or Start Fresh. |
-| **Furniture Input** | `src/screens/FurnitureInputScreen.tsx` | `'furnitureInput'` | **Active** | Step 1/2 of layout setup. Furniture item catalog selection, custom dimension entry with decimal-safe inputs (`inputMode="decimal"`), WebXR camera measuring (with `planeDetection` stripped for Android stability), and dining chair quantity selector (1–8 chairs, default 4). On "Confirm", appends the configured item to the "Furniture added" list on-screen and resets the form, allowing users to configure multiple pieces before explicitly clicking "Position Furniture" to route to `'positionMap'`. |
+| **Furniture Input** | `src/screens/FurnitureInputScreen.tsx` | `'furnitureInput'` | **Active** | Step 1/2 of layout setup. Comprehensive 57+ item catalog with 8 domain tabs, preset search filter, custom item creation mode, 8-room target picker, wall-mount toggle with mounting height ($10\text{–}250\,\text{cm}$), footprint shape selector (`rectangle`, `round`, `oval`, `l-shape`), orientation buttons, quantity stepper ($1\text{–}10$), live 3D procedural `ShapePreview`, summary review card, and decimal-safe dimensions (`inputMode="decimal"`). WebXR AR camera measuring preserved. On "Confirm", appends the configured item to the "Furniture added" summary before routing to `'positionMap'` or 2D workspace. |
 | **AR Floor Placement & 2D Handoff** | `src/screens/PositionMapScreen.tsx` | `'positionMap'` | **Active** | Direct WebXR floor hit-testing (`PlacementScene`, `useXRHitTest`) with Single-Tap Room Entry Corner Anchor (`waitingForAnchor`: "📍 Tap the room entry corner to align") establishing calibration against `ENTRY_DOOR_BLUEPRINT` ($X=0.2\text{m}, Z=0.1\text{m}$) using viewer pose yaw. Renders real-time 3D ghost model, tap-to-place, yaw rotation slider, "Re-place", and "Confirm placement". On confirmation, executes `applyCalibration`, category-aware room routing (`'dining'` vs `'living'`), bounds-checking, and automatic batch-spawning of dining chairs if `quantity > 1` with a non-overlapping 2-column spatial layout before navigating to `'workspace'`. |
 | **Workspace (Interactive Plan)** | `src/screens/WorkspaceScreen.tsx` | `'workspace'`, `'analysis'`, `'recommendations'`, `'recommendation'` | **Active** | Core 2D interactive layout optimization hub (~82% viewport canvas). Free-movement physics drag, architectural bedroom wall blocker, live tabular-numeral gap readouts, alignment guides, collision detection, unit-wide grid overlay (A1-F8), responsive text-based toolbar ("Rotate", "Undo", "Delete"), confirmed deletion with undo restoration, tabbed inspection panel, and walkway access indicators. Its mount initializer skips all normalization writes specifically when `previousScreen === 'threeDPreview'`. |
 | **3D Layout Preview** | `src/screens/ThreeDPreviewScreen.tsx` | `'threeDPreview'` | **Active** | Read-only dollhouse visualization of the current `furnitureStore.items` layout. Renders the predefined Mulberry Place 2BR room geometry and lightweight furniture using stored shape, category, dimensions, position, and rotation. Supports bounded orbit and zoom only; exposes no furniture editing, clearance visualization, autosave, AR, or reporting behavior. The Living/Dining transition is open with a floor-level divider, and the guarded return route preserves exact store state. |

@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import CondoFloorPlan, { type FocusTarget } from '../components/CondoFloorPlan';
 import WorkspaceHeader from '../components/WorkspaceHeader';
-import RecommendationButton from '../components/RecommendationButton';
 import RecommendationSheet from '../components/RecommendationSheet';
 import RecommendationCard from '../components/RecommendationCard';
 import RecommendationPanel from '../components/RecommendationPanel';
+import MobileWorkspaceHub from '../components/MobileWorkspaceHub';
 import { useWorkspaceScroll } from '../hooks/useWorkspaceScroll';
 import { color as t, radius, fontFamily } from '../components/tokens';
 import { runClearanceAnalysis } from '../engine/clearance';
@@ -656,14 +656,17 @@ export default function WorkspaceScreen() {
               />
             )}
 
-            {/* Mobile Floating Recommendations Button */}
-            <div className="wksp-mobile-rec-trigger">
-              <RecommendationButton
-                count={recommendationList.length}
-                onClick={() => setRecSheetOpen(true)}
-                active={recSheetOpen}
-              />
-            </div>
+            {/* Mobile Actionable Hub Bar (Improvements, Placed Items, Standards & Rules) */}
+            <MobileWorkspaceHub
+              recommendationCount={recommendationList.length}
+              itemCount={preview.length}
+              activeTab={panelTab}
+              isSheetOpen={recSheetOpen}
+              onOpenTab={(tab) => {
+                setPanelTab(tab);
+                setRecSheetOpen(true);
+              }}
+            />
           </div>
 
           {/* Toast Warning */}
@@ -684,6 +687,19 @@ export default function WorkspaceScreen() {
               )}
             </span>
             <div style={toolbarTextRow}>
+              {/* Quick Mobile Access to Insights / Sheet */}
+              <button
+                className="wksp-text-btn wksp-mobile-toolbar-btn"
+                style={textToolbarBtn(false)}
+                onClick={() => {
+                  setPanelTab('recommendations');
+                  setRecSheetOpen(true);
+                }}
+                aria-label="View actionable improvements, items, and rules"
+                title="View actionable improvements, items, and rules"
+              >
+                💡 {recommendationList.length > 0 ? `${recommendationList.length} Fixes` : 'All Clear'}
+              </button>
               <button
                 className="wksp-text-btn"
                 style={textToolbarBtn(!selectedItem)}
@@ -746,13 +762,25 @@ export default function WorkspaceScreen() {
         </div>
       </div>
 
-      {/* Mobile Recommendations Bottom Sheet */}
+      {/* Mobile Recommendations, Items & Rules Bottom Sheet */}
       <RecommendationSheet
         isOpen={recSheetOpen}
         onClose={() => setRecSheetOpen(false)}
+        activeTab={panelTab}
+        onTabChange={setPanelTab}
         recommendations={recommendationList}
         selectedId={activeRec?.furnitureId ?? selectedId}
         onSelectRecommendation={handleSelectRecommendation}
+        items={preview}
+        itemStatuses={itemStatuses}
+        onSelectItem={(id) => {
+          handleSelectItem(id);
+          setRecSheetOpen(false);
+        }}
+        onLaunchAR={(item) => {
+          setRecSheetOpen(false);
+          handleLaunchAR(item);
+        }}
       />
 
       {deleteConfirmationOpen && selectedItem && (
