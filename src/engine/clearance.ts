@@ -93,6 +93,17 @@ export type LayoutViolation =
 
 const FEASIBILITY_EPSILON_M = 0.01;
 
+function isVerticalOverlapBounds(a: FurnitureItem, b: FurnitureItem): boolean {
+  const isAWall = a.placementType === 'wall';
+  const isBWall = b.placementType === 'wall';
+  if (!isAWall && !isBWall) return true;
+  const aBottom = isAWall ? (a.mountHeightCm ?? 120) : 0;
+  const aTop = aBottom + (a.heightCm || 40);
+  const bBottom = isBWall ? (b.mountHeightCm ?? 120) : 0;
+  const bTop = bBottom + (b.heightCm || 40);
+  return Math.min(aTop, bTop) - Math.max(aBottom, bBottom) > 5;
+}
+
 /**
  * Fast overlap / out-of-bounds predicate. Returns the FIRST violation
  * found, or null. Pure and exception-free — safe to call on every
@@ -120,6 +131,7 @@ export function findLayoutViolation(
     for (let j = i + 1; j < bounds.length; j += 1) {
       const a = bounds[i];
       const b = bounds[j];
+      if (!isVerticalOverlapBounds(a.item, b.item)) continue;
       const overlapX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
       const overlapZ = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ);
       if (overlapX > e && overlapZ > e) {
@@ -347,9 +359,9 @@ function getSpaceScoreBefore(
   return Math.round((freeAreaCm2 / totalFloorAreaCm2) * 1000) / 10;
 }
 
-const LIVING_CATEGORIES: FurnitureCategory[] = ['sofa', 'coffee_table', 'tv_stand', 'side_table', 'work_desk'];
+const LIVING_CATEGORIES: FurnitureCategory[] = ['sofa', 'coffee_table', 'tv_stand', 'side_table', 'work_desk', 'armchair'];
 const DINING_CATEGORIES: FurnitureCategory[] = ['dining_table', 'dining_chair'];
-const GROUPING_CATEGORIES: FurnitureCategory[] = ['sofa', 'coffee_table', 'tv_stand', 'side_table', 'cabinet', 'other'];
+const GROUPING_CATEGORIES: FurnitureCategory[] = ['sofa', 'coffee_table', 'tv_stand', 'side_table', 'armchair', 'cabinet', 'other'];
 
 function isLivingItem(item: FurnitureItem): boolean {
   return LIVING_CATEGORIES.includes(item.category);
@@ -545,6 +557,9 @@ export function runClearanceAnalysis(
         const pathMaxZ = (path.y + path.height) / 100;
 
         for (const b of bounds) {
+          if (b.item.placementType === 'wall' && (b.item.mountHeightCm ?? 120) >= 180) {
+            continue;
+          }
           const overlapX = Math.min(b.maxX, pathMaxX) - Math.max(b.minX, pathMinX);
           const overlapZ = Math.min(b.maxZ, pathMaxZ) - Math.max(b.minZ, pathMinZ);
 

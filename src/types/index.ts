@@ -23,7 +23,16 @@ export type FurnitureCategory =
   | 'cabinet'
   | 'side_table'
   | 'work_desk'
+  | 'armchair'
+  | 'appliance'
+  | 'electrical'
+  | 'mirror'
+  | 'plant'
+  | 'bathroom_fixture'
+  | 'storage_rack'
   | 'other';
+
+export type PlacementType = 'floor' | 'wall';
 
 export interface FurnitureItem {
   id: string;
@@ -38,6 +47,9 @@ export interface FurnitureItem {
   rotationY: number;
   roomId?: string;
   quantity?: number;
+  placementType?: PlacementType;
+  mountHeightCm?: number;
+  wallSide?: 'west' | 'east' | 'north' | 'south';
 }
 
 export interface RoomDimensions {

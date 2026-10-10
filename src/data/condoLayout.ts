@@ -26,7 +26,7 @@ export const CONDO_ROOMS: RoomZone[] = [
     height: 100,
     bgColor: '#B855C8',
     textColor: '#FFFFFF',
-    allowedCategories: ['side_table', 'other'],
+    allowedCategories: ['side_table', 'dining_table', 'dining_chair', 'storage_rack', 'plant', 'armchair', 'cabinet', 'other'],
     validationLevel: 'limited',
     validationNote: 'Unit perimeter and exterior boundary validation',
   },
@@ -39,7 +39,7 @@ export const CONDO_ROOMS: RoomZone[] = [
     height: 240,
     bgColor: '#6B5B4F',
     textColor: '#FFFFFF',
-    allowedCategories: ['bed', 'wardrobe', 'cabinet', 'side_table', 'work_desk', 'other'],
+    allowedCategories: ['bed', 'wardrobe', 'cabinet', 'side_table', 'work_desk', 'dining_chair', 'mirror', 'electrical', 'armchair', 'other'],
     validationLevel: 'bedroom',
     validationNote: 'Time-Saver Standards B1–B2 bedroom circulation and access checks',
   },
@@ -52,7 +52,7 @@ export const CONDO_ROOMS: RoomZone[] = [
     height: 240,
     bgColor: '#5A5A5A',
     textColor: '#FFFFFF',
-    allowedCategories: ['bed', 'wardrobe', 'cabinet', 'side_table', 'work_desk', 'other'],
+    allowedCategories: ['bed', 'wardrobe', 'cabinet', 'side_table', 'work_desk', 'dining_chair', 'mirror', 'electrical', 'armchair', 'other'],
     validationLevel: 'bedroom',
     validationNote: 'Time-Saver Standards B1–B2 bedroom circulation and access checks',
   },
@@ -65,7 +65,7 @@ export const CONDO_ROOMS: RoomZone[] = [
     height: 360,
     bgColor: '#EF5350',
     textColor: '#FFFFFF',
-    allowedCategories: ['sofa', 'coffee_table', 'tv_stand', 'cabinet', 'side_table', 'work_desk', 'other'],
+    allowedCategories: ['sofa', 'coffee_table', 'tv_stand', 'cabinet', 'side_table', 'work_desk', 'armchair', 'electrical', 'plant', 'mirror', 'storage_rack', 'other'],
     validationLevel: 'full',
     validationNote: 'Time-Saver Standards L1–L5 living clearance and trafficway validation',
   },
@@ -78,7 +78,7 @@ export const CONDO_ROOMS: RoomZone[] = [
     height: 120,
     bgColor: '#FFB74D',
     textColor: '#16203A',
-    allowedCategories: ['wardrobe', 'cabinet', 'other'],
+    allowedCategories: ['wardrobe', 'cabinet', 'storage_rack', 'appliance', 'other'],
     validationLevel: 'limited',
     validationNote: 'Storage room footprint and boundary checks',
   },
@@ -91,7 +91,7 @@ export const CONDO_ROOMS: RoomZone[] = [
     height: 160,
     bgColor: '#5C6BC0',
     textColor: '#FFFFFF',
-    allowedCategories: ['cabinet', 'other'],
+    allowedCategories: ['cabinet', 'bathroom_fixture', 'mirror', 'other'],
     validationLevel: 'limited',
     validationNote: 'Utility perimeter and door clearance checks',
   },
@@ -104,7 +104,7 @@ export const CONDO_ROOMS: RoomZone[] = [
     height: 180,
     bgColor: '#00897B',
     textColor: '#FFFFFF',
-    allowedCategories: ['dining_table', 'dining_chair', 'cabinet', 'other'],
+    allowedCategories: ['dining_table', 'dining_chair', 'cabinet', 'side_table', 'armchair', 'storage_rack', 'other'],
     validationLevel: 'full',
     validationNote: 'Time-Saver Standards D1–D5 dining passage and seating clearance checks',
   },
@@ -117,7 +117,7 @@ export const CONDO_ROOMS: RoomZone[] = [
     height: 260,
     bgColor: '#CFD8DC',
     textColor: '#16203A',
-    allowedCategories: ['cabinet', 'dining_table', 'other'],
+    allowedCategories: ['cabinet', 'dining_table', 'appliance', 'electrical', 'storage_rack', 'other'],
     validationLevel: 'limited',
     validationNote: 'Kitchen corridor and boundary validation',
   },
@@ -174,11 +174,24 @@ export function getRoomForCategory(category: FurnitureCategory, label: string = 
     case 'sofa':
     case 'coffee_table':
     case 'tv_stand':
+    case 'armchair':
       return 'living';
     case 'work_desk':
       return 'bedroom2';
+    case 'appliance':
+      return normLabel.includes('wash') || normLabel.includes('laundry') ? 'kitchen' : 'kitchen';
+    case 'bathroom_fixture':
+      return 'bathroom';
+    case 'storage_rack':
+      return normLabel.includes('shoe') ? 'storage' : normLabel.includes('balcony') ? 'balcony' : 'storage';
+    case 'plant':
+      return normLabel.includes('balcony') || normLabel.includes('pot') ? 'balcony' : 'living';
+    case 'mirror':
+      return normLabel.includes('bath') ? 'bathroom' : 'bedroom1';
+    case 'electrical':
+      return normLabel.includes('desk') || normLabel.includes('bed') ? 'bedroom2' : 'living';
     case 'cabinet':
-      return normLabel.includes('kitchen') ? 'kitchen' : normLabel.includes('storage') ? 'storage' : 'living';
+      return normLabel.includes('kitchen') ? 'kitchen' : normLabel.includes('storage') ? 'storage' : normLabel.includes('bath') ? 'bathroom' : 'living';
     case 'side_table':
       return 'living';
     case 'other':

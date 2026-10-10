@@ -302,6 +302,183 @@ const baselineResults = runAllClearanceTestCases();
 assert.ok(baselineResults.allPassed, 'All baseline clearance test cases must continue passing without regression');
 console.log('  ✓ All baseline clearance rules, priority rankings, and rotation cases passed with 0 regressions.');
 
+// ============================================================================
+// TEST SUITE 8: Expanded Catalog, Custom Shapes, Wall Mounting & Appliances
+// ============================================================================
+console.log('8. Testing Expanded Furniture Catalog, Shapes & Wall-Mounted Objects...');
+import { CATALOG_PRESETS, CATALOG_DOMAINS } from '../data/furnitureCatalog.ts';
+import { createFurnitureShape } from '../ar/shapeLibrary.ts';
+import { projectItems } from '../components/floorPlanGeometry.ts';
+import { overlappingItemIds, isVerticalOverlap } from '../components/floorPlanDrag.ts';
+
+// 8.1 Catalog Domains and Presets Check
+assert.ok(CATALOG_DOMAINS.length >= 8, 'Catalog must support all domains across the condo');
+assert.ok(CATALOG_PRESETS.length >= 35, `Catalog must have comprehensive presets, found ${CATALOG_PRESETS.length}`);
+
+// Check specific requested items exist in catalog
+const requiredItems = [
+  '3-Seater Sofa',
+  'L-Shaped Sectional Sofa',
+  'Armchair / Accent Chair',
+  'Coffee Table (Rectangular)',
+  'Coffee Table (Round)',
+  'TV Stand / Media Console',
+  'Television (Stand Mounted)',
+  'Bookshelf / Display Shelf',
+  'Floor Lamp',
+  'Decorative Floor Plant',
+  'Queen Bed',
+  'Double Bed',
+  'Single Bed',
+  'Wardrobe / Closet',
+  'Bedroom Dresser',
+  'Bedside Nightstand',
+  'Full-Length Standing Mirror',
+  'Study Desk',
+  'Dining Table (Rectangular 6-Seater)',
+  'Dining Table (Square 4-Seater)',
+  'Dining Table (Round 4-Seater)',
+  'Dining Table (Oval 6-Seater)',
+  'Dining Chair',
+  'Bar Table / High Top',
+  'Bar Stool',
+  'Sideboard / Buffet Cabinet',
+  'Refrigerator (Two-Door)',
+  'Washing Machine (Front-Load)',
+  'Microwave Oven',
+  'Water Dispenser (Freestanding)',
+  'Bathroom Vanity Unit',
+  'Bathroom Storage Cabinet',
+  'Laundry Basket / Hamper',
+  'Shoe Rack',
+  'Utility Shelf',
+  'Electric Pedestal Fan',
+  'Desk Fan (Compact)',
+  'Wall-Mounted Air Conditioner',
+  'Wall-Mounted Television',
+  'Wall-Mounted Mirror',
+];
+
+for (const name of requiredItems) {
+  const found = CATALOG_PRESETS.find((p) => p.label === name);
+  assert.ok(found, `Catalog must include required preset: ${name}`);
+  assert.ok(found.lengthCm > 0 && found.widthCm > 0 && found.heightCm > 0, `${name} must have positive dimensions`);
+}
+
+// 8.2 Category Room Mappings for New Items
+assert.equal(getRoomForCategory('appliance', 'Refrigerator (Two-Door)'), 'kitchen');
+assert.equal(getRoomForCategory('bathroom_fixture', 'Bathroom Vanity Unit'), 'bathroom');
+assert.equal(getRoomForCategory('storage_rack', 'Shoe Rack'), 'storage');
+assert.equal(getRoomForCategory('plant', 'Balcony Plant Pot'), 'balcony');
+assert.equal(getRoomForCategory('mirror', 'Standing Mirror'), 'bedroom1');
+assert.equal(getRoomForCategory('electrical', 'Electric Pedestal Fan'), 'living');
+assert.equal(getRoomForCategory('armchair', 'Accent Armchair'), 'living');
+
+// 8.3 Nonstandard Shapes & 3D Geometry
+const rectShape = createFurnitureShape('rectangle', { lengthCm: 210, widthCm: 90, heightCm: 85 });
+assert.ok(rectShape.geometry, 'Rectangle geometry must generate');
+assert.equal(rectShape.boundingBox.widthM, 2.1);
+assert.equal(rectShape.boundingBox.depthM, 0.9);
+
+const roundShape = createFurnitureShape('round', { lengthCm: 110, widthCm: 110, heightCm: 75 });
+assert.ok(roundShape.geometry, 'Round cylinder geometry must generate');
+assert.equal(roundShape.boundingBox.widthM, 1.1);
+
+const ovalShape = createFurnitureShape('oval', { lengthCm: 180, widthCm: 100, heightCm: 75 });
+assert.ok(ovalShape.geometry, 'Oval cylinder geometry must generate');
+assert.equal(ovalShape.boundingBox.widthM, 1.8);
+
+const lShape = createFurnitureShape('l-shape', { lengthCm: 240, widthCm: 160, heightCm: 85 });
+assert.ok(lShape.geometry, 'L-Shape merged geometry must generate');
+assert.equal(lShape.boundingBox.widthM, 2.4);
+
+// 8.4 Wall-Mounted vs Floor-Standing Height & Overlap Separation
+const floorConsole: FurnitureItem = {
+  id: 'tv-console',
+  label: 'Media Console',
+  category: 'tv_stand',
+  shape: 'rectangle',
+  lengthCm: 160,
+  widthCm: 45,
+  heightCm: 50,
+  posX: 1.3,
+  posZ: 4.0,
+  rotationY: 0,
+  roomId: 'living',
+  placementType: 'floor',
+};
+
+const wallMountedTV: FurnitureItem = {
+  id: 'wall-tv',
+  label: 'Wall-Mounted Television',
+  category: 'electrical',
+  shape: 'rectangle',
+  lengthCm: 125,
+  widthCm: 10,
+  heightCm: 72,
+  posX: 1.3, // identical X/Z center directly above the floor console!
+  posZ: 4.0,
+  rotationY: 0,
+  roomId: 'living',
+  placementType: 'wall',
+  mountHeightCm: 120, // mounted at 120cm elevation, above 50cm console
+};
+
+assert.equal(
+  isVerticalOverlap(floorConsole, wallMountedTV),
+  false,
+  'Floor console (0-50cm) and Wall TV (120-192cm) must NOT overlap vertically',
+);
+
+const consoleOverlaps = overlappingItemIds(floorConsole, [floorConsole, wallMountedTV]);
+assert.equal(
+  consoleOverlaps.length,
+  0,
+  'Elevated wall-mounted TV must NOT trigger floor collision with console below it',
+);
+
+// Two floor items at same spot MUST overlap
+const duplicateFloorItem: FurnitureItem = {
+  ...floorConsole,
+  id: 'console-dup',
+};
+const floorOverlaps = overlappingItemIds(floorConsole, [floorConsole, duplicateFloorItem]);
+assert.equal(floorOverlaps.length, 1, 'Two floor items occupying same footprint must trigger collision overlap');
+
+// 8.5 2D Plan Projections
+const projected = projectItems([floorConsole, wallMountedTV, roundShape as unknown as FurnitureItem]);
+assert.equal(projected[0].shape, 'rectangle');
+assert.equal(projected[0].placementType, 'floor');
+assert.equal(projected[1].placementType, 'wall');
+assert.equal(projected[1].mountHeightCm, 120);
+
+// 8.6 Clearance Isolation: Appliance in kitchen does not trigger bed/dining rules
+const fridge: FurnitureItem = {
+  id: 'fridge-1',
+  label: 'Kitchen Refrigerator',
+  category: 'appliance',
+  shape: 'rectangle',
+  lengthCm: 70,
+  widthCm: 68,
+  heightCm: 178,
+  posX: 3.85,
+  posZ: 7.5,
+  rotationY: 0,
+  roomId: 'kitchen',
+};
+
+const kitchenAnalysis = runClearanceAnalysis([fridge], 510, 880);
+const badApplianceViolations = kitchenAnalysis.violations.filter(
+  (v) => v.furnitureId === 'fridge-1' && (v.ruleCode === 'B1' || v.ruleCode === 'B2' || v.ruleCode.startsWith('D')),
+);
+assert.equal(
+  badApplianceViolations.length,
+  0,
+  'Kitchen refrigerator must not trigger irrelevant bedroom or dining clearance rules',
+);
+
+console.log('  ✓ Catalog presets verified, nonstandard shapes generated, wall vs floor overlap validated.');
+
 console.log('\n=======================================================');
 console.log('ALL SYSTEM REVISION AUTOMATED TESTS PASSED SUCCESSFULLY!');
 console.log('=======================================================');

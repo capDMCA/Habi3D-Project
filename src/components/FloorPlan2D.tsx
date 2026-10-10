@@ -139,7 +139,7 @@ export default function FloorPlan2D({
   const renderedWidthPx = containerWidthPx > 0 ? containerWidthPx * scale : undefined;
   const renderedHeightPx = renderedWidthPx !== undefined ? (renderedWidthPx / vbW) * vbH : undefined;
 
-  function handlePointerDown(e: ReactPointerEvent<SVGRectElement>, itemId: string) {
+  function handlePointerDown(e: ReactPointerEvent<SVGElement>, itemId: string) {
     if (onSelectItem) {
       onSelectItem(itemId);
     }
@@ -150,13 +150,13 @@ export default function FloorPlan2D({
     interactive.onDragStart(itemId);
   }
 
-  function handlePointerMove(e: ReactPointerEvent<SVGRectElement>) {
+  function handlePointerMove(e: ReactPointerEvent<SVGElement>) {
     if (!interactive || !draggingRef.current || !svgRef.current) return;
     const { xm, zm } = eventToWorldMetres(svgRef.current, e);
     interactive.onDragMove(xm, zm);
   }
 
-  function handlePointerUp(e: ReactPointerEvent<SVGRectElement>) {
+  function handlePointerUp(e: ReactPointerEvent<SVGElement>) {
     if (!interactive || !draggingRef.current) return;
     draggingRef.current = false;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -267,26 +267,83 @@ export default function FloorPlan2D({
 
         const strokeWidth = isSelected ? 5 : 3;
 
+        const isWall = r.placementType === 'wall';
         return (
           <g key={r.id}>
-            <rect
-              x={r.xCm}
-              y={r.yCm}
-              width={r.wCm}
-              height={r.hCm}
-              fill={fill}
-              stroke={stroke}
-              strokeWidth={strokeWidth}
-              rx={4}
-              style={{
-                cursor: isDraggable ? 'grab' : 'pointer',
-                touchAction: 'none',
-              }}
-              onPointerDown={(e) => handlePointerDown(e, r.id)}
-              onPointerMove={isDraggable ? handlePointerMove : undefined}
-              onPointerUp={isDraggable ? handlePointerUp : undefined}
-              onPointerCancel={isDraggable ? handlePointerUp : undefined}
-            />
+            {r.shape === 'round' ? (
+              <circle
+                cx={r.xCm + r.wCm / 2}
+                cy={r.yCm + r.hCm / 2}
+                r={r.wCm / 2}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeDasharray={isWall ? '6 3' : undefined}
+                style={{
+                  cursor: isDraggable ? 'grab' : 'pointer',
+                  touchAction: 'none',
+                }}
+                onPointerDown={(e) => handlePointerDown(e, r.id)}
+                onPointerMove={isDraggable ? handlePointerMove : undefined}
+                onPointerUp={isDraggable ? handlePointerUp : undefined}
+                onPointerCancel={isDraggable ? handlePointerUp : undefined}
+              />
+            ) : r.shape === 'oval' ? (
+              <ellipse
+                cx={r.xCm + r.wCm / 2}
+                cy={r.yCm + r.hCm / 2}
+                rx={r.wCm / 2}
+                ry={r.hCm / 2}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeDasharray={isWall ? '6 3' : undefined}
+                style={{
+                  cursor: isDraggable ? 'grab' : 'pointer',
+                  touchAction: 'none',
+                }}
+                onPointerDown={(e) => handlePointerDown(e, r.id)}
+                onPointerMove={isDraggable ? handlePointerMove : undefined}
+                onPointerUp={isDraggable ? handlePointerUp : undefined}
+                onPointerCancel={isDraggable ? handlePointerUp : undefined}
+              />
+            ) : r.shape === 'l-shape' ? (
+              <polygon
+                points={`${r.xCm},${r.yCm} ${r.xCm + r.wCm},${r.yCm} ${r.xCm + r.wCm},${r.yCm + r.hCm * 0.45} ${r.xCm + r.wCm * 0.45},${r.yCm + r.hCm * 0.45} ${r.xCm + r.wCm * 0.45},${r.yCm + r.hCm} ${r.xCm},${r.yCm + r.hCm}`}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeDasharray={isWall ? '6 3' : undefined}
+                style={{
+                  cursor: isDraggable ? 'grab' : 'pointer',
+                  touchAction: 'none',
+                }}
+                onPointerDown={(e) => handlePointerDown(e, r.id)}
+                onPointerMove={isDraggable ? handlePointerMove : undefined}
+                onPointerUp={isDraggable ? handlePointerUp : undefined}
+                onPointerCancel={isDraggable ? handlePointerUp : undefined}
+              />
+            ) : (
+              <rect
+                x={r.xCm}
+                y={r.yCm}
+                width={r.wCm}
+                height={r.hCm}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeDasharray={isWall ? '6 3' : undefined}
+                rx={4}
+                style={{
+                  cursor: isDraggable ? 'grab' : 'pointer',
+                  touchAction: 'none',
+                }}
+                onPointerDown={(e) => handlePointerDown(e, r.id)}
+                onPointerMove={isDraggable ? handlePointerMove : undefined}
+                onPointerUp={isDraggable ? handlePointerUp : undefined}
+                onPointerCancel={isDraggable ? handlePointerUp : undefined}
+              />
+            )}
             <text
               x={r.xCm + r.wCm / 2}
               y={r.yCm + r.hCm / 2}

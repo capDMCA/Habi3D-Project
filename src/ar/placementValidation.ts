@@ -226,8 +226,14 @@ export function validatePlacement({
   const isBedroomItem = candidate.category === 'bed' || candidate.category === 'wardrobe';
   const isBathroom = currentRoomId === 'bathroom';
   const isKitchen = currentRoomId === 'kitchen';
+  const isBathroomAllowed =
+    candidate.category === 'bathroom_fixture' ||
+    (candidate.category === 'cabinet' && candidate.label.toLowerCase().includes('bath')) ||
+    (candidate.category === 'mirror' && candidate.label.toLowerCase().includes('bath')) ||
+    candidate.label.toLowerCase().includes('vanity') ||
+    candidate.label.toLowerCase().includes('hamper');
 
-  if (isBathroom) {
+  if (isBathroom && !isBathroomAllowed) {
     const fixDx = -0.55;
     const { arDx, arDz } = rotateDeltaToAr(fixDx, 0, calibration);
     return {

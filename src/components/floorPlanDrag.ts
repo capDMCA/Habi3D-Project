@@ -115,6 +115,23 @@ export function roomIdForItem(item: FurnitureItem): string {
   );
 }
 
+/** Checks whether two furniture items overlap vertically (accounting for wall mounting height). */
+export function isVerticalOverlap(a: FurnitureItem, b: FurnitureItem): boolean {
+  const isAWall = a.placementType === 'wall';
+  const isBWall = b.placementType === 'wall';
+
+  // Both floor items occupy floor level
+  if (!isAWall && !isBWall) return true;
+
+  const aBottom = isAWall ? (a.mountHeightCm ?? 120) : 0;
+  const aTop = aBottom + (a.heightCm || 40);
+
+  const bBottom = isBWall ? (b.mountHeightCm ?? 120) : 0;
+  const bTop = bBottom + (b.heightCm || 40);
+
+  return Math.min(aTop, bTop) - Math.max(aBottom, bBottom) > 5; // 5cm tolerance
+}
+
 /** ids of every item whose footprint overlaps `item`. Empty means the spot is free. */
 export function overlappingItemIds(item: FurnitureItem, items: FurnitureItem[]): string[] {
   const a = toBounds(item);
@@ -123,6 +140,7 @@ export function overlappingItemIds(item: FurnitureItem, items: FurnitureItem[]):
 
   for (const other of items) {
     if (other.id === item.id) continue;
+    if (!isVerticalOverlap(item, other)) continue;
     const b = toBounds(other);
     const overlapX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
     const overlapZ = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ);
@@ -708,6 +726,7 @@ export function isFeasible(
 
   for (let i = 0; i < bounds.length; i += 1) {
     for (let j = i + 1; j < bounds.length; j += 1) {
+      if (!isVerticalOverlap(items[i], items[j])) continue;
       const a = bounds[i];
       const b = bounds[j];
       const overlapX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);

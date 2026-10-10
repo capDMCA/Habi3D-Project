@@ -159,9 +159,9 @@ function drawPlan(
     doc.setLineWidth(0.35);
 
     if (r.shape === 'round') {
-      // Same geometry source as the rect case (projectItems()) — w and h
-      // are equal for a round item's square bounding box, so w/2 is exact.
       doc.circle(x + w / 2, y + h / 2, w / 2, 'FD');
+    } else if (r.shape === 'oval') {
+      doc.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 'FD');
     } else {
       doc.roundedRect(x, y, w, h, 0.8, 0.8, 'FD');
     }

@@ -827,6 +827,34 @@ export default function CondoFloorPlan({
                   fill={fill}
                   stroke={isRecommendationFocused ? '#2563EB' : stroke}
                   strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
+                  strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
+                  style={{
+                    transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
+                    pointerEvents: 'none',
+                  }}
+                />
+              ) : r.shape === 'oval' ? (
+                <ellipse
+                  cx={r.xCm + directWidthCm / 2}
+                  cy={r.yCm + directHeightCm / 2}
+                  rx={directWidthCm / 2}
+                  ry={directHeightCm / 2}
+                  fill={fill}
+                  stroke={isRecommendationFocused ? '#2563EB' : stroke}
+                  strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
+                  strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
+                  style={{
+                    transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
+                    pointerEvents: 'none',
+                  }}
+                />
+              ) : r.shape === 'l-shape' ? (
+                <polygon
+                  points={`${r.xCm},${r.yCm} ${r.xCm + directWidthCm},${r.yCm} ${r.xCm + directWidthCm},${r.yCm + directHeightCm * 0.45} ${r.xCm + directWidthCm * 0.45},${r.yCm + directHeightCm * 0.45} ${r.xCm + directWidthCm * 0.45},${r.yCm + directHeightCm} ${r.xCm},${r.yCm + directHeightCm}`}
+                  fill={fill}
+                  stroke={isRecommendationFocused ? '#2563EB' : stroke}
+                  strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
+                  strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
                   style={{
                     transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
                     pointerEvents: 'none',
@@ -841,6 +869,7 @@ export default function CondoFloorPlan({
                   fill={fill}
                   stroke={isRecommendationFocused ? '#2563EB' : stroke}
                   strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
+                  strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
                   rx={4}
                   style={{
                     transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
@@ -851,8 +880,8 @@ export default function CondoFloorPlan({
 
               <text
                 x={r.xCm + directWidthCm / 2}
-                y={r.yCm + directHeightCm / 2}
-                fontSize={18}
+                y={r.placementType === 'wall' ? r.yCm + directHeightCm / 2 - 7 : r.yCm + directHeightCm / 2}
+                fontSize={16}
                 fontWeight={700}
                 fill={t.ink}
                 textAnchor="middle"
@@ -861,6 +890,21 @@ export default function CondoFloorPlan({
               >
                 {r.label}
               </text>
+
+              {r.placementType === 'wall' && (
+                <text
+                  x={r.xCm + directWidthCm / 2}
+                  y={r.yCm + directHeightCm / 2 + 10}
+                  fontSize={11}
+                  fontWeight={800}
+                  fill="#2563EB"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  style={pointerNone}
+                >
+                  {`[WALL ${r.mountHeightCm ?? 120}cm]`}
+                </text>
+              )}
 
               {/* 2D Animated Correction Arrow */}
               {isRecommendationFocused && focusTarget?.fixDirectionLabel && (() => {

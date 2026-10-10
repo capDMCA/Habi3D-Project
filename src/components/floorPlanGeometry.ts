@@ -28,6 +28,8 @@ export interface PlanRect {
    *  pdfReport) can draw a circle for round furniture without re-deriving
    *  it — one shape flag, read once, at the one place bounds are computed. */
   shape: FurnitureShape;
+  placementType?: 'floor' | 'wall';
+  mountHeightCm?: number;
 }
 
 export function projectItems(items: FurnitureItem[]): PlanRect[] {
@@ -46,6 +48,8 @@ export function projectItems(items: FurnitureItem[]): PlanRect[] {
       lengthCm: item.lengthCm,
       widthCm: item.widthCm,
       shape: item.shape,
+      placementType: item.placementType ?? 'floor',
+      mountHeightCm: item.mountHeightCm,
     };
   });
 }

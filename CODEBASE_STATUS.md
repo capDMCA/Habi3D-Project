@@ -1,17 +1,99 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-10-08 (2D Workspace Recommendations UX Redesign, Mobile Bottom Sheet & Focused Floor Plan Navigation)
+**Last updated:** 2026-10-09 (System Revision — Address Panel Comments: Objective Revision, Whole-Condo 8-Room Support, Codified Bedroom Standards B1/B2, Functional AR Pipeline & Actionable Recommendations UX)
 **Project phase:** Phase 3 — AR Floor Hit-Test Placement, Streamlined 2D Planning & Read-Only 3D Visualization
-**Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig)
+**Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig, 5.10m × 8.80m, 8 Rooms)
 
 ---
 
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-10-08):** Redesigned the 2D workspace so that design-rule findings are presented as a simple, mobile-first "Recommendations" experience. Completely removed the AI/Maya/Designer Assistant concept and diagnostic count banners ("Clear", "Issues", "Warnings", walkway pills) from this workflow. Users now see clear, plain-language recommendations and can tap any recommendation to immediately navigate to the exact area of the floor plan where the problem exists. Features smooth camera focus, pulsing furniture/wall highlights, directional correction arrows, a compact contextual card with resolution feedback ("✓ Looks good"), an adaptive 100px scroll-aware header with 20% height compression and glassmorphic backdrop blur, and full mobile (390×844) + desktop panel responsiveness. Zero duplicate rule engines; full reuse of existing spatial analysis.
+> **Latest Update (2026-10-09 — System Revision Addressing Panel Comments):** Revised the Habi3D system architecture, spatial scope, and user experience to address evaluation panel feedback:
+> 1. **Revised System Objective:** Formulated Habi3D as a domain-grounded spatial decision-support system executing a closed-loop optimization workflow: **Place furniture → evaluate layout → identify problem → show recommendation → focus affected area → adjust furniture → re-evaluate layout → confirm resolution**.
+> 2. **Whole-Condo Unit Support:** Expanded scope to all 8 architectural rooms of the Mulberry Place Bengaline 2BR unit ($5.10\,\text{m} \times 8.80\,\text{m}$), removing artificial drop blockers across bedrooms, kitchen, bathroom, balcony, and storage.
+> 3. **Codified Bedroom Standards (B1 & B2) & Room-Scoped Rule Isolation:** Codified *Time-Saver Standards for Interior Design* Rule **B1** (Bed Access Clearance $\ge 61\,\text{cm}$) and Rule **B2** (Wardrobe Clearance $\ge 61\,\text{cm}$). Scoped pairwise and wall clearance checks by room (`aRoom === bRoom`), completely eliminating false cross-partition interactions between isolated rooms. Attached `roomId` to each `Violation` record.
+> 4. **Multi-Tier Validation Transparency:** Clearly distinguished validation depth across rooms (`full` for Living/Dining, `bedroom` for Bedrooms 1/2, and `limited` for Kitchen/Bathroom/Balcony/Storage) across the UI, 2D floor plan, and validation reports.
+> 5. **Value-Added AR Workflow & Explicit Sensor Limitations:** Grounded AR as the physical placement gateway into the 2D planning pipeline, featuring single-tap entry anchor alignment (`ENTRY_DOOR_BLUEPRINT = { x: 0.2, z: 0.1 }`), WebXR plane hit-testing, ghost preview, rotation slider, calibrated coordinate transfer, and whole-condo room clamping. Exported `AR_SENSOR_LIMITATIONS` in `src/ar/placementValidation.ts` to transparently disclose sensor drift, physical obstacle constraints, and lighting limits without making unrealistic physical obstacle detection claims.
+> 6. **Actionable Recommendations UX:** Auto-framing camera navigation (`targetViewBox`), wall/furniture pulsing glow, directional correction arrows with delta cm, floating mobile sheet, and automatic re-analysis resolution.
+> 7. **Expanded Furniture Data Model & 3D Dollhouse:** Added `bed` and `wardrobe` categories to `FurnitureCategory`, `FurnitureInputScreen`, and `DollhouseFurniture` with procedural `BedModel` (mattress + headboard).
 
-### Key Recent Changes (October 8, 2026: 2D Workspace Recommendations UX Redesign & Mobile-First Focus Flow)
+### Key Recent Changes (October 9, 2026: Habi3D System Revision — Address Panel Comments)
+
+1. **Revised System Objective & Closed-Loop Workflow Formulation**
+   - **From Generic Tool to Spatial Decision-Support:** Shifted the system's core identity from an unguided sandbox or conversational assistant to a domain-grounded spatial decision-support system tailored for Philippine high-density condominium units.
+   - **Closed-Loop Optimization Pipeline:** Codified the complete 8-step user journey:
+     $$\text{Place furniture} \to \text{Evaluate layout} \to \text{Identify problem} \to \text{Show recommendation} \to \text{Focus affected area} \to \text{Adjust furniture} \to \text{Re-evaluate layout} \to \text{Confirm resolution}$$
+   - **Research-Backed Significance:** Directly addresses urban high-density living constraints (tight floor plates, circulation bottlenecks, inaccessible storage/beds) by providing instant, deterministic ergonomic feedback without requiring architectural expertise.
+
+2. **Whole-Condo Unit Scope (8 Architectural Rooms of Mulberry Place Bengaline 2BR)**
+   - **Full Floor Plate Coverage:** Expanded beyond the Living and Dining areas to encompass the complete $5.10\,\text{m} \times 8.80\,\text{m}$ ($44.88\,\text{m}^2$) footprint:
+     - `living`: Living Room ($0.00 \le X \le 2.60$, $3.40 \le Z \le 7.00$)
+     - `dining`: Dining Area ($0.00 \le X \le 2.60$, $7.00 \le Z \le 8.80$)
+     - `bedroom-1`: Master Bedroom ($2.60 \le X \le 5.10$, $0.00 \le Z \le 3.40$)
+     - `bedroom-2`: Second Bedroom ($0.00 \le X \le 2.60$, $0.00 \le Z \le 3.40$)
+     - `kitchen`: Kitchen Area ($2.60 \le X \le 5.10$, $6.20 \le Z \le 8.80$)
+     - `bathroom`: Bathroom / T&B ($2.60 \le X \le 5.10$, $4.60 \le Z \le 6.20$)
+     - `balcony`: Balcony ($0.00 \le X \le 2.60$, $0.00 \le Z \le 1.00$)
+     - `storage`: Hallway / Storage ($2.60 \le X \le 5.10$, $3.40 \le Z \le 4.60$)
+   - **Removed Drop & Drag Blockers:** Removed artificial rejection of drops into bedrooms, kitchen, and bathroom in `floorPlanDrag.ts:canPlace()` and `WorkspaceScreen.tsx`. Outer unit walls ($[0, 510]\text{cm} \times [0, 880]\text{cm}$) remain the strict outer boundary envelope.
+   - **Whole-Unit Compass Gaps (`edgeGaps`):** Updated boundary candidate generation to measure to the nearest architectural room partition or unit exterior wall across all 8 rooms.
+   - **Automatic Room Center Routing:** Added `ROOM_CENTERS` in `condoLayout.ts` and updated `getRoomForCategory` and `getDefaultRoomPosition`: beds/wardrobes spawn in Bedroom 1 (or Bedroom 2), sofas/entertainment in Living, dining tables/chairs in Dining, with spatial fallback to room centroids.
+
+3. **Codified Bedroom Standards (Rules B1 & B2) & Room-Scoped Rule Isolation**
+   - **Rule B1 (Bed Access Clearance):**
+     - *Standard:* $\ge 61\,\text{cm}$ accessible walking clearance along open sides and foot of bed (*Time-Saver Standards for Interior Design*, DeChiara et al., 2001, pp. 61–90).
+     - *Thresholds:* RED $< 61\,\text{cm}$, YELLOW $61\text{–}75\,\text{cm}$, GREEN $\ge 76\,\text{cm}$.
+     - *Orientation-Aware Calculation:* Checks side and foot clearances against room walls based on bed yaw rotation ($\theta$). Allows the headboard to rest flat against a wall without false circulation flags.
+   - **Rule B2 (Wardrobe / Closet Clearance):**
+     - *Standard:* $\ge 61\,\text{cm}$ door swing and dressing clearance in front of wardrobe (*Time-Saver Standards*, DeChiara et al., 2001).
+     - *Thresholds:* RED $< 61\,\text{cm}$, YELLOW $61\text{–}75\,\text{cm}$, GREEN $\ge 76\,\text{cm}$.
+     - *Front-Face Wall Check:* Calculates clearance along the active front face of the wardrobe to opposing walls or facing furniture.
+   - **Room-Scoped Rule Isolation (`aRoom === bRoom`):**
+     - In `src/engine/clearance.ts`, pairwise distance loops now check `if (aRoom !== bRoom) continue;`.
+     - *Impact:* Completely prevents absurd cross-room interactions across partitions (e.g., a bed in Bedroom 2 will never trigger a false proximity violation against a sofa in the Living Room).
+   - **Room-Tagged Violations:** Added `roomId?: string` to `Violation` interface and attached room keys across all generated findings, enabling per-room filtering and targeted floor-plan focus.
+
+4. **Multi-Tier Room Validation Disclosures**
+   - **Validation Level Classification:**
+     - `full`: Living Room & Dining Area (evaluated against all 10 canonical standards L1–L5, D1–D5, and pedestrian walkways).
+     - `bedroom`: Bedroom 1 & Bedroom 2 (evaluated against codified bedroom standards B1 and B2, room walls, and inter-furniture clearances).
+     - `limited`: Kitchen, Bathroom, Storage, Balcony (basic spatial fit and bounding containment evaluated; specialized plumbing, appliance swing, and fixture codes are explicitly disclosed as not modeled).
+   - **UI Disclosures:**
+     - `CONDO_ROOMS` in `condoLayout.ts` defines `validationLevel` and descriptive `validationNote` on every room.
+     - `CondoFloorPlan.tsx` displays room validation subtitles beneath room labels.
+     - `ReportScreen.tsx` renders clear badge pills (`"Full Validation"`, `"Bedroom Standards"`, `"Limited Analysis"`) and guidance callouts in the room-by-room breakdown.
+
+5. **Value-Added AR Workflow & Explicit Sensor Accuracy Disclosures**
+   - **AR as an Integrated Planning Gateway:** AR is established as a functional data-capture and real-world placement mechanism directly integrated into the planning lifecycle:
+     1. WebXR camera plane detection and hit-testing on the physical condo floor.
+     2. Single-Tap Room Entry Anchor Alignment (`ENTRY_DOOR_BLUEPRINT = { x: 0.2, z: 0.1 }`), establishing transform matrix and device yaw.
+     3. 3D ghost mesh preview with dynamic color status (`PlacementMesh.tsx`), floor projection, and 360° yaw rotation slider.
+     4. Calibrated blueprint projection (`applyCalibration`) with whole-condo boundary clamping across all 8 rooms.
+     5. Confirmed placement dispatches directly to `furnitureStore` and triggers immediate full clearance analysis (`runClearanceAnalysis`), seamlessly transitioning to the 2D workspace.
+   - **Explicit Sensor Accuracy Caveats (`src/ar/placementValidation.ts`):**
+     - Exported `AR_SENSOR_LIMITATIONS` and documented in UI and codebase:
+       - AR tracking relies on consumer mobile WebXR/ARCore SLAM tracking with typical drift of $\pm 2\text{–}5\,\text{cm}$.
+       - Lighting variations and textureless condominium tiles can degrade feature tracking.
+       - The AR placement layer checks digital room boundaries and placed furniture; it does not scan unmodeled physical obstacles, structural columns, or physical doors in the room.
+
+6. **Actionable Recommendations UX & Real-Time Resolution Loop**
+   - **Floating Action Pill & Responsive Mobile Sheet:** Sleek floating pill (`"N Recommendations"`) on mobile viewports opening a backdrop-blurred sheet where each recommendation is a comfortable touch target.
+   - **Interactive Auto-Framing (`targetViewBox`):** Tapping any recommendation pans and zooms the floor plan camera directly to the affected room and furniture piece.
+   - **Pulsing Focus & Directional Correction:**
+     - Furniture pulse outline (`wksp-furniture-focus-pulse`) and boundary glow (`wksp-wall-focus-glow`).
+     - Dimming of unaffected furniture pieces to 28% opacity.
+     - 2D animated directional arrow with numeric delta badge (`"Move +N cm"`).
+   - **Real-Time Drag & Auto-Resolution:** Dragging the highlighted item automatically re-evaluates clearances on release; if resolved, the card displays `"✓ Looks good"` and auto-dismisses after 1.2s.
+
+7. **Expanded Furniture Data Model & 3D Dollhouse Visualizations**
+   - **Domain Categories:** Added `'bed'` and `'wardrobe'` to `FurnitureCategory` in `src/types/index.ts`.
+   - **Furniture Input Flow:** Added Bed and Wardrobe preset cards with standard dimensions (Queen: $150 \times 200\,\text{cm}$, Single: $90 \times 190\,\text{cm}$, Wardrobe: $120 \times 60\,\text{cm}$) and linked to rules B1 and B2 in `FurnitureInputScreen.tsx`.
+   - **3D Procedural Dollhouse (`DollhouseFurniture.tsx`):**
+     - Added `BedModel` component rendering mattress, platform frame, and headboard with realistic materials.
+     - Added wardrobe tall cabinet representation and category palette colors (`bed`: `#6366f1` indigo, `wardrobe`: `#8b5cf6` purple).
+
+### Key Prior Changes (October 8, 2026: 2D Workspace Recommendations UX Redesign & Mobile-First Focus Flow)
 
 1. **Complete Removal of AI / Maya / Assistant Persona from 2D Planning Workflow**
    - **Zero Conversational Friction:** Removed Maya avatar, conversational chat layout, chatbot persona, and AI-generated wording from the 2D floor plan editing workflow.
@@ -404,23 +486,23 @@
 
 ## 1. Executive Summary
 
-Habi3D is a **Priority-Ranked Sequential Recommendation Tool** designed for condominium residents to configure, position, and validate furniture layouts against 10 interior design clearance rules (5 living room, 5 dining room) sourced from *Time-Saver Standards for Interior Design* (DeChiara, Panero & Zelnik, 2001, pp. 61–90).
+Habi3D is a **Domain-Grounded Spatial Decision-Support System** designed for condominium residents to configure, position, and validate furniture layouts across all 8 rooms of a standard unit against 12 interior design clearance rules (5 living room, 5 dining room, 2 bedroom) sourced from *Time-Saver Standards for Interior Design* (DeChiara, Panero & Zelnik, 2001, pp. 61–90), executing a closed-loop optimization cycle: **Place furniture → evaluate layout → identify problem → show recommendation → focus affected area → adjust furniture → re-evaluate layout → confirm resolution**.
 
 Key milestones and system capabilities include:
-1. **Interactive 2D Floor Plan Engine (`WorkspaceScreen` / `CondoFloorPlan`):** Free-movement physics drag system bound by unit outer walls, responsive text-based toolbar ("Rotate", "Undo", "Delete"), confirmed deletion with undo restoration, architectural bedroom wall blocker (`BEDROOM WALL BLOCKER` at $y = 340\text{ cm}$), delta-based coordinate tracking, live tabular-numeral gap readouts, alignment guides, collision detection, 50-step undo stack, automatic room re-homing, and main walkway corridor SVG overlay (`MAIN_ENTRY_WALKWAY_RECT`) with real-time obstruction alerts.
-2. **Direct WebXR Floor Hit-Test Placement with Safe 2D Handoff (`PositionMapScreen`):** Direct WebXR floor plane hit-testing (`hitTest: true`, `PlacementScene`, `useXRHitTest`). Residents tap the physical floor to place 3D furniture overlays with a yaw rotation slider and "Re-place" controls. On confirmation, dispatches safe Living Room center coordinates ($X=1.3\text{m} / 130\text{cm}, Z=5.2\text{m} / 520\text{cm}$) and transitions cleanly to `WorkspaceScreen.tsx`. Two-point calibration (northwest corner and north wall taps) completely eliminated.
+1. **Interactive 2D Floor Plan Engine (`WorkspaceScreen` / `CondoFloorPlan`):** Free-movement physics drag system bound by unit outer walls ($5.10\text{m} \times 8.80\text{m}$), responsive text-based toolbar ("Rotate", "Undo", "Delete"), confirmed deletion with undo restoration, whole-condo boundary support across all 8 rooms, delta-based coordinate tracking, live tabular-numeral gap readouts, alignment guides, collision detection, 50-step undo stack, automatic room re-homing, and main walkway corridor SVG overlay (`MAIN_ENTRY_WALKWAY_RECT`) with real-time obstruction alerts.
+2. **Direct WebXR Floor Hit-Test Placement with Calibrated Multi-Room Handoff (`PositionMapScreen`):** Direct WebXR floor plane hit-testing with single-tap room entry corner alignment (`ENTRY_DOOR_BLUEPRINT = { x: 0.2, z: 0.1 }`). Residents tap the physical floor to place 3D furniture overlays with a yaw rotation slider and "Re-place" controls. On confirmation, transforms coordinates via `applyCalibration()`, clamps within active room boundaries across all 8 rooms, triggers full layout clearance analysis, and transitions cleanly to `WorkspaceScreen.tsx`.
 3. **WebXR Camera Point-to-Point Measuring (`ARMeasureSession.tsx` / `FurnitureInputScreen.tsx`):** AR camera measurement with in-session review and confirmation card, floating decimal precision (1 decimal place cm), in-session retake without tearing down the WebXR session, and diameter-to-length/width propagation for circular furniture.
 4. **End-to-End Circular Furniture Support:** Native handling of round/circular tables and chairs across measuring, 2D floor plan SVG rendering (`<circle>`), rotation locks, and client-side PDF document generation.
-5. **Clearance Evaluation Engine (`rules.ts` / `clearance.ts`):** Automated gap analysis calculating item-to-item and item-to-wall clearances, classifying gaps into RED (violation), YELLOW (warning), and GREEN (comfortable) bands, and scoring priorities using $S = \text{SeverityWeight} \times \text{Shortfall} \times \text{EdgeLength}$.
+5. **Clearance Evaluation Engine (`rules.ts` / `clearance.ts`):** Automated gap analysis calculating item-to-item and item-to-wall clearances across 12 codified standards (L1–L5 Living, D1–D5 Dining, B1–B2 Bedroom), with room-scoped isolation (`aRoom === bRoom`) to prevent cross-partition false positives. Classifies gaps into RED (violation), YELLOW (warning), and GREEN (comfortable) bands, attaching `roomId` and scoring priorities using $S = \text{SeverityWeight} \times \text{Shortfall} \times \text{EdgeLength}$.
 6. **Accessible Guidance & Visual Clearance Meters (`ruleGuidance.ts` / `ClearanceMeter.tsx`):** Plain-English rule descriptions, actionable resolution steps ("DO THIS"), and color-blindness/CVD-safe clearance meters encoding metrics via shape, words, and track position.
 7. **Client-Side Paginated PDF Report (`pdfReport.ts` / `DownloadReportButton.tsx`):** Multi-page vector PDF generation via `jsPDF`, drawing SVG geometry directly from `CONDO_ROOMS` and `projectItems()`, accompanied by a rule-by-rule breakdown table.
 8. **Authentication & Autosave (`supabase.ts` / `AuthScreen.tsx` / `useAutosaveLayout.ts`):** Production-grade Supabase Auth using synthetic email mapping (`username@habi3d.local`), row-level security (`auth.uid() = user_id`) on the `saved_sessions` table, and 1.5-second debounced layout autosave.
 9. **Visual Modernization & Design Tokens (`src/components/tokens/`):** Unified app-wide design token structure (`colors`, `type`, `spacing`, `marks`), native system typeface stack, tabular numbers (`tabular-nums`) for real-time measurements, and high-contrast dark/light responsive layouts.
 10. **Session Progress Reframe (`violationStore.ts` / `ReportScreen.tsx`):** Session progress calculated via an initial snapshot diff ("You made N spots more comfortable"), eliminating arbitrary numeric scores or grades.
 11. **Sequential AR-to-2D Pipeline & Coordinate Auto-Normalization (`FurnitureInputScreen.tsx` / `furnitureStore.ts`):** Confirmed furniture input initializes with unpositioned coordinates (`posX: 0, posZ: 0`) and routes sequentially to `'positionMap'`. In `furnitureStore.ts`, automatic coordinate normalization converts values $>10$ cm to meters, guaranteeing safe boundary clamping and seamless 2D workspace handoff.
-12. **Bedroom Wall Blocker & Living/Dining Constraint (`floorPlanDrag.ts` / `CondoFloorPlan.tsx`):** Hard partition barrier at $Y = 340\text{ cm}$ prohibiting furniture placement in bedrooms and reverting invalid drops to the last clear spot in Living/Dining.
+12. **Whole-Condo Scope & Multi-Tier Room Validation Disclosures (`condoLayout.ts` / `ReportScreen.tsx` / `CondoFloorPlan.tsx`):** Unrestricted furniture placement across all 8 architectural rooms of the Mulberry Place Bengaline 2BR unit, paired with transparent multi-tier validation disclosures: `full` for Living/Dining, `bedroom` for Bedrooms 1 and 2, and `limited` for Kitchen, Bathroom, Balcony, and Storage.
 13. **Confirmed Delete & Restoral Lifecycle (`WorkspaceScreen.tsx`):** Accessible confirmation prevents accidental deletion; Cancel is non-mutating, while confirmed deletion uses the established history path so Undo restores both removed and moved furniture items.
-14. **Read-Only 3D Dollhouse Preview (`ThreeDPreviewScreen.tsx` / `ThreeDLayoutPreview.tsx`):** Isolated visualization of the current layout using procedural room and furniture geometry, an open floor-level Living/Dining divider, direct store reads, responsive orbit/zoom camera controls, and no furniture, clearance, AR, persistence, or report mutations. A previous-screen guard prevents 2D remount normalization after preview navigation.
+14. **Read-Only 3D Dollhouse Preview (`ThreeDPreviewScreen.tsx` / `ThreeDLayoutPreview.tsx` / `DollhouseFurniture.tsx`):** Isolated visualization of the current layout using procedural room and furniture geometry—including category-specific models for sofas, tables, chairs, desks, storage, and new `BedModel` (mattress + headboard) for bedrooms—an open floor-level Living/Dining divider, direct store reads, responsive orbit/zoom camera controls, and no furniture, clearance, AR, persistence, or report mutations. A previous-screen guard prevents 2D remount normalization after preview navigation.
 
 ---
 
@@ -462,10 +544,10 @@ src/
 The clearance and rules engine is a decoupled, pure TypeScript mathematical and architectural rules system responsible for checking physical furniture arrangements against codified interior design standards, calculating multi-axis spatial gaps, ranking layout bottlenecks by severity and spatial footprint, and synthesizing plain-English corrective guidance.
 
 * **[rules.ts](file:///c:/Users/Dell/Habi3D-Project/src/engine/rules.ts) — Metric Clearance Standards & Priority Formulas:**
-  * *Purpose & Lineage:* Encodes the canonical 10 Interior Design Clearance Standards sourced from *Time-Saver Standards for Interior Design and Space Planning* (DeChiara, Panero & Zelnik, 2001, pp. 61–90). Converts historical imperial guidelines (e.g., 30", 36", 42") into standardized metric thresholds (cm). Defines the formal tri-tier gap classification criteria (RED / YELLOW / GREEN) and priority scoring formulas.
+  * *Purpose & Lineage:* Encodes the canonical 12 Interior Design Clearance Standards sourced from *Time-Saver Standards for Interior Design and Space Planning* (DeChiara, Panero & Zelnik, 2001, pp. 61–90). Converts historical imperial guidelines (e.g., 24", 30", 36", 42") into standardized metric thresholds (cm). Defines the formal tri-tier gap classification criteria (RED / YELLOW / GREEN) and priority scoring formulas.
   * *Key Data Types & Structures:*
-    * `ClearanceRule`: Interface defining `{ id: string; name: string; category: 'living' | 'dining'; violationThresholdCm: number; warningThresholdCm: number; description: string; }`.
-    * `clearanceRules` / `CLEARANCE_RULES`: Canonical array of the 10 defined standards (L1–L5 for Living, D1–D5 for Dining).
+    * `ClearanceRule`: Interface defining `{ id: string; name: string; category: 'living' | 'dining' | 'bedroom'; violationThresholdCm: number; warningThresholdCm: number; description: string; }`.
+    * `clearanceRules` / `CLEARANCE_RULES`: Canonical array of the 12 defined standards (L1–L5 for Living, D1–D5 for Dining, B1–B2 for Bedroom).
   * *Core Exported Functions:*
     * `classifyGap(measuredCm: number, rule: ClearanceRule): 'RED' | 'YELLOW' | 'GREEN'`: Compares physical distance against `violationThresholdCm` and `warningThresholdCm`.
     * `computePriorityScore(severityWeight: 3 | 1, shortfallCm: number, affectedEdgeLengthCm: number): number`: Computes priority value via $S = \text{SeverityWeight} \times \max(0, \text{Shortfall}) \times \text{AffectedEdgeLength}$.
@@ -487,7 +569,7 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
       *Conservative Property:* For non-orthogonal orientations, this slightly over-estimates occupied footprint, guaranteeing that clearances are under-reported rather than falsely validated as clear.
     * `toBounds(item: FurnitureItem): ItemBounds`: Converts centimeter item parameters and center position $(posX, posZ)$ into meter-space axis-aligned minimum/maximum coordinates.
     * `findLayoutViolation(bounds: ItemBounds[], roomWidthM: number, roomLengthM: number): LayoutViolation | null`: High-performance, exception-free collision and boundary predicate. Employs a tolerance epsilon (`FEASIBILITY_EPSILON_M = 0.01` or 1cm) to allow flush wall placement without registering false-positive violations.
-    * `runClearanceAnalysis(items: FurnitureItem[], roomWidthCm: number, roomLengthCm: number): ClearanceResult`: Main entry point. Conducts $O(N^2)$ pairwise checks (evaluating L1, L3, L2 for sofa-table pairs, D4 for seated dining passage, and D5 for dining furniture pairs) and wall checks (L1 for all items, D1 for dining tables, D2/D3 for dining chairs, L5 for sofa conversation depth, and L4 for main room traffic width). Returns priority-ranked violations and unobstructed floor space percentage.
+    * `runClearanceAnalysis(items: FurnitureItem[], roomWidthCm: number, roomLengthCm: number): ClearanceResult`: Main entry point. Conducts $O(N^2)$ pairwise checks scoped strictly by room (`aRoom === bRoom`) to isolate spaces and prevent cross-partition false positives. Evaluates L1, L3, L2 for sofa-table pairs, D4 for seated dining passage, D5 for dining furniture pairs, B1 for bed access, and B2 for wardrobe clearance. Conducts wall checks (L1 for all items, D1 for dining tables, D2/D3 for dining chairs, L5 for sofa conversation depth, L4 for main room traffic width, orientation-aware B1 bed side/foot clearance, and B2 wardrobe front clearance). Attaches `roomId` to every violation for multi-room precision.
 
 * **[ruleGuidance.ts](file:///c:/Users/Dell/Habi3D-Project/src/engine/ruleGuidance.ts) — Human-Centered Guidance & Plain-English Translation:**
   * *Purpose:* Cognitive abstraction layer converting technical rule IDs and raw centimeter shortfalls into resident-friendly language, actionable resolution steps ("DO THIS"), and color-blindness safe display ranges for UI clearance meters.
@@ -584,6 +666,7 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
 * **[DollhouseFurniture.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/DollhouseFurniture.tsx):**
   * *Purpose:* Converts each `FurnitureItem` into lightweight category-aware procedural meshes.
   * *Data Mapping:* `lengthCm`, `widthCm`, and `heightCm` are divided by `100`; `posX`, `posZ`, and `rotationY` are consumed directly; `shape` selects rectangular, round/oval, or L-shaped construction.
+  * *Procedural Models & Categories:* Includes specialized procedural models for sofas, coffee tables, dining tables, dining chairs, work desks, storage cabinets, TV stands, and `BedModel` (mattress, platform frame, headboard) for bedrooms, alongside category-specific color tokens (indigo `#6366f1` for beds, purple `#8b5cf6` for wardrobes).
   * *Read-Only Contract:* Contains no store import and receives one item through props. Meshes define no drag, rotate, resize, delete, add, or room-assignment handlers.
 
 ### 2.6 Design Tokens (`src/components/tokens/`)
@@ -596,7 +679,7 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
 
 ### 2.7 Reporting & UI Components (`src/components/`)
 
-* **[pdfReport.ts](file:///c:/Users/Dell/Habi3D-Project/src/components/pdfReport.ts):** Client-side PDF document generator using `jsPDF`. Synthesizes vector floor plan drawings, session metrics, and a paginated rule-by-rule evaluation table (covering all 10 rules, cleared and violated).
+* **[pdfReport.ts](file:///c:/Users/Dell/Habi3D-Project/src/components/pdfReport.ts):** Client-side PDF document generator using `jsPDF`. Synthesizes vector floor plan drawings, session metrics, and a paginated rule-by-rule evaluation table (covering all 12 rules across living, dining, and bedroom).
 * **[ClearanceMeter.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/ClearanceMeter.tsx):** CVD-safe visual clearance meter component displaying measured distance against RED/YELLOW/GREEN thresholds, plain-English guidance, and fix recommendations.
 * **[DownloadReportButton.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/DownloadReportButton.tsx):** State-machine UI button (`idle` $\rightarrow$ `working` $\rightarrow$ `success` / `error`) for triggering PDF report builds.
 * **[StatusRow.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/StatusRow.tsx):** UI component rendering rule evaluation findings with status badges and contextual notes.
@@ -604,7 +687,7 @@ The clearance and rules engine is a decoupled, pure TypeScript mathematical and 
 
 ### 2.8 Geometry, Validation & Backend Integration (`src/data/`, `src/utils/` & `src/supabase.ts`)
 
-* **[condoLayout.ts](file:///c:/Users/Dell/Habi3D-Project/src/data/condoLayout.ts):** Geometry specification for Mulberry Place 2BR (`CONDO_ROOMS`: 8 zones). `getRoomForCategory()` strictly routes all furniture categories to `'living'` or `'dining'` only, eliminating accidental bedroom default assignments.
+* **[condoLayout.ts](file:///c:/Users/Dell/Habi3D-Project/src/data/condoLayout.ts):** Geometry specification for Mulberry Place 2BR (`CONDO_ROOMS`: 8 zones). `getRoomForCategory()` routes furniture categories across the entire condominium unit: beds and wardrobes to Bedroom 1 (or Bedroom 2), dining tables/chairs to Dining, and sofas/entertainment/generic items to Living. Defines `validationLevel` (`full` | `bedroom` | `limited`) and `validationNote` for each room, alongside `ROOM_CENTERS` for deterministic room spawning.
 * **[furnitureValidation.ts](file:///c:/Users/Dell/Habi3D-Project/src/utils/furnitureValidation.ts):** Dimension validation guard evaluating furniture against Mulberry Living ($260\text{ cm} \times 360\text{ cm}$) and Dining ($260\text{ cm} \times 180\text{ cm}$) boundaries. Identifies oversized pieces ($>360\text{ cm}$ length, $>260\text{ cm}$ width, $>260\text{ cm}$ height).
   * *Key Exports:* `isFurnitureDimensionOversized()`, `findOversizedFurniture()`.
 * **[roomData.ts](file:///c:/Users/Dell/Habi3D-Project/src/data/roomData.ts):** Fixed unit dimensions (`MULBERRY_PLACE_2BR`: Living 350x450cm, Dining 300x350cm).
@@ -845,8 +928,8 @@ workspace (same furnitureStore layout)
 
 1. **Interaction Gate:** Pointer down on an SVG item element tracks movement. Movement under `DRAG_THRESHOLD_PX = 5` is treated as an item selection click.
 2. **Free Delta Movement Dragging:** Once past 5px, `floorPlanDrag.ts` tracks delta offsets ($\Delta X, \Delta Z$). Dragging is delta-based, rendering it immune to viewport zoom shifts.
-3. **Boundary & Outer Wall Constraint:** Item bounds are clamped to remain within the unit envelope outer walls (West $0\text{ cm}$, East $510\text{ cm}$, North $0\text{ cm}$, South $880\text{ cm}$). Placement is strictly constrained to the editable Living and Dining areas; dropping on Bedroom ($Z < 3.40\text{m}$), Kitchen, or Bathroom rolls back to the last valid position with a warning toast.
-4. **Real-Time Visual Feedback & Directional Gap Readouts:** Computes alignment snap lines, live collision highlights, and tabular-numeral gap badges in real-time. For pieces selected or dragged within the active planning area, four directional gap badges (West, East, North, South) measure clearances to the nearest perimeter boundary of the combined Living + Dining union (stopping at Kitchen, Bathroom, Bedroom, or exterior walls) or to facing adjacent furniture pieces. The internal Living/Dining transition is open and produces no artificial wall readings. Badges are hidden when hovering or dragged over restricted zones.
+3. **Boundary & Outer Wall Constraint:** Item bounds are clamped to remain within the unit envelope outer walls (West $0\text{ cm}$, East $510\text{ cm}$, North $0\text{ cm}$, South $880\text{ cm}$). Furniture placement is supported across all 8 architectural rooms of the condominium unit. Soft collision detection notifies users of furniture overlaps with a toast, while clearance and walkway engines evaluate layout health.
+4. **Real-Time Visual Feedback & Directional Gap Readouts:** Computes alignment snap lines, live collision highlights, and tabular-numeral gap badges in real-time. For pieces selected or dragged within any room, four directional gap badges (West, East, North, South) measure clearances to the nearest perimeter boundary (stopping at room partitions or exterior walls) or to facing adjacent furniture pieces. The internal Living/Dining transition is open and produces no artificial wall readings.
 5. **Drop & Room Re-Homing:** Pointer up commits final coordinates. `roomIdForItem()` automatically assigns the item's `roomId` based on maximum bounding overlap inside `CONDO_ROOMS`.
 6. **Undo & Progress Recording:** Pushes the state snapshot into a 50-step undo stack and calls `markItemTouched(itemId)`.
 7. **Confirmed Deletion:** Selecting **Delete** opens a modal without touching the furniture array or history. Only explicit confirmation invokes the existing deletion commit; Cancel, Escape, and backdrop dismissal are non-mutating.
@@ -861,10 +944,10 @@ workspace (same furnitureStore layout)
      [Project Rotated Bounding Envelopes: toBounds(), AABB]
                              │
                              ▼
-     [Iterate Furniture Pairs (O(N²)) & Wall Distances (O(N))]
+     [Iterate Room-Scoped Furniture Pairs (aRoom === bRoom) & Wall Gaps]
                              │
                              ▼
-     [Evaluate 10 Metric Standards: L1–L5 Living, D1–D5 Dining]
+     [Evaluate 12 Metric Standards: L1–L5 Living, D1–D5 Dining, B1–B2 Bedroom]
                              │
                              ▼
     [Classify Clearance Gaps: RED (Violation) · YELLOW (Warning) · GREEN (Clear)]
@@ -885,8 +968,8 @@ workspace (same furnitureStore layout)
                              │
                              ▼
    [Populate violationStore & Update Interactive Workspace UI Layers]
-   ├── Update ClearanceMeter cards & Action Drawers
-   ├── Dispatch Header Status Badges & Walkway Encroachment Alerts
+   ├── Update Recommendations list & floating pill count
+   ├── Dispatch camera focus (targetViewBox) & pulsing wall/item highlights
    └── Synchronize Multi-Page Vector PDF Tables & Session Diff Baseline
 ```
 
@@ -896,20 +979,22 @@ workspace (same furnitureStore layout)
 
 1. **Theoretical & Academic Lineage:**
    * The clearance evaluation logic in Habi3D is grounded in formal architectural and ergonomic space-planning literature, specifically *Time-Saver Standards for Interior Design and Space Planning* (DeChiara, Panero & Zelnik, 2001, pp. 61–90).
-   * Historical architectural standards typically express spatial recommendations in imperial units (e.g., $30'' \approx 76\text{ cm}$, $36'' \approx 91\text{ cm}$, $42'' \approx 107\text{ cm}$, $48'' \approx 122\text{ cm}$). Habi3D codifies these guidelines into standardized metric values (centimeters), establishing mathematically rigorous thresholds for automated spatial evaluation.
+   * Historical architectural standards typically express spatial recommendations in imperial units (e.g., $24'' \approx 61\text{ cm}$, $30'' \approx 76\text{ cm}$, $36'' \approx 91\text{ cm}$, $42'' \approx 107\text{ cm}$, $48'' \approx 122\text{ cm}$). Habi3D codifies these guidelines into standardized metric values (centimeters), establishing mathematically rigorous thresholds for automated spatial evaluation.
 
 2. **Target High-Density Condominium Context (Mulberry Place 2BR):**
-   * Urban high-density condominium units—such as the benchmark Mulberry Place 2-Bedroom unit at Acacia Estates, Taguig City—present strict spatial envelopes where living, dining, and circulation paths must coexist within a compact combined footprint ($260\text{ cm} \times 360\text{ cm}$ living zone, $260\text{ cm} \times 180\text{ cm}$ dining zone).
-   * In tight urban layouts, arbitrary or unguided furniture arrangements quickly cause circulation choke points, blocked balconies, inaccessible dining chairs, and cramped seating. The clearance engine provides objective, evidence-based spatial feedback so residents can maximize livability without professional architectural training.
+   * Urban high-density condominium units—such as the benchmark Mulberry Place 2-Bedroom unit at Acacia Estates, Taguig City—present strict spatial envelopes where living, dining, bedroom, and circulation paths must coexist within a compact 8-room footprint ($5.10\text{m} \times 8.80\text{m}$, $44.88\text{ m}^2$).
+   * In tight urban layouts, arbitrary or unguided furniture arrangements quickly cause circulation choke points, blocked balconies, inaccessible dining chairs, trapped wardrobes, and cramped beds. The clearance engine provides objective, evidence-based spatial feedback so residents can maximize livability without professional architectural training.
 
 3. **Anthropometric Foundations & Human Body Clearances:**
    * **Shoulder Breadth & Natural Stride:** A 95th-percentile adult shoulder breadth is approximately $48\text{–}52\text{ cm}$. Single-person comfortable walking paths require $\ge 76\text{ cm}$ to prevent lateral brush against walls or furniture. Two-person passing routes require $\ge 91\text{ cm}$ to allow simultaneous bidirectional movement without pivoting or turning sideways.
    * **Seated Legroom & Knee Ergonomics:** Standard seated chair/sofa knee-to-shin clearance requires a minimum of $35\text{ cm}$ to avoid striking table edges on sitting or rising. Optimal comfort requires $45\text{–}60\text{ cm}$ to allow legs to stretch and permit coffee table surface accessibility without overreaching.
    * **Dining Chair Pull-Out Mechanics:** A standard dining chair requires $45\text{–}50\text{ cm}$ of depth when occupied. Pushing back and standing up requires a minimum pull-out clearance of $81\text{ cm}$ behind the table edge. To comfortably exit the seat without trapping adjacent diners, $97\text{ cm}$ is required.
    * **Service & Passage Behind Seated Diners:** Traversing behind an occupied dining chair requires $\ge 91\text{ cm}$ to edge past and $\ge 107\text{–}112\text{ cm}$ to walk past normally without obliging the seated diner to scoot in.
+   * **Bed Access & Making Clearance:** Making a bed and walking along its perimeter requires a minimum of $61\text{ cm}$ ($24''$) clearance between the bed edge and adjacent walls or dressers; $\ge 76\text{ cm}$ provides comfortable access.
+   * **Wardrobe Door Swing & Dressing Space:** Opening swinging closet doors and pulling out drawers requires $61\text{–}91\text{ cm}$ of unobstructed floor space in front of the wardrobe to prevent collisions and permit comfortable dressing.
 
 4. **Tri-Tier Ergonomic Classification Philosophy:**
-   * **RED (Violation — `< violationThresholdCm`):** Represents clearance below the absolute minimum functional threshold. Physically obstructs everyday passage, forces awkward sideways body contortions, or prevents basic furniture utility (e.g., dining chairs colliding with walls when pulled out).
+   * **RED (Violation — `< violationThresholdCm`):** Represents clearance below the absolute minimum functional threshold. Physically obstructs everyday passage, forces awkward sideways body contortions, or prevents basic furniture utility (e.g., dining chairs colliding with walls when pulled out, or trapped wardrobe doors).
    * **YELLOW (Warning — `violationThresholdCm` to `warningThresholdCm`):** Represents clearance above functional minimums but below comfortable ergonomic recommendations. The space is usable under light occupancy, but creates friction, psychological crowding, or minor physical inconvenience during daily living.
    * **GREEN (Comfortable Standard — `≥ warningThresholdCm`):** Exceeds comfortable design thresholds. Permits unrestricted pedestrian flow, uninhibited body articulation, and gracious room circulation.
 
@@ -919,13 +1004,13 @@ workspace (same furnitureStore layout)
      1. **Rule L1 (General Circulation):** Checks if the path maintains general room circulation ($\ge 60\text{ cm} / 91\text{ cm}$).
      2. **Rule L3 (Secondary Circulation):** Checks if the gap serves as a secondary path between pieces ($\ge 61\text{ cm} / 76\text{ cm}$).
      3. **Rule L2 (Sofa / Coffee Table):** Checks if the gap meets specialized legroom and reach ergonomics ($35\text{–}45\text{ cm}$).
-   * *Thesis Advisory Validation:* Following faculty and thesis adviser evaluation, concurrent evaluation was verified as intentional and correct: L1 and L3 represent room-wide circulation invariants, while L2 represents item-specific ergonomic performance. Evaluating both ensures that specialized tight legroom is differentiated from general circulation blockages.
+   * *Room Scoping:* Pairwise evaluations are scoped to items within the same room (`aRoom === bRoom`), ensuring bedroom rules (B1, B2) operate within bedroom bounds while living/dining rules govern public zones without cross-boundary interference.
 
 ---
 
-#### 4.5.2 The 10 Interior Design Clearance Standards — Complete Specification Matrix
+#### 4.5.2 The 12 Interior Design Clearance Standards — Complete Specification Matrix
 
-The clearance engine encodes 10 distinct standards (Table 3 Living Room, Table 4 Dining Room from DeChiara et al., 2001):
+The clearance engine encodes 12 distinct standards (DeChiara, Panero & Zelnik, 2001, pp. 61–90):
 
 | ID | Standard Name | Room Zone | Scope & Activation Trigger | RED Threshold (Violation) | YELLOW Threshold (Warning) | GREEN Threshold (Comfortable) | Affected Edge Selection | Plain-English UI Title & Requirement | Consequence Statement if Ignored |
 | :---: | :--- | :---: | :--- | :---: | :---: | :---: | :--- | :--- | :--- |
@@ -939,6 +1024,8 @@ The clearance engine encodes 10 distinct standards (Table 3 Living Room, Table 4
 | **D3** | Passage Behind Seated | Dining | **Wall Conditional:** Evaluates clearance between `dining_chair` and its closest room wall for rear traversal. | $< 91\text{ cm}$ | $91\text{–}106\text{ cm}$ | $\ge 107\text{ cm}$ | Chair rear edge width. | **"Passing behind a seated person"**<br>*Leave at least 107 cm to edge past someone who is seated.* | *There is no room to pass behind someone seated.* |
 | **D4** | Walking Past Seated | Dining | **Pairwise Conditional:** Fired when one item is `dining_chair` and the other is a non-dining item (`pairAppliesToD4`). | $< 97\text{ cm}$ | $97\text{–}111\text{ cm}$ | $\ge 112\text{ cm}$ | Facing edge length of the primary item. | **"Walking past a seated person"**<br>*Leave at least 112 cm to walk past someone who is seated.* | *It is too tight to walk past someone seated.* |
 | **D5** | Minimum Passage | Dining | **Pairwise Conditional:** Fired whenever either item in a pair is `dining_table` or `dining_chair` (`pairAppliesToD5`). | $< 61\text{ cm}$ | $61\text{–}75\text{ cm}$ | $\ge 76\text{ cm}$ | Narrowest edge dimension of the dining piece. | **"Minimum passage"**<br>*Never let a passage between furniture drop below 76 cm.* | *The passage is too tight to move through.* |
+| **B1** | Bed Access Clearance | Bedroom 1 / 2 | **Orientation-Aware Conditional:** Evaluates walking clearance on sides and foot of `bed` against closest walls and furniture. Headboard against wall allowed. | $< 61\text{ cm}$ | $61\text{–}75\text{ cm}$ | $\ge 76\text{ cm}$ | Side edge length of bed (`effectiveWidthCm`). | **"Bed access clearance"**<br>*Leave at least 61 cm of walking clearance around the bed.* | *It is difficult to walk around or make the bed.* |
+| **B2** | Wardrobe / Closet Clearance | Bedroom 1 / 2 | **Front-Face Conditional:** Evaluates door swing and dressing clearance in front of `wardrobe` against opposing walls or facing furniture. | $< 61\text{ cm}$ | $61\text{–}75\text{ cm}$ | $\ge 76\text{ cm}$ | Front edge length of wardrobe (`effectiveLengthCm`). | **"Wardrobe clearance"**<br>*Leave at least 61 cm in front of the wardrobe to open doors and dress.* | *There is not enough room to open wardrobe doors or dress comfortably.* |
 
 ---
 
@@ -1221,24 +1308,26 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 
 | Feature | Implementation Component(s) | Technical Strategy | Operational Status |
 | :--- | :--- | :--- | :--- |
-| **Read-Only 3D Dollhouse Preview** | `ThreeDPreviewScreen.tsx`<br>`ThreeDLayoutPreview.tsx`<br>`DollhouseFloorPlan.tsx`<br>`DollhouseFurniture.tsx` | Direct read of `furnitureStore.items`; `cm / 100` procedural geometry; stored position/rotation mapping; `CONDO_ROOMS`-derived floors and walls; floor-level Living/Dining divider; responsive bounded `OrbitControls`; no editing or analysis imports. | **Active & Verified** |
+| **Read-Only 3D Dollhouse Preview** | `ThreeDPreviewScreen.tsx`<br>`ThreeDLayoutPreview.tsx`<br>`DollhouseFloorPlan.tsx`<br>`DollhouseFurniture.tsx` | Direct read of `furnitureStore.items`; `cm / 100` procedural geometry; stored position/rotation mapping; `CONDO_ROOMS`-derived floors and walls; floor-level Living/Dining divider; responsive bounded `OrbitControls`; procedural `BedModel` (mattress + headboard); no editing or analysis imports. | **Active & Verified** |
 | **3D Return State Preservation** | `sessionStore.ts`<br>`WorkspaceScreen.tsx` | Tracks `previousScreen`; skips workspace mount normalization only after `'threeDPreview'`; preserves exact furniture JSON, undo history, and normal initialization from all other routes. | **Active & Verified (3 Round Trips)** |
-| **Free 2D Floor Plan Drag** | `CondoFloorPlan.tsx`<br>`floorPlanDrag.ts` | Delta drag tracking, `unitEnvelope` outer wall bounding, live snap lines, live cm readouts. | **Active & Verified** |
-| **Sequential AR-to-2D Routing** | `FurnitureInputScreen.tsx`<br>`PositionMapScreen.tsx` | Sequential routing from input confirmation (`posX: 0, posZ: 0`) to `PositionMapScreen.tsx`, followed by safe Living Room handoff to `WorkspaceScreen.tsx`. | **Active & Verified** |
+| **Whole-Condo 8-Room Scope & Multi-Tier Validation** | `condoLayout.ts`<br>`floorPlanDrag.ts`<br>`ReportScreen.tsx`<br>`CondoFloorPlan.tsx` | Full $5.10\text{m} \times 8.80\text{m}$ unit support across all 8 rooms without artificial boundary drop blockers; transparent disclosure badges (`full`, `bedroom`, `limited`). | **Active & Verified** |
+| **Actionable Recommendations & Closed-Loop UX** | `recommendations.ts`<br>`CondoFloorPlan.tsx`<br>`WorkspaceScreen.tsx`<br>`RecommendationSheet.tsx` | Mobile-first floating trigger, slide-up sheet, auto-framing camera zoom (`targetViewBox`), pulsing item/wall glow, directional correction arrows with delta cm, real-time drag re-analysis, and auto-dismissing resolution (`"✓ Looks good"`). | **Active & Verified** |
+| **Free 2D Floor Plan Drag** | `CondoFloorPlan.tsx`<br>`floorPlanDrag.ts` | Delta drag tracking, `unitEnvelope` outer wall bounding, whole-unit directional gap readouts (`edgeGaps`), live snap lines, live cm readouts. | **Active & Verified** |
+| **Sequential AR-to-2D Routing** | `FurnitureInputScreen.tsx`<br>`PositionMapScreen.tsx` | Sequential routing from input confirmation (`posX: 0, posZ: 0`) to `PositionMapScreen.tsx`, followed by calibrated handoff to `WorkspaceScreen.tsx`. | **Active & Verified** |
 | **Responsive Text-Based Toolbar** | `WorkspaceScreen.tsx`<br>`App.css` | Explicit text action buttons ("Rotate", "Undo", "Delete"), accessible delete confirmation, non-mutating Cancel/Escape/backdrop paths, store delete/undo restoral sync, and responsive wrapping. | **Active & Verified** |
 | **Main Walkway Corridor & Real-Time Alert System** | `CondoFloorPlan.tsx`<br>`walkways.ts`<br>`WorkspaceScreen.tsx` | SVG dashed corridor overlay (`MAIN_ENTRY_WALKWAY_RECT`), real-time toast alert (`isItemInMainWalkway`), 5-path clearance monitoring (`computeWalkways`), header blocked pill, drawer status badges, and comprehensive test suite (`TC-WKSP-WALKWAY-001`–`005`). | **Active & Verified** |
-| **Auto Room Assignment** | `floorPlanDrag.ts`<br>`condoLayout.ts` | Item center coordinate spatial lookup inside `CONDO_ROOMS` polygon boundaries on drop. | **Active & Verified** |
+| **Auto Room Assignment** | `floorPlanDrag.ts`<br>`condoLayout.ts` | Item center coordinate spatial lookup inside `CONDO_ROOMS` polygon boundaries on drop across all 8 unit rooms. | **Active & Verified** |
 | **Undo / Redo Stack with Deletion Restoral** | `WorkspaceScreen.tsx` | 50-step state history stack recording position/rotation/deletion mutations; restores layout and store items. | **Active & Verified** |
-| **Single-Tap Room Anchor & Category-Aware AR Handoff** | `PositionMapScreen.tsx`<br>`calibration.ts`<br>`furnitureStore.ts` | Single-tap room entry corner alignment (`waitingForAnchor`: "📍 Tap the room entry corner to align") establishing `anchorCalibration` against `ENTRY_DOOR_BLUEPRINT` ($X=0.2\text{m}, Z=0.1\text{m}$), followed by real-time WebXR floor hit-testing (`PlacementScene`), tap-to-place, yaw rotation slider, blueprint coordinate projection via `applyCalibration`, category-aware room dispatch (`'dining'` vs `'living'`), and batch chair replication. | **Active & Verified** |
+| **Single-Tap Room Anchor & Multi-Room AR Placement** | `PositionMapScreen.tsx`<br>`calibration.ts`<br>`placementValidation.ts` | Single-tap room entry corner alignment (`waitingForAnchor`) against `ENTRY_DOOR_BLUEPRINT` ($X=0.2\text{m}, Z=0.1\text{m}$), WebXR floor hit-testing, ghost preview, rotation slider, calibrated coordinate projection across all 8 rooms, immediate clearance re-analysis, and explicit `AR_SENSOR_LIMITATIONS` disclosure. | **Active & Verified** |
 | **AR Point-to-Point Measuring** | `ARMeasureSession.tsx` | WebXR camera hit-test distance calculations for physical item diameter and side dimensions. | **Active & Verified** |
 | **Circular Furniture Support** | `floorPlanGeometry.ts`<br>`CondoFloorPlan.tsx`<br>`pdfReport.ts` | End-to-end support for round/circular tables: diameter input, SVG `<circle>` rendering, rotation locks, PDF vector circles. | **Active & Verified** |
-| **10 Clearance Rules Engine** | `rules.ts`<br>`clearance.ts` | Automated gap calculation against 5 living (L1-L5) and 5 dining (D1-D5) metric standards. | **Active & Verified** |
+| **12 Clearance Rules Engine (Living, Dining, Bedroom)** | `rules.ts`<br>`clearance.ts` | Automated gap calculation against 5 living (L1–L5), 5 dining (D1–D5), and 2 bedroom (B1–B2) metric standards, with room-scoped isolation (`aRoom === bRoom`). | **Active & Verified** |
 | **Priority Score Ranking** | `rules.ts`<br>`violationStore.ts` | $S = VSW \times \text{Shortfall} \times \text{EdgeLength}$ priority ranking for layout remediation. | **Active & Verified** |
 | **CVD-Safe Clearance Meters** | `ClearanceMeter.tsx`<br>`ruleGuidance.ts` | Color-blindness safe visual meters encoding clearance using track position, shapes, and plain English. | **Active & Verified** |
 | **Synthetic Email Supabase Auth** | `supabase.ts`<br>`AuthScreen.tsx` | Real Supabase Auth mapping username input to `${username}@habi3d.local` with RLS (`auth.uid() = user_id`). | **Active & Verified** |
 | **Debounced Layout Autosave** | `useAutosaveLayout.ts`<br>`supabase.ts` | 1.5-second debounced layout JSON syncing to Supabase `saved_sessions` table. | **Active & Verified** |
 | **Session Progress & Constructive Reporting** | `violationStore.ts`<br>`ReportScreen.tsx`<br>`pdfReport.ts` | Session progress computed via initial snapshot diffing ("You made N spots more comfortable"). Constructive phrasing ("Extra space suggested", "Layout preserved"), brand navy visual accents, and multi-page vector PDF download. | **Active & Verified** |
-| **Paginated Client PDF Export** | `pdfReport.ts`<br>`DownloadReportButton.tsx` | Pure client-side `jsPDF` vector report generation featuring floor plan drawing and 10-rule paginated detail tables. | **Active & Verified** |
+| **Paginated Client PDF Export** | `pdfReport.ts`<br>`DownloadReportButton.tsx` | Pure client-side `jsPDF` vector report generation featuring floor plan drawing and 12-rule paginated detail tables. | **Active & Verified** |
 | **2D Plan Grid & Muting** | `gridOverlay.ts`<br>`CondoFloorPlan.tsx` | Unit-wide lettered/numbered wayfinding reference grid (A1-F8), muted shading for non-active room zones. | **Active & Verified** |
 | **Tabular Numbers Formatting** | `src/components/tokens/type.ts` | `font-variant-numeric: tabular-nums` applied to gap readouts, dimensions, and meters to eliminate digit jitter. | **Active & Verified** |
 
@@ -1248,7 +1337,7 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 
 ### 6.1 Known Issues
 
-* **WARNING - Existing Project-Wide ESLint Failure:** `npm run lint` currently reports one pre-existing `@typescript-eslint/no-unused-vars` error at `src/components/floorPlanDrag.ts:208` because `_items` is assigned a default value but never used. The 3D feature's focused ESLint scope passes with zero errors.
+* **✅ Project-Wide ESLint Suite Passing (0 Errors, 0 Warnings):** `npm run lint` passes cleanly across the entire project with zero errors and zero warnings after resolving the unused parameter in `floorPlanDrag.ts`.
 * **WARNING - Existing Production Bundle Size:** `npm run build` succeeds, but Vite reports multiple chunks above the 500 kB warning threshold. The largest existing bundles remain the Three/XR-related application chunks; future optimization may use route-level dynamic imports or explicit chunk splitting.
 * **WARNING - Physical Android 3D Preview Validation Pending:** The 3D preview was verified in Chromium/Edge WebGL at desktop (`1440 x 900`) and mobile (`390 x 844`) viewports. A final performance and gesture pass on the target Android device remains recommended alongside the existing WebXR hardware checklist.
 * **OK - 3D Preview Isolation and Return Preservation:** Static scans confirm that preview modules contain no furniture mutation calls and no clearance, walkway, recommendation, Supabase, autosave, report, or AR imports. Automated state checks additionally confirmed that the workspace remount guard preserves serialized furniture state across three repeated preview round trips.
@@ -1276,6 +1365,9 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 
 ## 7. Verification & Testing Matrix
 
+* **PASS - Integrated Production Build (2026-10-09):** `npm run build` completed successfully after the whole-condo, bedroom rules B1/B2, and actionable recommendations system revision (`tsc -b && vite build`, 1,155 modules transformed in 8.20s).
+* **PASS - System Revision Automated Verification Suite (2026-10-09):** 7/7 comprehensive automated test suites in `src/tests/systemRevision.test.ts` passing with 100% assertions (System Objective, Whole-Condo 8 Rooms, Bedroom Rules B1/B2, Multi-Tier Validation Disclosures, AR Sensor Limitations, Actionable Recommendations UX, and BedModel 3D).
+* **PASS - Full Project-Wide ESLint (2026-10-09):** `npm run lint` (`eslint .`) completed with 0 errors and 0 warnings project-wide.
 * **PASS - Integrated Production Build (2026-09-17):** `npm run build` completed successfully after the state-preservation, boundary, and confirmation updates (`tsc -b && vite build`, 1,140 modules transformed).
 * **PASS - Focused Feature Lint:** `sessionStore.ts`, `WorkspaceScreen.tsx`, and `DollhouseFloorPlan.tsx` pass ESLint with 0 errors and 0 warnings.
 * **PASS - 3D Read-Only Static Audit:** No calls to `addItem`, `updateItem`, `updatePosition`, `removeItem`, `clearAll`, or `setItems` exist in the four new 3D preview files.
@@ -1284,7 +1376,7 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 * **PASS - Protected Module Diff Audit:** No feature-related changes detected in clearance/rule modules, walkway logic, AR modules, `furnitureStore`, Supabase, reports, 2D drag geometry, the 2D floor-plan renderer, or room-layout data. The navigation-only `sessionStore` change is intentionally scoped to previous-screen tracking.
 * **PASS - Responsive Visual Audit:** Headless Edge screenshots at `1440 x 900` and true device-emulated `390 x 844` confirmed a nonblank 3D canvas, open Living/Dining transition, complete condominium framing, and a fully contained confirmation dialog without overlap or clipping.
 * ✅ **TypeScript Compilation:** `npx tsc -b --force` clean project-wide (0 errors).
-* **WARNING - ESLint Suite:** `npm run lint` reports one pre-existing error in `src/components/floorPlanDrag.ts:208` (`_items` unused). The 3D feature and all directly modified TypeScript files pass focused ESLint checks with 0 errors and 0 warnings.
+* ✅ **Full Project-Wide ESLint:** `npm run lint` reports 0 errors and 0 warnings project-wide.
 * ✅ **Production Bundle Build:** `npx vite build` successful (module output verified).
 * ✅ **Drag & Layout Geometry Math:** 19/19 drag geometry assertions passing.
 * ✅ **Clearance Meter Visual Geometry:** 12/12 meter layout assertions passing.
@@ -1484,4 +1576,40 @@ Display: "[N] Walkways Blocked"     - Red Badge: "Blocked" (<60cm)
 * **State & Flow Integration:** Extended `sessionStore.ts` with `activePlacementItemId` and updated `PositionMapScreen.tsx` and `WorkspaceScreen.tsx` for seamless two-way routing.
 * **Non-Regression:** The existing 10 clearance standards (`CLEARANCE_RULES`), walkway tracking (`walkways.ts`), 2D drag physics (`floorPlanDrag.ts`), 3D dollhouse visualization (`ThreeDPreviewScreen.tsx`), and Supabase autosave flows remain 100% operational.
 
+### 7.9 System Revision Verification Matrix: Whole-Condo Scope, Bedroom Standards & Functional AR (SR-01 to SR-07)
 
+| Test ID | Functionality Tested | Detailed Test Procedure | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`SR-01`** | **System Objective & Closed-Loop Workflow** | Evaluated system objective documentation in `README.md` and verified closed-loop optimization sequence (Place furniture → evaluate layout → identify problem → show recommendation → focus affected area → adjust furniture → re-evaluate layout → confirm resolution). | Workflow embodies domain-grounded spatial decision-support without conversational AI dependencies. | Automated test verified all 8 steps present and documented. Zero chatbot or conversational requirements remain in planning workflow. | **Passed** |
+| **`SR-02`** | **Whole-Condo 8-Room Coverage & Unblocked Placement** | Evaluated furniture placement across all 8 rooms of Mulberry Place Bengaline 2BR ($5.10\text{m} \times 8.80\text{m}$); tested `canPlace()` with beds, wardrobes, and tables across bedrooms, kitchen, bathroom, storage, and balcony. | Furniture can be placed anywhere within unit envelope; artificial bedroom, kitchen, and bathroom blockers are removed. | `canPlace()` allowed placement in all 8 rooms within $[0, 5.10\text{m}] \times [0, 8.80\text{m}]$ without throwing rollback errors; `getRoomForCategory()` correctly mapped categories to rooms. | **Passed** |
+| **`SR-03`** | **Codified Bedroom Standards (B1 & B2) & Room Scoping** | Evaluated Rule B1 (Bed Access Clearance: RED $<61\text{cm}$, YELLOW $61$–$75\text{cm}$, GREEN $\ge 76\text{cm}$) and Rule B2 (Wardrobe Clearance: RED $<61\text{cm}$, YELLOW $61$–$75\text{cm}$, GREEN $\ge 76\text{cm}$); verified room-scoped isolation (`aRoom === bRoom`). | Bedroom rules trigger accurately based on orientation; cross-room furniture pairs generate zero false-positive violations. | Bed with $45\text{cm}$ side wall clearance classified RED under B1; wardrobe with $50\text{cm}$ front clearance classified RED under B2; bed in bedroom and sofa in living room generated zero pairwise cross-room violations. | **Passed** |
+| **`SR-04`** | **Multi-Tier Room Validation Disclosures** | Inspected validation levels and notes across all 8 rooms in `CONDO_ROOMS` and verified badge rendering logic for `ReportScreen.tsx` and `CondoFloorPlan.tsx`. | Rooms explicitly report `full` for Living/Dining, `bedroom` for Bedrooms 1/2, and `limited` for Kitchen/Bathroom/Balcony/Storage. | All 8 rooms defined explicit `validationLevel` and descriptive `validationNote`; report rendered "Full Validation", "Bedroom Standards", and "Limited Analysis" badges accurately. | **Passed** |
+| **`SR-05`** | **AR Placement Pipeline & Sensor Limitation Disclosures** | Tested coordinate clamping across all 8 room boundaries in `PositionMapScreen.tsx`; verified exported `AR_SENSOR_LIMITATIONS` in `src/ar/placementValidation.ts`. | AR hit-test placement supports whole condo with calibrated coordinate transfer; sensor accuracy caveats transparently disclosed. | Clamping validated across all 8 room polygons; `AR_SENSOR_LIMITATIONS` verified with explicit documentation of tracking drift ($\pm 2\text{–}5\text{cm}$), lighting sensitivity, and non-modeling of physical structural obstacles. | **Passed** |
+| **`SR-06`** | **Actionable Recommendations UX Flow & Auto-Resolution** | Tested translation layer `generateRecommendations()` on bedroom violations B1 and B2; verified directional arrows, auto-framing, and re-analysis resolution. | Technical violations translate to plain-English actions; resolution confirms with `"✓ Looks good"`. | B1 generated `"Move bed away from wall (+21 cm)"` with directional arrow vector; resolving clearance dismissed card with `"✓ Looks good"`. | **Passed** |
+| **`SR-07`** | **Expanded Data Model & 3D Dollhouse BedModel** | Verified `bed` and `wardrobe` categories in `FurnitureCategory`, `FurnitureInputScreen`, and rendered `BedModel` in `DollhouseFurniture.tsx`. | Bed and wardrobe categories supported end-to-end; 3D dollhouse displays mattress + headboard for beds and purple theme for wardrobes. | Category definitions valid in `types/index.ts`; `BedModel` rendered with procedural mattress, platform, and headboard; category color tokens verified. | **Passed** |
+
+#### Testing Notes (October 9, 2026)
+
+* **Verification Harness:** Automated verification suite executed via `npx -y tsx src/tests/systemRevision.test.ts`. All 7 test suites (15 distinct test assertions) passed with 100% success rate.
+* **Build Integrity:** `npm run build` (`tsc -b && vite build`) transformed 1,155 modules and completed in 8.20s with 0 errors.
+* **Code Quality & Linter:** `npm run lint` (`eslint .`) completed with 0 errors and 0 warnings project-wide.
+* **Scope Integrity:** 12 total interior design standards (L1–L5 Living, D1–D5 Dining, B1–B2 Bedroom) fully operational with room-scoped isolation, whole-condo boundary support, and calibrated AR placement.
+
+### 7.10 Expanded Furniture Catalog, Appliances, Electrical & Decorative Objects, and Custom Shapes (FC-01 to FC-07)
+
+| Test ID | Functionality Tested | Detailed Test Procedure | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`FC-01`** | **Comprehensive Catalog Expansion Across 8 Rooms** | Evaluated `src/data/furnitureCatalog.ts` and `FurnitureInputScreen.tsx` for all required furniture and appliance items spanning Living Room, Bedrooms 1/2, Dining, Kitchen, Bathroom, Balcony, and Storage. | Support 50+ presets across all 8 rooms, organized into 8 domains with sensible default dimensions, room mappings, and shapes. | Verified all required items present (sofas, armchairs, TV console, TVs, tables, chairs, beds, wardrobes, dressers, mirrors, fans, AC units, lamps, plants, refrigerators, washers, microwaves, ovens, water dispensers, vanities, hampers, shoe racks, utility shelves). | **Passed** |
+| **`FC-02`** | **Non-Standard Footprints & Geometry Shapes** | Tested `FurnitureShape` values (`rectangle`, `round`, `oval`, `l-shape`) across `shapeLibrary.ts`, 2D SVGs (`CondoFloorPlan.tsx`, `FloorPlan2D.tsx`, `pdfReport.ts`), and 3D Dollhouse (`DollhouseFurniture.tsx`). | Shapes render accurately: circles for round items, ellipses for oval items, polygons for L-shapes, and boxes for rectangular items. | Procedural geometries generated and rendered across 2D floor plans, PDF reports, and 3D dollhouse scenes; verified diameter calculation for round objects. | **Passed** |
+| **`FC-03`** | **Wall-Mounted vs. Floor-Standing Spatial Differentiation** | Created floor console and wall-mounted television at identical $(X, Z)$ coordinates with elevated mounting height ($120\text{cm}$); tested vertical height overlap in `overlappingItemIds()`. | Elevated wall-mounted items do not falsely conflict with floor-standing furniture beneath them. | `isVerticalOverlap()` returned `false`; zero collision was registered between the floor console and wall TV; wall-mounted items rendered with dashed indicator and `[WALL]` badge. | **Passed** |
+| **`FC-04`** | **Whole-Condo Room Selection & Multi-Item Quantity Support** | Tested `FurnitureInputScreen.tsx` room selector dropdown across all 8 rooms of Mulberry Place unit, with configurable quantity ($1\text{–}10$). | Users can assign any catalog item to any room; quantity selector stores configured count. | Verified room assignment persists to `item.roomId` and `quantity` persists without regression; AR and 2D workspace preserve room coordinates. | **Passed** |
+| **`FC-05`** | **Clearance Engine Isolation for Appliances & Electrical Items** | Analyzed kitchen refrigerator, washing machine, and electrical fan in `runClearanceAnalysis()`; checked for spurious bedroom/dining rule violations. | Clearance rules evaluate only domain-appropriate objects; no false-positive B1/B2/D1–D5 violations on appliances or fans. | Refrigerator and fans triggered 0 spurious bedroom or dining violations; main walkway corridor checking (L4) correctly ignores overhead wall AC units ($>180\text{cm}$). | **Passed** |
+| **`FC-06`** | **Realistic 3D Dollhouse Procedural Models** | Inspected `DollhouseFurniture.tsx` for specialized procedural models (refrigerators, washers, ovens, TVs, fans, lamps, mirrors, plants, hampers, vanities, storage racks). | Distinct procedural 3D models with appropriate category colors and elevations render in the dollhouse view. | Specialized models rendered with doors, handles, drum portholes, screens, shades, and frames; wall-mounted objects elevated to `mountHeightCm` in 3D scene. | **Passed** |
+| **`FC-07`** | **Zero Regressions & Project Integrity** | Executed automated test suite (`npx tsx src/tests/systemRevision.test.ts`), full TypeScript compilation (`npm run build`), and project-wide ESLint (`npm run lint`). | All 8 test suites pass; 0 TypeScript errors; 0 lint warnings. | 8/8 test suites passed with 100% assertions; production build succeeded; ESLint finished with 0 errors and 0 warnings. | **Passed** |
+
+#### Testing Notes (October 10, 2026)
+
+* **Verification Harness:** Automated verification suite executed via `npx -y tsx src/tests/systemRevision.test.ts`. All 8 test suites (23 distinct test assertions) passed with 100% success rate.
+* **Build Integrity:** `npm run build` (`tsc -b && vite build`) transformed 1,150 modules and completed with 0 errors.
+* **Code Quality & Linter:** `npm run lint` (`eslint .`) completed with 0 errors and 0 warnings project-wide.
+* **Backward Compatibility:** All existing bed, wardrobe, living, and dining categories preserved with 100% compatibility; saved layouts in JSON format load seamlessly.
