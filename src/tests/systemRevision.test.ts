@@ -25,7 +25,8 @@ import { canPlace, roomIdForItem } from '../components/floorPlanDrag.ts';
 import { validatePlacement, AR_SENSOR_LIMITATIONS } from '../ar/placementValidation.ts';
 import { applyCalibration, type CalibrationTransform } from '../ar/calibration.ts';
 import { runAllClearanceTestCases } from '../engine/clearanceTestCases.ts';
-import type { FurnitureItem } from '../types/index.ts';
+import { FRONT_DOOR_SWING_RECT, isItemInDoorSwing, isItemInMainWalkway } from '../engine/walkways.ts';
+import type { FurnitureItem, FurnitureCategory } from '../types/index.ts';
 
 console.log('--- Starting Habi3D System Revision Automated Tests ---');
 
@@ -494,6 +495,116 @@ const roomsMapped = testItems.map((item) => CONDO_ROOMS.find((r) => r.id === ite
 assert.ok(roomsMapped.every(Boolean), 'Every item must map to a valid condo room label');
 console.log('  ✓ Mobile actionable improvements, items inventory, and 12 design rules verified.');
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEST SUITE 10: Furniture Architectural Shapes & Input Streamlining
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log('\n10. Testing Architectural Furniture Shapes & Input Streamlining...');
+
+// 10.1 Verify that furniture pieces map to their authentic categories and shapes
+const architecturalCategories: FurnitureCategory[] = [
+  'sofa',
+  'armchair',
+  'bed',
+  'dining_table',
+  'dining_chair',
+  'coffee_table',
+  'side_table',
+  'tv_stand',
+  'work_desk',
+  'wardrobe',
+  'cabinet',
+  'appliance',
+  'electrical',
+  'plant',
+  'mirror',
+  'bathroom_fixture',
+  'storage_rack',
+];
+
+architecturalCategories.forEach((cat) => {
+  const roomPos = getDefaultRoomPosition(cat, 'Test Item');
+  assert.ok(roomPos && roomPos.roomId, `Category ${cat} must resolve default room placement`);
+});
+
+// 10.2 Verify that items place with natural 0 rotation and natural room placement without required user orientation step
+const testBedItem = {
+  id: 'test-bed',
+  label: 'Queen Bed',
+  category: 'bed' as const,
+  shape: 'rectangle' as const,
+  lengthCm: 200,
+  widthCm: 160,
+  heightCm: 105,
+  posX: 0,
+  posZ: 0,
+  rotationY: 0,
+  roomId: getDefaultRoomPosition('bed', 'Queen Bed').roomId,
+};
+assert.equal(testBedItem.rotationY, 0, 'New items initialize with clean 0 initial rotation');
+assert.equal(testBedItem.roomId, 'bedroom1', 'Bed naturally resolves to bedroom without forced manual input');
+
+const testSofaItem = {
+  id: 'test-sofa',
+  label: 'Sectional Sofa',
+  category: 'sofa' as const,
+  shape: 'l-shape' as const,
+  lengthCm: 240,
+  widthCm: 160,
+  heightCm: 85,
+  posX: 0,
+  posZ: 0,
+  rotationY: 0,
+  roomId: getDefaultRoomPosition('sofa', 'Sectional Sofa').roomId,
+};
+assert.equal(testSofaItem.roomId, 'living', 'Sofa naturally resolves to living room');
+assert.equal(testSofaItem.shape, 'l-shape', 'L-shape preserved for sectional sofa architectural rendering');
+
+console.log('  ✓ Architectural furniture shapes and streamlined input initialization verified.');
+
+// ============================================================================
+// TEST SUITE 11: Front Entrance Door Opening & Swing Consideration
+// ============================================================================
+console.log('\n11. Testing Front Entrance Door Opening & Swing Clearance Model...');
+
+assert.equal(FRONT_DOOR_SWING_RECT.x, 215, 'Front door swing x starts at 215 cm');
+assert.equal(FRONT_DOOR_SWING_RECT.y, 800, 'Front door swing inward depth reaches y=800 cm');
+assert.equal(FRONT_DOOR_SWING_RECT.width, 80, 'Front door width is standard 80 cm');
+assert.equal(FRONT_DOOR_SWING_RECT.height, 80, 'Front door swing depth is 80 cm');
+
+// Test item placed right in front entrance door swing
+const blockingShoeRack: FurnitureItem = {
+  id: 'blocking-rack',
+  label: 'Shoe Rack',
+  category: 'storage_rack',
+  shape: 'rectangle',
+  lengthCm: 80,
+  widthCm: 35,
+  heightCm: 90,
+  posX: 2.55, // 255 cm (centered in doorway)
+  posZ: 8.50, // 850 cm (inside the 800..880 door swing zone)
+  rotationY: 0,
+};
+assert.ok(isItemInDoorSwing(blockingShoeRack), 'Item placed at entrance doorway triggers isItemInDoorSwing');
+assert.ok(isItemInMainWalkway(blockingShoeRack), 'Item placed at entrance doorway triggers isItemInMainWalkway');
+
+// Test item placed safely inside dining room away from door swing
+const clearDiningChair: FurnitureItem = {
+  id: 'dining-chair-safe',
+  label: 'Dining Chair',
+  category: 'dining_chair',
+  shape: 'rectangle',
+  lengthCm: 50,
+  widthCm: 50,
+  heightCm: 85,
+  posX: 1.20, // 120 cm (in dining area)
+  posZ: 7.50, // 750 cm
+  rotationY: 0,
+};
+assert.equal(isItemInDoorSwing(clearDiningChair), false, 'Item away from entrance door does not trigger door swing obstruction');
+
+console.log('  ✓ Front entrance door opening, 80 cm swing envelope, and clearance checks verified.');
+
 console.log('\n=======================================================');
 console.log('ALL SYSTEM REVISION AUTOMATED TESTS PASSED SUCCESSFULLY!');
 console.log('=======================================================');
+

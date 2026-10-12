@@ -45,6 +45,32 @@ export function isItemInMainWalkway(item: FurnitureItem): boolean {
   return overlapX > 0.01 && overlapZ > 0.01;
 }
 
+/**
+ * 80 cm swing envelope of the condo unit front entrance door (x: 215..295, y: 800..880).
+ * Any furniture placed within this zone blocks the condo front entrance door from opening fully.
+ */
+export const FRONT_DOOR_SWING_RECT: WalkwayPath = {
+  id: 'front_door_swing',
+  label: 'Front Entrance Door Swing Clearance',
+  x: 215,
+  y: 800,
+  width: 80,
+  height: 80,
+};
+
+export function isItemInDoorSwing(item: FurnitureItem): boolean {
+  const b = toBounds(item);
+  const minX = FRONT_DOOR_SWING_RECT.x / 100;
+  const maxX = (FRONT_DOOR_SWING_RECT.x + FRONT_DOOR_SWING_RECT.width) / 100;
+  const minZ = FRONT_DOOR_SWING_RECT.y / 100;
+  const maxZ = (FRONT_DOOR_SWING_RECT.y + FRONT_DOOR_SWING_RECT.height) / 100;
+
+  const overlapX = Math.min(b.maxX, maxX) - Math.max(b.minX, minX);
+  const overlapZ = Math.min(b.maxZ, maxZ) - Math.max(b.minZ, minZ);
+
+  return overlapX > 0.01 && overlapZ > 0.01;
+}
+
 
 export interface WalkwayStatus {
   id: string;

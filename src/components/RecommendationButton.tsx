@@ -66,7 +66,7 @@ export default function RecommendationButton({
       title="View design recommendations"
     >
       <span style={badgeStyle}>
-        {isZero ? '✓' : count}
+        {isZero ? 'OK' : count}
       </span>
       <span>
         {isZero ? 'All Clear' : count === 1 ? '1 Recommendation' : `${count} Recommendations`}

@@ -70,13 +70,13 @@ export default function RecommendationPanel({
             <div style={sectionHeader}>
               <span style={sectionTitle}>Actionable Improvements</span>
               <span style={countPill(count > 0)}>
-                {count === 0 ? '✓ Optimized' : `${count} to review`}
+                {count === 0 ? 'Optimized' : `${count} to review`}
               </span>
             </div>
 
             {count === 0 ? (
               <div style={emptyBox}>
-                <div style={emptyCheck}>✓</div>
+                <div style={emptyCheck}>OK</div>
                 <div style={{ fontWeight: 800, fontSize: 15, color: t.ink }}>Layout Looks Great</div>
                 <p style={{ margin: '6px 0 0', fontSize: 13, color: t.inkSoft, lineHeight: 1.45 }}>
                   Every piece has comfortable clearance and trafficways are clear.
@@ -186,7 +186,7 @@ export default function RecommendationPanel({
                       }}
                       title="Adjust in AR"
                     >
-                      📷 AR
+                      AR
                     </button>
                   </div>
                 </div>

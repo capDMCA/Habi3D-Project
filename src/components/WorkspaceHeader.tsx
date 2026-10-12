@@ -164,7 +164,7 @@ export default function WorkspaceHeader({
         title="Place or adjust furniture in AR"
         aria-label="Place in Augmented Reality"
       >
-        📷 AR Place
+        AR Place
       </button>
 
       <button

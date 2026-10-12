@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { projectItems } from './floorPlanGeometry';
 import { color } from './tokens';
+import FurniturePlanSymbol from './FurniturePlanSymbol';
 import type { FurnitureItem } from '../types';
 
 /**
@@ -53,7 +54,6 @@ export interface FloorPlan2DProps {
 
 const PAD_CM = 40;
 const ROOM_STROKE = color.roomStroke;
-const LABEL_COLOR = color.inkSoft;
 const NORTH_COLOR = color.inkMute;
 
 // Phase 1 tokens for selections and bounds
@@ -267,95 +267,40 @@ export default function FloorPlan2D({
 
         const strokeWidth = isSelected ? 5 : 3;
 
-        const isWall = r.placementType === 'wall';
+        const item = items.find((it) => it.id === r.id) ?? {
+          id: r.id,
+          label: r.label,
+          category: 'other' as const,
+          shape: r.shape,
+          lengthCm: r.wCm,
+          widthCm: r.hCm,
+          heightCm: 75,
+          posX: 0,
+          posZ: 0,
+          rotationY: 0,
+          placementType: r.placementType,
+        };
+
         return (
           <g key={r.id}>
-            {r.shape === 'round' ? (
-              <circle
-                cx={r.xCm + r.wCm / 2}
-                cy={r.yCm + r.hCm / 2}
-                r={r.wCm / 2}
-                fill={fill}
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                strokeDasharray={isWall ? '6 3' : undefined}
-                style={{
-                  cursor: isDraggable ? 'grab' : 'pointer',
-                  touchAction: 'none',
-                }}
-                onPointerDown={(e) => handlePointerDown(e, r.id)}
-                onPointerMove={isDraggable ? handlePointerMove : undefined}
-                onPointerUp={isDraggable ? handlePointerUp : undefined}
-                onPointerCancel={isDraggable ? handlePointerUp : undefined}
-              />
-            ) : r.shape === 'oval' ? (
-              <ellipse
-                cx={r.xCm + r.wCm / 2}
-                cy={r.yCm + r.hCm / 2}
-                rx={r.wCm / 2}
-                ry={r.hCm / 2}
-                fill={fill}
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                strokeDasharray={isWall ? '6 3' : undefined}
-                style={{
-                  cursor: isDraggable ? 'grab' : 'pointer',
-                  touchAction: 'none',
-                }}
-                onPointerDown={(e) => handlePointerDown(e, r.id)}
-                onPointerMove={isDraggable ? handlePointerMove : undefined}
-                onPointerUp={isDraggable ? handlePointerUp : undefined}
-                onPointerCancel={isDraggable ? handlePointerUp : undefined}
-              />
-            ) : r.shape === 'l-shape' ? (
-              <polygon
-                points={`${r.xCm},${r.yCm} ${r.xCm + r.wCm},${r.yCm} ${r.xCm + r.wCm},${r.yCm + r.hCm * 0.45} ${r.xCm + r.wCm * 0.45},${r.yCm + r.hCm * 0.45} ${r.xCm + r.wCm * 0.45},${r.yCm + r.hCm} ${r.xCm},${r.yCm + r.hCm}`}
-                fill={fill}
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                strokeDasharray={isWall ? '6 3' : undefined}
-                style={{
-                  cursor: isDraggable ? 'grab' : 'pointer',
-                  touchAction: 'none',
-                }}
-                onPointerDown={(e) => handlePointerDown(e, r.id)}
-                onPointerMove={isDraggable ? handlePointerMove : undefined}
-                onPointerUp={isDraggable ? handlePointerUp : undefined}
-                onPointerCancel={isDraggable ? handlePointerUp : undefined}
-              />
-            ) : (
-              <rect
-                x={r.xCm}
-                y={r.yCm}
-                width={r.wCm}
-                height={r.hCm}
-                fill={fill}
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                strokeDasharray={isWall ? '6 3' : undefined}
-                rx={4}
-                style={{
-                  cursor: isDraggable ? 'grab' : 'pointer',
-                  touchAction: 'none',
-                }}
-                onPointerDown={(e) => handlePointerDown(e, r.id)}
-                onPointerMove={isDraggable ? handlePointerMove : undefined}
-                onPointerUp={isDraggable ? handlePointerUp : undefined}
-                onPointerCancel={isDraggable ? handlePointerUp : undefined}
-              />
-            )}
-            <text
-              x={r.xCm + r.wCm / 2}
-              y={r.yCm + r.hCm / 2}
-              fontSize={fontCm}
-              fontWeight={600}
-              fill={LABEL_COLOR}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              style={pointerNoneText}
-            >
-              {r.label}
-            </text>
+            <FurniturePlanSymbol
+              item={item}
+              xCm={r.xCm}
+              yCm={r.yCm}
+              wCm={r.wCm}
+              hCm={r.hCm}
+              fill={fill}
+              stroke={stroke}
+              strokeWidth={strokeWidth}
+              strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
+              isSelected={isSelected}
+              cursor={isDraggable ? 'grab' : 'pointer'}
+              onPointerDown={(e) => handlePointerDown(e, r.id)}
+              onPointerMove={isDraggable ? handlePointerMove : undefined}
+              onPointerUp={isDraggable ? handlePointerUp : undefined}
+              onPointerCancel={isDraggable ? handlePointerUp : undefined}
+              showLabel={true}
+            />
           </g>
         );
       })}

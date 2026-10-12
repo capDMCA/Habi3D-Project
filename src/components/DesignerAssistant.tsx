@@ -113,7 +113,12 @@ export default function DesignerAssistant({
       <div style={headerStyle}>
         <div style={avatarWrapStyle}>
           <div style={avatarBadgeStyle}>
-            <span style={{ fontSize: 16 }}>🛋️</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: t.brand }}>
+              <path d="M20 9V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2" />
+              <path d="M2 11v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+              <path d="M4 18v2" />
+              <path d="M20 18v2" />
+            </svg>
           </div>
           <div>
             <div style={{ fontWeight: 800, fontSize: 13, color: t.ink, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -131,7 +136,7 @@ export default function DesignerAssistant({
             color: isAllClear ? t.comfortFg : t.tightFg,
           }}
         >
-          {isAllClear ? '✓ All Clear' : `${adviceList.length} Suggestion${adviceList.length === 1 ? '' : 's'}`}
+          {isAllClear ? 'All Clear' : `${adviceList.length} Suggestion${adviceList.length === 1 ? '' : 's'}`}
         </span>
       </div>
 
@@ -169,7 +174,7 @@ export default function DesignerAssistant({
 
           {/* Why it helps */}
           <p style={{ margin: '6px 0 0', fontSize: 11.5, color: t.inkSoft, lineHeight: 1.4 }}>
-            💡 {activeAdvice.whyItHelps}
+            {activeAdvice.whyItHelps}
           </p>
 
           {/* Action Row */}
@@ -193,7 +198,7 @@ export default function DesignerAssistant({
                 onClick={() => onLaunchAR(currentItem)}
                 title="Adjust this furniture in Augmented Reality"
               >
-                {hasARCapability ? '📷 Adjust in AR' : '📷 AR Mode'}
+                {hasARCapability ? 'Adjust in AR' : 'AR Mode'}
               </button>
             )}
           </div>

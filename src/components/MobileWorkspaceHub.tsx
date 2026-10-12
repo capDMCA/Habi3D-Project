@@ -29,13 +29,12 @@ export default function MobileWorkspaceHub({
         aria-label={`Actionable improvements: ${recommendationCount} items`}
         title="View actionable improvements"
       >
-        <span className="hub-btn-icon">💡</span>
         <span className="hub-btn-label">Improvements</span>
         <span
           className={`hub-btn-badge ${isAttention ? 'badge-attention' : 'badge-good'}`}
           style={badgeStyle(isAttention)}
         >
-          {isAttention ? recommendationCount : '✓'}
+          {isAttention ? recommendationCount : 'Clear'}
         </span>
       </button>
 
@@ -47,7 +46,6 @@ export default function MobileWorkspaceHub({
         aria-label={`Placed furniture: ${itemCount} items`}
         title="View placed furniture items"
       >
-        <span className="hub-btn-icon">🛋️</span>
         <span className="hub-btn-label">Items</span>
         <span className="hub-btn-badge badge-neutral">
           {itemCount}
@@ -62,7 +60,6 @@ export default function MobileWorkspaceHub({
         aria-label="View interior design rules and standards"
         title="View design rules and standards"
       >
-        <span className="hub-btn-icon">📐</span>
         <span className="hub-btn-label">Rules</span>
         <span className="hub-btn-badge badge-neutral">
           12

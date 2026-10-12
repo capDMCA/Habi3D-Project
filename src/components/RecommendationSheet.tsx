@@ -92,7 +92,7 @@ export default function RecommendationSheet({
               {currentTab === 'recommendations'
                 ? count > 0
                   ? `${count} to review`
-                  : '✓ All Clear'
+                  : 'All Clear'
                 : currentTab === 'items'
                 ? `${itemCount} pieces`
                 : '12 rules'}
@@ -106,7 +106,10 @@ export default function RecommendationSheet({
             aria-label="Close sheet"
             title="Close"
           >
-            ✕
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
 
@@ -119,10 +122,9 @@ export default function RecommendationSheet({
             style={tabBtnStyle(currentTab === 'recommendations')}
             onClick={() => handleTabSelect('recommendations')}
           >
-            <span style={{ fontSize: 14 }}>💡</span>
             <span>Improvements</span>
             <span style={tabCounterBadge(count > 0, currentTab === 'recommendations')}>
-              {count > 0 ? count : '✓'}
+              {count > 0 ? count : 'Clear'}
             </span>
           </button>
 
@@ -133,7 +135,6 @@ export default function RecommendationSheet({
             style={tabBtnStyle(currentTab === 'items')}
             onClick={() => handleTabSelect('items')}
           >
-            <span style={{ fontSize: 14 }}>🛋️</span>
             <span>Items</span>
             <span style={tabCounterBadge(false, currentTab === 'items')}>
               {itemCount}
@@ -147,7 +148,6 @@ export default function RecommendationSheet({
             style={tabBtnStyle(currentTab === 'rules')}
             onClick={() => handleTabSelect('rules')}
           >
-            <span style={{ fontSize: 14 }}>📐</span>
             <span>Rules</span>
             <span style={tabCounterBadge(false, currentTab === 'rules')}>
               12
@@ -162,7 +162,7 @@ export default function RecommendationSheet({
             <div>
               {count === 0 ? (
                 <div style={emptyStateWrap}>
-                  <div style={emptyIcon}>✓</div>
+                  <div style={emptyIcon}>Clear</div>
                   <div style={emptyTitle}>Layout Looks Great</div>
                   <p style={emptyDesc}>
                     Every piece has comfortable clearance and trafficways are clear.
@@ -251,7 +251,7 @@ export default function RecommendationSheet({
 
               {items.length === 0 ? (
                 <div style={emptyStateWrap}>
-                  <div style={{ ...emptyIcon, background: 'rgba(100, 116, 139, 0.12)', color: t.inkSoft }}>🛋️</div>
+                  <div style={{ ...emptyIcon, background: 'rgba(100, 116, 139, 0.12)', color: t.inkSoft, fontSize: 13, fontWeight: 700 }}>Empty</div>
                   <div style={emptyTitle}>No Furniture Placed Yet</div>
                   <p style={emptyDesc}>
                     Add items from the furniture input screen or place pieces in AR.
@@ -320,7 +320,7 @@ export default function RecommendationSheet({
                             title="Adjust in AR"
                             aria-label={`Adjust ${item.label} in AR`}
                           >
-                            📷 AR
+                            AR
                           </button>
                         )}
                       </div>

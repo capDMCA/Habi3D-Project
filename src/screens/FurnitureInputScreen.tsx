@@ -6,7 +6,7 @@ import { useFurnitureStore, getDefaultRoomPosition } from '../stores/furnitureSt
 import { useSessionStore } from '../stores/sessionStore';
 import { useAutosaveLayout } from '../stores/useAutosaveLayout';
 import ARMeasureSession, { type MeasurePhase } from '../ar/ARMeasureSession';
-import { createFurnitureShape } from '../ar/shapeLibrary';
+import DollhouseFurniture from '../components/DollhouseFurniture';
 import Spinner from '../components/Spinner';
 import BackIcon from '../components/BackIcon';
 import { fontFamily, numeric } from '../components/tokens';
@@ -52,10 +52,10 @@ const CATEGORIES: Array<{
 ];
 
 const SHAPES: Array<{ value: FurnitureShape; label: string; hint: string }> = [
-  { value: 'rectangle', label: 'Rectangle / Square', hint: 'Sofas, beds, cabinets, desks, appliances' },
-  { value: 'round', label: 'Round / Circular', hint: 'Round tables, pedestal fans, lamps, stools, plant pots' },
+  { value: 'rectangle', label: 'Standard / Rectangular', hint: 'Sofas, beds, cabinets, desks, appliances' },
   { value: 'l-shape', label: 'L-Shape (Sectional)', hint: 'Sectional corner sofas, L-shaped desks' },
-  { value: 'oval', label: 'Oval', hint: 'Oval dining tables, coffee tables' },
+  { value: 'round', label: 'Round / Cylindrical', hint: 'Round tables, pedestal fans, lamps, stools, plant pots' },
+  { value: 'oval', label: 'Oval / Elliptical', hint: 'Oval dining tables, coffee tables' },
 ];
 
 type MeasureTarget = 'length' | 'width' | 'diameter';
@@ -77,45 +77,60 @@ function sanitizeDecimal(value: string): string {
 }
 
 function ShapePreview({
+  category,
   shape,
+  label,
   lengthCm,
   widthCm,
   heightCm,
+  placementType,
+  mountHeightCm,
 }: {
+  category: FurnitureCategory;
   shape: FurnitureShape;
+  label: string;
   lengthCm: number;
   widthCm: number;
   heightCm: number;
+  placementType: PlacementType;
+  mountHeightCm?: number;
 }) {
-  const geometry = useMemo(
-    () =>
-      createFurnitureShape(shape, {
-        lengthCm: Math.max(lengthCm, 40),
-        widthCm: Math.max(widthCm, 30),
-        heightCm: Math.max(heightCm, 25),
-      }).geometry,
-    [heightCm, lengthCm, shape, widthCm],
+  const previewItem: FurnitureItem = useMemo(
+    () => ({
+      id: 'preview-item',
+      label: label.trim() || 'Furniture Piece',
+      category,
+      shape,
+      lengthCm: Math.max(lengthCm, 30),
+      widthCm: Math.max(widthCm, 25),
+      heightCm: Math.max(heightCm, 25),
+      posX: 0,
+      posZ: 0,
+      rotationY: 0,
+      placementType,
+      mountHeightCm,
+    }),
+    [category, shape, label, lengthCm, widthCm, heightCm, placementType, mountHeightCm],
   );
-
-  useEffect(() => () => geometry.dispose(), [geometry]);
 
   return (
     <Canvas
       style={{
         width: '100%',
-        height: 170,
-        background: 'linear-gradient(180deg, rgba(31, 56, 100, 0.03) 0%, rgba(31, 56, 100, 0.08) 100%)',
+        height: 185,
+        background: 'linear-gradient(180deg, rgba(31, 56, 100, 0.04) 0%, rgba(31, 56, 100, 0.1) 100%)',
         borderRadius: 12,
         border: '1px solid rgba(0,0,0,0.06)',
       }}
-      camera={{ position: [2.2, 1.8, 2.2], fov: 45 }}
+      camera={{ position: [2.0, 1.6, 2.0], fov: 45 }}
     >
-      <ambientLight intensity={1.5} />
-      <directionalLight position={[3, 4, 3]} intensity={1.2} />
-      <mesh geometry={geometry} rotation-y={-0.55}>
-        <meshStandardMaterial color="#2B4E8C" roughness={0.45} metalness={0.05} />
-      </mesh>
-      <gridHelper args={[3, 6, '#94a3b8', '#cbd5e1']} position={[0, -0.31, 0]} />
+      <ambientLight intensity={1.7} />
+      <directionalLight position={[3, 4, 3]} intensity={1.4} />
+      <directionalLight position={[-2, 2, -2]} intensity={0.5} />
+      <group rotation={[0, -0.55, 0]}>
+        <DollhouseFurniture item={previewItem} />
+      </group>
+      <gridHelper args={[3, 6, '#94a3b8', '#cbd5e1']} position={[0, -0.01, 0]} />
     </Canvas>
   );
 }
@@ -199,10 +214,8 @@ export default function FurnitureInputScreen() {
   const [category, setCategory] = useState<FurnitureCategory | ''>('sofa');
   const [shape, setShape] = useState<FurnitureShape | ''>('rectangle');
   const [label, setLabel] = useState('');
-  const [selectedRoomId, setSelectedRoomId] = useState<string>('living');
   const [placementType, setPlacementType] = useState<PlacementType>('floor');
   const [mountHeightCm, setMountHeightCm] = useState<string>('120');
-  const [rotationDeg, setRotationDeg] = useState<number>(0);
   const [lengthCm, setLengthCm] = useState('210');
   const [widthCm, setWidthCm] = useState('90');
   const [heightCm, setHeightCm] = useState('85');
@@ -237,8 +250,7 @@ export default function FurnitureInputScreen() {
       const matchesQuery =
         !searchQuery.trim() ||
         preset.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        preset.notes?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        getRoomName(preset.defaultRoomId).toLowerCase().includes(searchQuery.toLowerCase());
+        preset.notes?.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesDomain && matchesQuery;
     });
   }, [searchQuery, selectedDomain]);
@@ -250,14 +262,12 @@ export default function FurnitureInputScreen() {
     setLabel(preset.label);
     setCategory(preset.category);
     setShape(preset.shape);
-    setSelectedRoomId(preset.defaultRoomId);
     setLengthCm(String(preset.lengthCm));
     setWidthCm(String(preset.widthCm));
     setHeightCm(String(preset.heightCm));
     setQuantity(preset.quantity ?? 1);
     setPlacementType(preset.placementType ?? 'floor');
     setMountHeightCm(preset.mountHeightCm ? String(preset.mountHeightCm) : '120');
-    setRotationDeg(0);
   }
 
   // Handle switching to custom item mode
@@ -267,7 +277,6 @@ export default function FurnitureInputScreen() {
     setLabel('');
     setCategory('other');
     setShape('rectangle');
-    setSelectedRoomId('living');
     setLengthCm('100');
     setWidthCm('60');
     setHeightCm('75');
@@ -378,14 +387,12 @@ export default function FurnitureInputScreen() {
     setIsCustomEntry(false);
     setCategory('sofa');
     setShape('rectangle');
-    setSelectedRoomId('living');
     setLengthCm('210');
     setWidthCm('90');
     setHeightCm('85');
     setQuantity(1);
     setPlacementType('floor');
     setMountHeightCm('120');
-    setRotationDeg(0);
     setMeasureTarget(null);
     setMeasurementReview(null);
     setArError('');
@@ -397,8 +404,7 @@ export default function FurnitureInputScreen() {
     const parsedLength = toPositiveNumber(lengthCm);
     const parsedWidth = toPositiveNumber(widthCm);
     const parsedHeight = toPositiveNumber(heightCm);
-    const targetRoom = selectedRoomId || getDefaultRoomPosition(category, label).roomId;
-    const rotRad = (rotationDeg * Math.PI) / 180;
+    const targetRoom = getDefaultRoomPosition(category, label).roomId;
     const parsedMountHeight = placementType === 'wall' ? toPositiveNumber(mountHeightCm) : undefined;
 
     addItem({
@@ -411,7 +417,7 @@ export default function FurnitureInputScreen() {
       heightCm: parsedHeight,
       posX: 0,
       posZ: 0,
-      rotationY: rotRad,
+      rotationY: 0,
       roomId: targetRoom,
       quantity: Math.max(1, quantity),
       placementType,
@@ -479,7 +485,7 @@ export default function FurnitureInputScreen() {
             <input
               type="text"
               className="form-input"
-              placeholder="🔍 Search items (e.g. Refrigerator, Sofa, Fan, Mirror, Bed)..."
+              placeholder="Search items (e.g. Refrigerator, Sofa, Fan, Mirror, Bed)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{ width: '100%' }}
@@ -493,7 +499,7 @@ export default function FurnitureInputScreen() {
               style={selectedDomain === 'all' ? selectedDomainTabStyle : domainTabStyle}
               onClick={() => setSelectedDomain('all')}
             >
-              🌐 All Items
+              All Items
             </button>
             {CATALOG_DOMAINS.map((domain) => (
               <button
@@ -502,7 +508,7 @@ export default function FurnitureInputScreen() {
                 style={selectedDomain === domain.key ? selectedDomainTabStyle : domainTabStyle}
                 onClick={() => setSelectedDomain(domain.key)}
               >
-                {domain.icon} {domain.shortLabel}
+                {domain.shortLabel}
               </button>
             ))}
           </div>
@@ -528,7 +534,6 @@ export default function FurnitureInputScreen() {
                     <span style={badgeDimsStyle}>
                       {preset.lengthCm} × {preset.widthCm} × {preset.heightCm} cm
                     </span>
-                    <span style={badgeRoomStyle}>{getRoomName(preset.defaultRoomId)}</span>
                     {preset.placementType === 'wall' && (
                       <span style={badgeWallStyle}>Wall-Mounted</span>
                     )}
@@ -545,7 +550,7 @@ export default function FurnitureInputScreen() {
               style={{ width: '100%', fontSize: 13, fontWeight: 700 }}
               onClick={handleCustomItemMode}
             >
-              ✏️ Add Custom / Non-Catalog Item
+              Add Custom / Non-Catalog Item
             </button>
           </div>
         </div>
@@ -555,9 +560,9 @@ export default function FurnitureInputScreen() {
           <div className="card-header">
             <div className="card-icon card-icon-primary">2</div>
             <div>
-              <p className="card-title">Configure Item & Room Assignment</p>
+              <p className="card-title">Configure Item & Dimensions</p>
               <p className="card-subtitle">
-                {isCustomEntry ? 'Define your custom piece' : 'Adjust preset dimensions and assign to any condo room'}
+                {isCustomEntry ? 'Define your custom piece dimensions' : 'Adjust preset dimensions and furniture shape'}
               </p>
             </div>
           </div>
@@ -602,28 +607,6 @@ export default function FurnitureInputScreen() {
             </select>
           </div>
 
-          {/* Target Room Selector (All 8 Condo Rooms) */}
-          <div className="form-group">
-            <label className="form-label" htmlFor="furniture-room">
-              Intended Condo Room
-            </label>
-            <p className="form-sublabel" style={{ margin: '-2px 0 8px' }}>
-              Assign to any of the 8 modeled rooms in the Mulberry Place unit
-            </p>
-            <select
-              id="furniture-room"
-              className="form-input"
-              value={selectedRoomId}
-              onChange={(e) => setSelectedRoomId(e.target.value)}
-            >
-              {CONDO_ROOMS.map((room) => (
-                <option key={room.id} value={room.id}>
-                  {room.label} ({room.validationNote})
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Placement Type: Floor vs Wall-Mounted */}
           <div className="form-group">
             <label className="form-label">Placement Type</label>
@@ -633,14 +616,14 @@ export default function FurnitureInputScreen() {
                 style={placementType === 'floor' ? selectedPlacementBtnStyle : placementBtnStyle}
                 onClick={() => setPlacementType('floor')}
               >
-                🏠 Floor-Standing
+                Floor-Standing
               </button>
               <button
                 type="button"
                 style={placementType === 'wall' ? selectedPlacementBtnStyle : placementBtnStyle}
                 onClick={() => setPlacementType('wall')}
               >
-                🧱 Wall-Mounted
+                Wall-Mounted
               </button>
             </div>
           </div>
@@ -668,7 +651,7 @@ export default function FurnitureInputScreen() {
 
           {/* Shape Selector */}
           <div className="form-group">
-            <label className="form-label">Shape & Geometry</label>
+            <label className="form-label">Shape & Form</label>
             <div style={shapeGridStyle}>
               {availableShapes.map((opt) => (
                 <button
@@ -688,7 +671,7 @@ export default function FurnitureInputScreen() {
           <div className="form-group" style={{ marginBottom: 8 }}>
             <label className="form-label">Dimensions</label>
             <p style={dimNoticeStyle}>
-              💡 Preset dimensions are standard defaults. Adjust length, width, and height in centimetres to match your actual furniture.
+              Preset dimensions are standard defaults. Adjust length, width, and height in centimetres to match your actual furniture.
             </p>
           </div>
 
@@ -794,23 +777,6 @@ export default function FurnitureInputScreen() {
             />
           </div>
 
-          {/* Initial Rotation */}
-          <div className="form-group">
-            <label className="form-label">Initial Placement Orientation</label>
-            <div style={rotationGridStyle}>
-              {[0, 90, 180, 270].map((deg) => (
-                <button
-                  key={deg}
-                  type="button"
-                  style={rotationDeg === deg ? selectedRotationBtnStyle : rotationBtnStyle}
-                  onClick={() => setRotationDeg(deg)}
-                >
-                  {deg}° {deg === 0 ? '(North)' : deg === 90 ? '(East)' : deg === 180 ? '(South)' : '(West)'}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Quantity Selector */}
           <div className="form-group">
             <label className="form-label" htmlFor="item-quantity">
@@ -851,21 +817,25 @@ export default function FurnitureInputScreen() {
             </div>
           </div>
 
-          {/* Live 3D Shape Preview */}
+          {/* Live 3D Furniture Shape Preview */}
           <div className="form-group" style={previewPanelStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <label className="form-label" style={{ margin: 0 }}>
-                Interactive 3D Geometry Preview
+                Interactive 3D Furniture Shape Preview
               </label>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>
                 {getShapeLabel(shape as FurnitureShape)}
               </span>
             </div>
             <ShapePreview
+              category={(category as FurnitureCategory) || 'sofa'}
               shape={(shape as FurnitureShape) || 'rectangle'}
+              label={label}
               lengthCm={toPositiveNumber(lengthCm)}
               widthCm={toPositiveNumber(widthCm)}
               heightCm={toPositiveNumber(heightCm)}
+              placementType={placementType}
+              mountHeightCm={placementType === 'wall' ? toPositiveNumber(mountHeightCm) : undefined}
             />
           </div>
 
@@ -884,7 +854,7 @@ export default function FurnitureInputScreen() {
                 <span style={{ color: '#64748b' }}>Item:</span> <strong>{label.trim() || 'Untitled'}</strong>
               </div>
               <div>
-                <span style={{ color: '#64748b' }}>Room:</span> <strong>{getRoomName(selectedRoomId)}</strong>
+                <span style={{ color: '#64748b' }}>Layout:</span> <strong>Condo Floor Plan</strong>
               </div>
               <div>
                 <span style={{ color: '#64748b' }}>Category:</span> <strong>{getCategoryLabel(category as FurnitureCategory)}</strong>
@@ -910,7 +880,7 @@ export default function FurnitureInputScreen() {
           {arError && <p className="form-error">{arError}</p>}
 
           <button className="btn btn-primary" onClick={handleAddItem} disabled={!canAddItem} style={{ marginTop: 12 }}>
-            ➕ Add Item to Condo Layout
+            Add Item to Condo Layout
           </button>
         </div>
 
@@ -920,7 +890,7 @@ export default function FurnitureInputScreen() {
         {items.length > 0 && (
           <div style={{ display: 'grid', gap: 10, marginBottom: 'var(--space-sm)' }}>
             <button className="btn btn-primary" onClick={() => navigateTo('positionMap')}>
-              📷 Position Furniture in AR ({items.length} item{items.length === 1 ? '' : 's'})
+              Position Furniture in AR ({items.length} item{items.length === 1 ? '' : 's'})
             </button>
             <button className="btn btn-secondary" onClick={() => navigateTo('workspace')}>
               Open 2D Workspace Directly
@@ -1268,15 +1238,6 @@ const badgeDimsStyle: CSSProperties = {
   color: 'var(--primary)',
 };
 
-const badgeRoomStyle: CSSProperties = {
-  fontSize: 10,
-  fontWeight: 700,
-  padding: '1px 5px',
-  borderRadius: 4,
-  background: '#f1f5f9',
-  color: '#475569',
-};
-
 const badgeWallStyle: CSSProperties = {
   fontSize: 10,
   fontWeight: 800,
@@ -1375,30 +1336,6 @@ const measureButtonStyle: CSSProperties = {
   minWidth: 116,
   borderRadius: 12,
   fontWeight: 700,
-};
-
-const rotationGridStyle: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(4, 1fr)',
-  gap: 6,
-};
-
-const rotationBtnStyle: CSSProperties = {
-  padding: '8px 4px',
-  borderRadius: 10,
-  border: '1px solid var(--border)',
-  background: 'var(--card)',
-  fontSize: 12,
-  fontWeight: 700,
-  cursor: 'pointer',
-  textAlign: 'center',
-};
-
-const selectedRotationBtnStyle: CSSProperties = {
-  ...rotationBtnStyle,
-  borderColor: 'var(--primary)',
-  background: 'var(--primary-tint)',
-  color: 'var(--primary)',
 };
 
 const reviewCardStyle: CSSProperties = {

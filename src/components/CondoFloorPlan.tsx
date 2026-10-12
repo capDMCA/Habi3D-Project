@@ -3,6 +3,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { projectItems } from './floorPlanGeometry';
 import { computeGridGeometry } from './gridOverlay';
 import { color as t, numeric } from './tokens';
+import FurniturePlanSymbol from './FurniturePlanSymbol';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import type { RoomZone } from '../data/condoLayout';
 import {
@@ -16,7 +17,7 @@ import {
   type AlignmentGuide,
 } from './floorPlanDrag';
 import type { FurnitureItem } from '../types';
-import { MAIN_ENTRY_WALKWAY_RECT } from '../engine/walkways';
+import { MAIN_ENTRY_WALKWAY_RECT, isItemInDoorSwing } from '../engine/walkways';
 
 export interface CondoFloorPlanInteraction {
   draggableItemId: string;
@@ -45,11 +46,16 @@ export interface CondoFloorPlanProps {
   focusedRoomId?: string | null;
   onFocusRoom?: (roomId: string | null) => void;
   focusTarget?: FocusTarget | null;
+  defaultDoorOpen?: boolean;
 }
 
-const PAD_CM = 25;
+const PAD_SIDE_CM = 25;
+const PAD_TOP_CM = 25;
+const PAD_BOTTOM_CM = 48;
 const WIDTH_CM = UNIT_WIDTH_CM;
 const HEIGHT_CM = UNIT_HEIGHT_CM;
+const VB_WIDTH = WIDTH_CM + PAD_SIDE_CM * 2;
+const VB_HEIGHT = HEIGHT_CM + PAD_TOP_CM + PAD_BOTTOM_CM;
 // A click that never travels this far is a click, not a drag — nothing about
 // the view, undo history, or furniture position may change because of it.
 const DRAG_THRESHOLD_PX = 5;
@@ -92,14 +98,19 @@ export default function CondoFloorPlan({
   focusedRoomId = null,
   onFocusRoom,
   focusTarget = null,
+  defaultDoorOpen = true,
 }: CondoFloorPlanProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragSession | null>(null);
 
+  const [isDoorOpen, setIsDoorOpen] = useState(defaultDoorOpen);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [activeGuides, setActiveGuides] = useState<AlignmentGuide[]>([]);
   const [collidingIds, setCollidingIds] = useState<string[]>([]);
   const [dropRoomId, setDropRoomId] = useState<string | null>(null);
+
+  // Real-time check if placed furniture encroaches on front door inward swing
+  const isDoorObstructed = useMemo(() => items.some(isItemInDoorSwing), [items]);
 
   // Fresh refs for window listeners, which outlive any single render.
   const itemsRef = useRef(items);
@@ -144,7 +155,7 @@ export default function CondoFloorPlan({
 
   // ─── viewBox smooth zoom ────────────────────────────────────────────────────
   const targetViewBox = useMemo(() => {
-    const full = { x: -PAD_CM, y: -PAD_CM, w: WIDTH_CM + PAD_CM * 2, h: HEIGHT_CM + PAD_CM * 2 };
+    const full = { x: -PAD_SIDE_CM, y: -PAD_TOP_CM, w: VB_WIDTH, h: VB_HEIGHT };
 
     // When focusing a specific recommendation problem area:
     if (focusTarget) {
@@ -379,8 +390,14 @@ export default function CondoFloorPlan({
           </marker>
         </defs>
 
-        {/* Outer unit boundary */}
-        <rect x={0} y={0} width={WIDTH_CM} height={HEIGHT_CM} fill="none" stroke={t.roomStroke} strokeWidth={6} rx={8} />
+        {/* Outer unit boundary with open front entrance doorway (x: 215..295 at y: 880) */}
+        <path
+          d={`M 215 ${HEIGHT_CM} L 8 ${HEIGHT_CM} Q 0 ${HEIGHT_CM} 0 ${HEIGHT_CM - 8} L 0 8 Q 0 0 8 0 L ${WIDTH_CM - 8} 0 Q ${WIDTH_CM} 0 ${WIDTH_CM} 8 L ${WIDTH_CM} ${HEIGHT_CM - 8} Q ${WIDTH_CM} ${HEIGHT_CM} ${WIDTH_CM - 8} ${HEIGHT_CM} L 295 ${HEIGHT_CM}`}
+          fill="none"
+          stroke={t.roomStroke}
+          strokeWidth={6}
+          strokeLinecap="square"
+        />
 
         {/* 0. DIMENSION CALLOUTS — overall unit width/height only, for
             orientation. Pulled from WIDTH_CM/HEIGHT_CM (UNIT_WIDTH_CM/
@@ -610,12 +627,12 @@ export default function CondoFloorPlan({
             strokeWidth={4.5}
             strokeLinecap="round"
           />
-          {/* Divider wall separating West and East zones (x = 260cm, y: 100..880cm) */}
+          {/* Divider wall separating West and East zones (x = 260cm, y: 100..700cm; open at entrance foyer) */}
           <line
             x1={260}
             y1={100}
             x2={260}
-            y2={880}
+            y2={700}
             stroke="#0f172a"
             strokeWidth={4.5}
             strokeLinecap="round"
@@ -683,6 +700,233 @@ export default function CondoFloorPlan({
             />
           </g>
         )}
+
+        {/* 2D. CONDO FRONT ENTRANCE DOOR & INWARD SWING CLEARANCE ZONE */}
+        <g id="front-door-entrance-group">
+          {/* Entry Foyer Mat / Welcome Threshold */}
+          <g style={pointerNone}>
+            <rect
+              x={228}
+              y={861}
+              width={54}
+              height={15}
+              rx={3}
+              fill="rgba(148, 163, 184, 0.15)"
+              stroke="#94A3B8"
+              strokeWidth={1}
+              strokeDasharray="3 2"
+            />
+            <text
+              x={255}
+              y={871}
+              fontSize={7.5}
+              fontWeight={700}
+              fill="#475569"
+              letterSpacing={1.2}
+              textAnchor="middle"
+            >
+              ENTRY FOYER
+            </text>
+          </g>
+
+          {/* Door Swing Clearance Sector (Pie slice of 80cm radius) */}
+          <path
+            d="M 215 880 L 295 880 A 80 80 0 0 0 215 800 Z"
+            fill={isDoorObstructed ? "rgba(239, 68, 68, 0.18)" : "rgba(37, 99, 235, 0.08)"}
+            stroke="none"
+            style={{
+              opacity: isDoorOpen ? 1 : 0.2,
+              transition: 'all 0.35s ease',
+              cursor: 'pointer',
+            }}
+            onClick={() => setIsDoorOpen((o) => !o)}
+          />
+
+          {/* Door Swing Clearance Arc (90° quarter circle from (295, 880) to (215, 800)) */}
+          <path
+            d="M 295 880 A 80 80 0 0 0 215 800"
+            fill="none"
+            stroke={isDoorObstructed ? "#EF4444" : "#2563EB"}
+            strokeWidth={2}
+            strokeDasharray="5 3"
+            className="wksp-door-arc"
+            style={{
+              opacity: isDoorOpen ? 0.95 : 0.35,
+              transition: 'opacity 0.35s ease, stroke 0.3s ease',
+              cursor: 'pointer',
+            }}
+            onClick={() => setIsDoorOpen((o) => !o)}
+          />
+
+          {/* Door Clearance Status & Dimension Label inside swing area */}
+          <g style={pointerNone}>
+            <text
+              x={252}
+              y={842}
+              fontSize={8.5}
+              fontWeight={800}
+              fill={isDoorObstructed ? "#DC2626" : "#2563EB"}
+              textAnchor="middle"
+              style={{
+                opacity: isDoorOpen ? 0.9 : 0.4,
+                transition: 'opacity 0.35s ease',
+              }}
+            >
+              {isDoorObstructed ? "⚠️ SWING BLOCKED" : "80 cm SWING"}
+            </text>
+            <text
+              x={252}
+              y={852}
+              fontSize={6.5}
+              fontWeight={600}
+              fill={isDoorObstructed ? "#EF4444" : "#64748B"}
+              textAnchor="middle"
+              style={{
+                opacity: isDoorOpen ? 0.8 : 0.35,
+                transition: 'opacity 0.35s ease',
+              }}
+            >
+              {isDoorObstructed ? "Clear 80 cm for door" : "Inward Entrance Path"}
+            </text>
+          </g>
+
+          {/* Doorway Threshold Sill across the 80cm opening */}
+          <line
+            x1={215}
+            y1={880}
+            x2={295}
+            y2={880}
+            stroke="#94A3B8"
+            strokeWidth={2}
+            strokeDasharray="4 2"
+            style={pointerNone}
+          />
+
+          {/* Door Jambs (Casing blocks) */}
+          <rect x={212} y={876} width={5} height={8} fill={t.roomStroke} rx={1} style={pointerNone} />
+          <rect x={293} y={876} width={5} height={8} fill={t.roomStroke} rx={1} style={pointerNone} />
+
+          {/* Animated Swinging Door Leaf (Pivot at West Jamb (215, 880)) */}
+          <g
+            className="wksp-door-leaf"
+            style={{
+              transform: `rotate(${isDoorOpen ? -90 : 0}deg)`,
+              transformOrigin: '215px 880px',
+            }}
+            onClick={() => setIsDoorOpen((o) => !o)}
+            role="button"
+            aria-label={`Front entrance door: ${isDoorOpen ? 'open' : 'closed'}. Click to toggle.`}
+          >
+            {/* Door slab panel */}
+            <rect
+              x={215}
+              y={876.5}
+              width={80}
+              height={3.8}
+              rx={1.5}
+              fill="#1E293B"
+              stroke="#0F172A"
+              strokeWidth={1}
+            />
+            {/* Door slab face highlight */}
+            <rect
+              x={218}
+              y={877.2}
+              width={73}
+              height={2.2}
+              rx={1}
+              fill="#334155"
+            />
+            {/* Brass handle / lockset near swinging edge */}
+            <circle cx={287} cy={878.4} r={2.2} fill="#F59E0B" stroke="#B45309" strokeWidth={0.75} />
+            <circle cx={287} cy={878.4} r={0.8} fill="#FEF3C7" />
+            {/* Door width indicator badge on the leaf */}
+            <text
+              x={255}
+              y={875}
+              fontSize={6}
+              fontWeight={700}
+              fill="#38BDF8"
+              textAnchor="middle"
+            >
+              DOOR (80cm)
+            </text>
+          </g>
+
+          {/* West Hinge Pin */}
+          <circle cx={215} cy={880} r={3.2} fill="#0F172A" stroke="#94A3B8" strokeWidth={1} style={pointerNone} />
+          <circle cx={215} cy={880} r={1.2} fill="#38BDF8" style={pointerNone} />
+
+          {/* Animated Entrance Directional Chevrons (Outside Door -> Inward Traffic Flow) */}
+          <g style={pointerNone}>
+            <path
+              d="M 250 889 L 255 884 L 260 889"
+              stroke="#2563EB"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+              className="wksp-entrance-chevron"
+            />
+            <path
+              d="M 250 894 L 255 889 L 260 894"
+              stroke="#3B82F6"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+              opacity={0.65}
+              className="wksp-entrance-chevron"
+            />
+          </g>
+
+          {/* Interactive Entrance Callout Pill Badge (Outside Unit at y=902) */}
+          <g
+            className="wksp-entrance-pill"
+            onClick={() => setIsDoorOpen((o) => !o)}
+            style={{ cursor: 'pointer' }}
+            role="button"
+            aria-label="Toggle front door opening"
+          >
+            <rect
+              x={185}
+              y={896}
+              width={140}
+              height={19}
+              rx={9.5}
+              fill="#0F172A"
+              stroke={isDoorObstructed ? "#EF4444" : "#3B82F6"}
+              strokeWidth={1.5}
+            />
+            <text
+              x={255}
+              y={908}
+              fontSize={8.5}
+              fontWeight={800}
+              fill="#FFFFFF"
+              textAnchor="middle"
+              letterSpacing={0.5}
+            >
+              {isDoorObstructed
+                ? "⚠️ ENTRANCE OBSTRUCTED"
+                : isDoorOpen
+                ? "🚪 MAIN ENTRANCE • OPEN (90°)"
+                : "🚪 MAIN ENTRANCE • CLOSED"}
+            </text>
+            <text
+              x={255}
+              y={921}
+              fontSize={6.5}
+              fontWeight={600}
+              fill="#64748B"
+              textAnchor="middle"
+            >
+              {isDoorObstructed
+                ? "Move furniture away from 80cm door arc"
+                : `Click door or badge to ${isDoorOpen ? "close" : "open"}`}
+            </text>
+          </g>
+        </g>
 
         {/* 3. ALIGNMENT GUIDES */}
         {activeGuides.map((g, idx) =>
@@ -819,92 +1063,21 @@ export default function CondoFloorPlan({
                 )
               )}
 
-              {r.shape === 'round' ? (
-                <circle
-                  cx={r.xCm + directWidthCm / 2}
-                  cy={r.yCm + directHeightCm / 2}
-                  r={directRadiusCm}
-                  fill={fill}
-                  stroke={isRecommendationFocused ? '#2563EB' : stroke}
-                  strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
-                  strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
-                  style={{
-                    transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
-                    pointerEvents: 'none',
-                  }}
-                />
-              ) : r.shape === 'oval' ? (
-                <ellipse
-                  cx={r.xCm + directWidthCm / 2}
-                  cy={r.yCm + directHeightCm / 2}
-                  rx={directWidthCm / 2}
-                  ry={directHeightCm / 2}
-                  fill={fill}
-                  stroke={isRecommendationFocused ? '#2563EB' : stroke}
-                  strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
-                  strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
-                  style={{
-                    transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
-                    pointerEvents: 'none',
-                  }}
-                />
-              ) : r.shape === 'l-shape' ? (
-                <polygon
-                  points={`${r.xCm},${r.yCm} ${r.xCm + directWidthCm},${r.yCm} ${r.xCm + directWidthCm},${r.yCm + directHeightCm * 0.45} ${r.xCm + directWidthCm * 0.45},${r.yCm + directHeightCm * 0.45} ${r.xCm + directWidthCm * 0.45},${r.yCm + directHeightCm} ${r.xCm},${r.yCm + directHeightCm}`}
-                  fill={fill}
-                  stroke={isRecommendationFocused ? '#2563EB' : stroke}
-                  strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
-                  strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
-                  style={{
-                    transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
-                    pointerEvents: 'none',
-                  }}
-                />
-              ) : (
-                <rect
-                  x={r.xCm}
-                  y={r.yCm}
-                  width={directWidthCm}
-                  height={directHeightCm}
-                  fill={fill}
-                  stroke={isRecommendationFocused ? '#2563EB' : stroke}
-                  strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
-                  strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
-                  rx={4}
-                  style={{
-                    transition: isDragging ? 'none' : 'fill 0.15s ease, stroke 0.15s ease',
-                    pointerEvents: 'none',
-                  }}
-                />
-              )}
-
-              <text
-                x={r.xCm + directWidthCm / 2}
-                y={r.placementType === 'wall' ? r.yCm + directHeightCm / 2 - 7 : r.yCm + directHeightCm / 2}
-                fontSize={16}
-                fontWeight={700}
-                fill={t.ink}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                style={pointerNone}
-              >
-                {r.label}
-              </text>
-
-              {r.placementType === 'wall' && (
-                <text
-                  x={r.xCm + directWidthCm / 2}
-                  y={r.yCm + directHeightCm / 2 + 10}
-                  fontSize={11}
-                  fontWeight={800}
-                  fill="#2563EB"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  style={pointerNone}
-                >
-                  {`[WALL ${r.mountHeightCm ?? 120}cm]`}
-                </text>
-              )}
+              <FurniturePlanSymbol
+                item={item}
+                xCm={r.xCm}
+                yCm={r.yCm}
+                wCm={directWidthCm}
+                hCm={directHeightCm}
+                fill={fill}
+                stroke={isRecommendationFocused ? '#2563EB' : stroke}
+                strokeWidth={isRecommendationFocused || isSelected || isDragging ? 4 : 2}
+                strokeDasharray={r.placementType === 'wall' ? '6 3' : undefined}
+                isSelected={isSelected}
+                isDragging={isDragging}
+                isRecommendationFocused={isRecommendationFocused}
+                showLabel={true}
+              />
 
               {/* 2D Animated Correction Arrow */}
               {isRecommendationFocused && focusTarget?.fixDirectionLabel && (() => {
@@ -1093,7 +1266,7 @@ const svgStyle: CSSProperties = {
   maxHeight: '100%',
   width: 'auto',
   height: 'auto',
-  aspectRatio: `${WIDTH_CM + PAD_CM * 2} / ${HEIGHT_CM + PAD_CM * 2}`,
+  aspectRatio: `${VB_WIDTH} / ${VB_HEIGHT}`,
   display: 'block',
   boxShadow: '0 8px 30px rgba(0, 0, 0, 0.06)',
   borderRadius: '16px',

@@ -1,6 +1,6 @@
 import type { FurnitureItem, Violation } from '../types';
 import type { WalkwayStatus } from './walkways';
-import { isItemInMainWalkway } from './walkways';
+import { isItemInMainWalkway, isItemInDoorSwing } from './walkways';
 import { CONDO_ROOMS, getRoomForCategory } from '../data/condoLayout';
 import { ruleGuidance } from './ruleGuidance';
 
@@ -138,21 +138,26 @@ export function buildWorkspaceRecommendations(
         const roomId = intrudingItem.roomId || getRoomForCategory(intrudingItem.category, intrudingItem.label);
         const shiftWest = intrudingItem.posX > 2.5;
         const dirLabel = shiftWest ? 'West' : 'East';
+        const inDoorSwing = isItemInDoorSwing(intrudingItem);
         recommendations.push({
           id: `walkway-${w.id}-${intrudingItem.id}`,
           furnitureId: intrudingItem.id,
           furnitureLabel: intrudingItem.label,
-          actionText: 'Open up the main walkway corridor.',
-          problemReason: 'Furniture is encroaching on primary circulation between rooms.',
+          actionText: inDoorSwing
+            ? 'Keep the front entrance door and swing path clear.'
+            : 'Open up the main walkway corridor.',
+          problemReason: inDoorSwing
+            ? 'Furniture is blocking the condo front entrance door from swinging open safely.'
+            : 'Furniture is encroaching on primary circulation between rooms.',
           severity: 'RED',
-          priorityScore: 95, // High priority
+          priorityScore: inDoorSwing ? 98 : 95, // Front entrance takes top priority
           ruleCode: 'L4',
-          ruleLabel: 'Walkway Obstruction',
+          ruleLabel: inDoorSwing ? 'Front Door Clearance' : 'Walkway Obstruction',
           fixDirectionLabel: dirLabel,
           fixDirectionCm: 35,
           vector: directionToVector(dirLabel, 35),
           roomId,
-          roomLabel: 'Walkway Corridor',
+          roomLabel: inDoorSwing ? 'Condo Entrance' : 'Walkway Corridor',
           resolved: false,
         });
       }

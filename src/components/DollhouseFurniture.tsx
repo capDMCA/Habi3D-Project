@@ -474,6 +474,92 @@ function BathroomFixtureModel({ length, width, height, color, item }: ModelDimen
   );
 }
 
+function DeskModel({ length, width, height, color }: ModelDimensions) {
+  const topThickness = Math.max(0.035, height * 0.07);
+  const legHeight = height - topThickness;
+  const legWidth = Math.min(length * 0.08, 0.05);
+
+  return (
+    <group>
+      {/* Desktop */}
+      <BoxPart size={[length, topThickness, width]} position={[0, height - topThickness / 2, 0]} color={color} />
+      {/* Left and Right side legs */}
+      <BoxPart size={[legWidth, legHeight, width * 0.9]} position={[-length / 2 + legWidth / 2, legHeight / 2, 0]} color={color} />
+      <BoxPart size={[legWidth, legHeight, width * 0.9]} position={[length / 2 - legWidth / 2, legHeight / 2, 0]} color={color} />
+      {/* Modesty back panel */}
+      <BoxPart size={[length * 0.84, legHeight * 0.45, 0.02]} position={[0, legHeight * 0.7, -width * 0.38]} color={color} />
+    </group>
+  );
+}
+
+function TvStandModel({ length, width, height, color }: ModelDimensions) {
+  const consoleHeight = height * 0.45;
+  const tvHeight = Math.max(0.4, height * 0.65);
+  const tvWidth = Math.max(0.6, length * 0.75);
+
+  return (
+    <group>
+      {/* Console unit */}
+      <BoxPart size={[length, consoleHeight, width]} position={[0, consoleHeight / 2, 0]} color={color} />
+      {/* Shelf slot */}
+      <BoxPart size={[length * 0.86, consoleHeight * 0.45, width * 0.92]} position={[0, consoleHeight * 0.45, 0.01]} color="#1E293B" />
+      {/* Television screen */}
+      <BoxPart size={[tvWidth, tvHeight, 0.03]} position={[0, consoleHeight + tvHeight / 2, 0]} color="#0F172A" />
+      <BoxPart size={[tvWidth * 0.35, 0.02, width * 0.4]} position={[0, consoleHeight + 0.01, 0]} color="#64748B" />
+    </group>
+  );
+}
+
+function WardrobeModel({ length, width, height, color }: ModelDimensions) {
+  const handleHeight = Math.max(0.12, height * 0.12);
+
+  return (
+    <group>
+      {/* Main tall wardrobe */}
+      <BoxPart size={[length, height, width]} position={[0, height / 2, 0]} color={color} />
+      {/* Center split seam between doors */}
+      <BoxPart size={[0.015, height * 0.94, 0.01]} position={[0, height / 2, width / 2 + 0.005]} color="#1E293B" />
+      {/* Left handle */}
+      <BoxPart size={[0.018, handleHeight, 0.018]} position={[-0.04, height * 0.5, width / 2 + 0.012]} color="#E2E8F0" />
+      {/* Right handle */}
+      <BoxPart size={[0.018, handleHeight, 0.018]} position={[0.04, height * 0.5, width / 2 + 0.012]} color="#E2E8F0" />
+    </group>
+  );
+}
+
+function CabinetModel({ length, width, height, color }: ModelDimensions) {
+  return (
+    <group>
+      {/* Cabinet frame */}
+      <BoxPart size={[length, height, width]} position={[0, height / 2, 0]} color={color} />
+      {/* Shelf / drawer seam grooves */}
+      <BoxPart size={[length * 0.92, 0.012, 0.01]} position={[0, height * 0.33, width / 2 + 0.005]} color="#1E293B" />
+      <BoxPart size={[length * 0.92, 0.012, 0.01]} position={[0, height * 0.66, width / 2 + 0.005]} color="#1E293B" />
+      {/* Pull handles */}
+      <BoxPart size={[length * 0.22, 0.018, 0.018]} position={[0, height * 0.5, width / 2 + 0.012]} color="#CBD5E1" />
+    </group>
+  );
+}
+
+function PlantModel({ length, width, height, color }: ModelDimensions) {
+  const potHeight = height * 0.45;
+  const potW = Math.min(length, width) * 0.8;
+
+  return (
+    <group>
+      {/* Planter pot */}
+      <BoxPart size={[potW, potHeight, potW]} position={[0, potHeight / 2, 0]} color={color || '#8D6E63'} />
+      {/* Soil */}
+      <BoxPart size={[potW * 0.88, 0.02, potW * 0.88]} position={[0, potHeight + 0.01, 0]} color="#3E2723" />
+      {/* Green foliage sphere/cluster */}
+      <mesh position={[0, potHeight + (height - potHeight) * 0.55, 0]}>
+        <sphereGeometry args={[Math.min(length, width) * 0.45, 16, 16]} />
+        <meshStandardMaterial color="#2E7D32" roughness={0.7} />
+      </mesh>
+    </group>
+  );
+}
+
 function RectangularModel({ item, ...dimensions }: ModelDimensions & { item: FurnitureItem }) {
   switch (item.category) {
     case 'sofa':
@@ -485,8 +571,9 @@ function RectangularModel({ item, ...dimensions }: ModelDimensions & { item: Fur
     case 'coffee_table':
     case 'dining_table':
     case 'side_table':
-    case 'work_desk':
       return <TableModel {...dimensions} />;
+    case 'work_desk':
+      return <DeskModel {...dimensions} />;
     case 'dining_chair':
       return <ChairModel {...dimensions} />;
     case 'appliance':
@@ -500,9 +587,13 @@ function RectangularModel({ item, ...dimensions }: ModelDimensions & { item: Fur
     case 'bathroom_fixture':
       return <BathroomFixtureModel {...dimensions} item={item} />;
     case 'tv_stand':
-    case 'cabinet':
+      return <TvStandModel {...dimensions} />;
     case 'wardrobe':
+      return <WardrobeModel {...dimensions} />;
+    case 'cabinet':
+      return <CabinetModel {...dimensions} />;
     case 'plant':
+      return <PlantModel {...dimensions} />;
     case 'other':
     default:
       return (

@@ -406,7 +406,7 @@ export default function WorkspaceScreen() {
             reverted.map((it) => (it.id === draggedId ? rehomed : it)),
             rehomed,
           );
-          showToast(`⚠️ Furniture must be placed within the condo unit.`);
+          showToast(`Notice: Furniture must be placed within the condo unit.`);
           return;
         }
       }
@@ -416,9 +416,9 @@ export default function WorkspaceScreen() {
 
       const isOverlapping = overlappingItemIds(rehomed, layout).length > 0;
       if (isOverlapping) {
-        showToast(`⚠️ Notice: Furniture pieces are overlapping.`);
+        showToast(`Notice: Furniture pieces are overlapping.`);
       } else if (isItemInMainWalkway(rehomed)) {
-        showToast(`⚠️ Notice: ${item.label} is placed on the main walkway corridor.`);
+        showToast(`Notice: ${item.label} is placed on the main walkway corridor.`);
       } else if (newRoomId !== (item.roomId ?? null)) {
         const roomLabel = CONDO_ROOMS.find((r) => r.id === newRoomId)?.label;
         if (roomLabel) showToast(`${item.label} moved to ${roomLabel}.`);
@@ -448,14 +448,14 @@ export default function WorkspaceScreen() {
       const movedRoomId = roomIdForItem(moved);
       const room = CONDO_ROOMS.find((r) => r.id === movedRoomId);
       if (!room) {
-        showToast(`⚠️ Furniture must remain inside the condo unit.`);
+        showToast(`Notice: Furniture must remain inside the condo unit.`);
         return;
       }
 
       const otherItems = previewRef.current.filter((it) => it.id !== moved.id);
       const isOverlapping = overlappingItemIds(moved, otherItems).length > 0;
       if (isOverlapping) {
-        showToast(`⚠️ Notice: Furniture pieces are overlapping.`);
+        showToast(`Notice: Furniture pieces are overlapping.`);
       }
 
       historyRef.current.push(previewRef.current);
@@ -503,7 +503,7 @@ export default function WorkspaceScreen() {
 
     const isOverlapping = overlappingItemIds(rehomed, nextLayout).length > 0;
     if (isOverlapping) {
-      showToast(`⚠️ Notice: Furniture pieces are overlapping.`);
+      showToast(`Notice: Furniture pieces are overlapping.`);
     }
 
     commitLayout(nextLayout, rehomed);
@@ -698,7 +698,7 @@ export default function WorkspaceScreen() {
                 aria-label="View actionable improvements, items, and rules"
                 title="View actionable improvements, items, and rules"
               >
-                💡 {recommendationList.length > 0 ? `${recommendationList.length} Fixes` : 'All Clear'}
+                {recommendationList.length > 0 ? `${recommendationList.length} Fixes` : 'All Clear'}
               </button>
               <button
                 className="wksp-text-btn"
@@ -708,7 +708,7 @@ export default function WorkspaceScreen() {
                 aria-label="Adjust in AR"
                 title="Adjust this item in AR"
               >
-                📷 AR Mode
+                AR Mode
               </button>
               {selectedItem?.shape !== 'round' && (
                 <button

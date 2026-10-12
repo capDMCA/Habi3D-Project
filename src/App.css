@@ -341,6 +341,53 @@
   }
 }
 
+/* --- Front Door & Entrance Animations --- */
+.wksp-door-arc {
+  animation: doorArcSweep 2.2s linear infinite;
+}
+
+@keyframes doorArcSweep {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.wksp-entrance-chevron {
+  animation: entranceFlowPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes entranceFlowPulse {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+.wksp-door-leaf {
+  cursor: pointer;
+  transition: transform 0.45s cubic-bezier(0.34, 1.25, 0.64, 1), filter 0.15s ease;
+}
+
+.wksp-door-leaf:hover {
+  filter: brightness(1.2) drop-shadow(0 2px 8px rgba(37, 99, 235, 0.35));
+}
+
+.wksp-entrance-pill {
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.wksp-entrance-pill:hover {
+  transform: translateY(-1px) scale(1.02);
+  filter: drop-shadow(0 3px 8px rgba(37, 99, 235, 0.28));
+}
+
+.wksp-entrance-pill:active {
+  transform: translateY(0) scale(0.98);
+}
+
 @keyframes slideUpSheet {
   from {
     transform: translateY(100%);

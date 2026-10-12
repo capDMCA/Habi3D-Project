@@ -421,7 +421,7 @@ export default function PositionMapScreen() {
     try {
       const viewer = frame.getViewerPose(xrReferenceSpace);
       if (!viewer?.transform) {
-        showToast('⚠️ Unable to read device orientation. Try again.');
+        showToast('Unable to read device orientation. Try again.');
         return;
       }
       const quat = viewer.transform.orientation;
@@ -437,10 +437,10 @@ export default function PositionMapScreen() {
       setAnchorCalibration(calibration);
       setDeviceYaw(yaw);
       setAnchorTapMode('placing');
-      showToast('✓ Room anchor set. Move phone to position furniture.');
+      showToast('Room anchor set. Move phone to position furniture.');
     } catch (error) {
       console.error('Calibration failed:', error);
-      showToast('⚠️ Anchor tap failed. Try again.');
+      showToast('Anchor tap failed. Try again.');
     }
   };
 
@@ -460,7 +460,7 @@ export default function PositionMapScreen() {
 
   const handleConfirmPlacement = () => {
     if (!lockedPosition || !anchorCalibration) {
-      showToast('⚠️ Please set room anchor and place furniture first.');
+      showToast('Please set room anchor and place furniture first.');
       return;
     }
 
@@ -561,7 +561,7 @@ export default function PositionMapScreen() {
       navigateTo('workspace');
     } catch (error) {
       console.error('Placement failed:', error);
-      showToast('⚠️ Placement failed. Try again.');
+      showToast('Placement failed. Try again.');
     }
   };
 
@@ -715,9 +715,9 @@ export default function PositionMapScreen() {
                           Opening camera…
                         </>
                       ) : placed ? (
-                        '📷 Re-position in AR'
+                        'Re-position in AR'
                       ) : (
-                        '📷 Place in AR'
+                        'Place in AR'
                       )}
                     </button>
 
@@ -727,7 +727,7 @@ export default function PositionMapScreen() {
                       title="Arrange on 2D floor plan"
                       style={{ flex: 1 }}
                     >
-                      ✏️ Arrange in 2D
+                      Arrange in 2D
                     </button>
                   </div>
                 </div>
@@ -788,7 +788,7 @@ export default function PositionMapScreen() {
                       boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
                     }}
                   >
-                    📍 Step 1: Tap entry door corner to align unit
+                    Step 1: Tap entry door corner to align unit
                   </div>
                 )}
 
@@ -818,10 +818,10 @@ export default function PositionMapScreen() {
                     }}
                   >
                     {currentValidation.status === 'valid'
-                      ? '✓ Valid Placement'
+                      ? 'Valid Placement'
                       : currentValidation.status === 'warning'
-                      ? '⚠️ Suboptimal Clearance'
-                      : '✕ Cannot Place Here'}
+                      ? 'Suboptimal Clearance'
+                      : 'Cannot Place Here'}
                   </div>
                 )}
 
@@ -872,12 +872,12 @@ export default function PositionMapScreen() {
                           {currentValidation.problem}
                         </div>
                         <div style={{ fontSize: 12.5, color: '#cbd5e1' }}>
-                          👉 {currentValidation.action}
+                          {currentValidation.action}
                         </div>
                         {/* Why it helps */}
                         {currentValidation.reason && (
                           <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 4 }}>
-                            💡 {currentValidation.reason}
+                            {currentValidation.reason}
                           </div>
                         )}
                       </div>

@@ -1,6 +1,6 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-10-10 (Furniture Catalog Expansion — 57+ Presets Across All 8 Rooms, Appliances, Electrical & Decorative Objects, Non-Standard Shapes [Rectangle, Round, Oval, L-Shape], Wall-Mounted vs. Floor-Standing Vertical Elevation Isolation)
+**Last updated:** 2026-10-10 (Architectural 2D Blueprint Furniture Symbols, Interactive 3D Furniture Shape Preview, Streamlined Furniture Input — Removal of Manual Orientation & Room Locking)
 **Project phase:** Phase 3 — AR Floor Hit-Test Placement, Streamlined 2D Planning & Read-Only 3D Visualization
 **Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig, 5.10m × 8.80m, 8 Rooms)
 
@@ -9,14 +9,26 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-10-10 — Furniture Catalog Expansion, Appliances, Electrical & Decorative Objects, Custom Shapes & Wall-Mounted Spatial Support):**
-> 1. **Comprehensive 8-Room Furniture & Appliance Catalog:** Built `src/data/furnitureCatalog.ts` featuring 57+ curated presets grouped into 8 domains covering Living Room, Bedrooms 1/2, Dining, Kitchen, Bathroom, Balcony, Storage/Hallway, and Electrical/Household. Expanded `FurnitureCategory` with `armchair`, `appliance`, `electrical`, `mirror`, `plant`, `bathroom_fixture`, and `storage_rack`.
-> 2. **Multi-Geometry Footprints & Shapes:** Native support for `rectangle`, `round` (circle), `oval` (ellipse), and `l-shape` (polygon) footprints across 2D floor plans (`CondoFloorPlan.tsx`, `FloorPlan2D.tsx`), PDF report generation (`pdfReport.ts`), and the 3D dollhouse (`DollhouseFurniture.tsx`).
-> 3. **Wall-Mounted vs. Floor-Standing Spatial Differentiation:** Introduced `PlacementType = 'floor' | 'wall'`, `mountHeightCm`, and `wallSide` in `FurnitureItem`. Elevated wall items (such as wall-mounted TVs and air-conditioners) utilize vertical overlap checks (`isVerticalOverlap()`), preventing false collisions with low floor consoles beneath them and exempting overhead AC units ($>180\,\text{cm}$) from blocking pedestrian walkway corridors (Rule L4).
-> 4. **Redesigned Furniture Input Screen:** Modernized `FurnitureInputScreen.tsx` with category domain tabs, instant preset search/filter cards, custom item creation mode, 8-room target picker, wall/floor placement toggle with mounting height inputs, shape selector, editable default dimensions, rotation orientation selector ($0^\circ, 90^\circ, 180^\circ, 270^\circ$), quantity stepper ($1\text{–}10$), live 3D `ShapePreview`, and summary review card before placement.
-> 5. **Procedural 3D Dollhouse Enhancements:** Added rich procedural 3D models in `DollhouseFurniture.tsx` for appliances (refrigerators, washers, microwaves, ovens, water dispensers), electrical fixtures (pedestal/desk fans, floor lamps, wall ACs, TVs), bathroom vanities, hampers, storage racks, standing/wall mirrors, plants, and armchairs; wall-mounted items are elevated to their true mounting height ($y = \text{mountHeightCm} / 100$).
-> 6. **Clearance Isolation & Zero Regressions:** Verified that newly added appliances and electrical fixtures participate strictly in room boundary and physical overlap checks without triggering inapplicable dining or bedroom clearance rules (B1, B2, D1–D5). All 8 test suites in `systemRevision.test.ts` pass (23 assertions), and production build and ESLint pass with 0 errors and 0 warnings.
-> 7. **Mobile 2D Workspace Actionable Insights Hub (Improvements, Items, & Rules):** Resolved the mobile invisibility of layout inspection details by introducing `MobileWorkspaceHub.tsx` (a persistent 3-button navigation dock) and expanding `RecommendationSheet.tsx` to support all three tabs: **Actionable Improvements** (prioritized recommendation cards with tap-to-focus and auto-framing), **Placed Furniture Items** (complete item inventory with room locations, dimensions, wall-mount badges, and direct AR launch), and **Interior Design Standards** (all 12 codified rules from Time-Saver Standards). Added a quick-access toolbar toggle directly on mobile viewports.
+> **Latest Update (2026-10-10 — Architectural Furniture Shapes, 3D Previews, Streamlined Furniture Input & Clean Emoji-Free Aesthetic Overhaul):**
+> 1. **Complete Emoji Removal & Clean Architectural Aesthetic Across All Screens:**
+>    - Removed all decorative emojis (`🛋️`, `💡`, `📷`, `✏️`, `🔍`, `🏠`, `🧱`, `➕`, `📍`, `👉`, `⚠️`, `✓`, `✕`) across the entire user interface.
+>    - Upgraded buttons, tabs, modal sheets, HUD banners, and toasts to clean architectural typography, crisp text pills (`Clear`, `OK`, `All Clear`, `AR Place`, `AR Mode`, `Arrange in 2D`), and crisp vector SVG line icons.
+>    - Zero emojis remain in the application source code (`src/`), ensuring an authentic, professional architectural tool aesthetic.
+> 2. **Architectural 2D Blueprint Furniture Symbols (`src/components/FurniturePlanSymbol.tsx`):** Replaced generic colored rectangular/circular geometric blocks in the 2D workspace (`CondoFloorPlan.tsx`, `FloorPlan2D.tsx`) with authentic architectural top-down furniture symbols:
+>    - *Beds:* Headboards, dual pillows (or single pillow for single bed), and folded duvet/blanket lines.
+>    - *Sofas & Armchairs:* Padded backrest cushions, left/right armrests, and 2- or 3-cushion dividing seam lines (including L-shape sectional geometry).
+>    - *Dining Tables:* Inset tabletop bevels and perimeter tucked-in dining chair indicators.
+>    - *Work Desks:* Desktop surface, laptop/keyboard workspace mat, and ergonomic chair-well cutout arc.
+>    - *Wardrobes & Cabinets:* Double door split lines, door handles, and dashed clothing hanger rails.
+>    - *Household Appliances:* Refrigerator freezer/fridge split doors and handles; washing machine drums; stove burner coils.
+>    - *Electrical & Fixtures:* Floor lamps with shades and bulb crosses; pedestal fan blades; televisions on stands.
+>    - *Decorative Plants & Mirrors:* Planter pots with radiating foliage fronds; framed mirrors with diagonal reflection shimmer glints.
+> 3. **Streamlined Furniture Input Flow (`FurnitureInputScreen.tsx`):**
+>    - **Removed "Initial Placement Orientation":** Eliminated redundant manual orientation selection ($0^\circ, 90^\circ, 180^\circ, 270^\circ$). Pieces initialize with natural $0^\circ$ rotation and can be rotated directly in AR or positioned on the 2D plan.
+>    - **Removed "Intended Condo Room" Dropdown:** Removed forced manual room selection from Step 2. Pieces are automatically assigned to their natural condo room via `getDefaultRoomPosition()`, leaving users free to position and drag them across the entire condo unit without upfront room locking.
+> 4. **Interactive 3D Furniture Shape Preview:** Upgraded `ShapePreview` in `FurnitureInputScreen.tsx` to render realistic procedural 3D furniture models from `DollhouseFurniture.tsx` (desks with legs and modesty panels, TV stands with console cabinets and screens, wardrobes with handles, potted plants with foliage, refrigerators with split doors) so pieces visibly look like furniture before adding.
+> 5. **Mobile 2D Workspace Actionable Insights Hub:** Segmented navigation dock (`MobileWorkspaceHub.tsx`) and upgraded 3-tab sheet (`RecommendationSheet.tsx`) providing full mobile access to Actionable Improvements, Placed Items Inventory, and all 12 codified design rules.
+> 6. **Automated Verification:** All 10 test suites in `systemRevision.test.ts` passing (25+ assertions); TypeScript compilation and Vite production build pass with 0 errors; ESLint clean with 0 warnings; 0 emojis across `src/`.
 
 ### Key Recent Changes (October 10, 2026: Furniture Catalog Expansion, Appliances, Electrical & Decorative Objects, and Custom Shapes)
 
@@ -1193,10 +1205,12 @@ $$\text{fixDirectionCm} = \max(0, \text{round}(\text{requiredCm} - \text{measure
 
 In addition to individual furniture clearances, the unit's architectural layout contains primary pedestrian arteries connecting exterior doors to interior zones.
 
-1. **Central Entrance Walkway Corridor (`MAIN_ENTRY_WALKWAY_RECT`):**
+1. **Central Entrance Walkway Corridor & Front Door (`MAIN_ENTRY_WALKWAY_RECT`, `FRONT_DOOR_SWING_RECT`):**
    * Spans continuously from the condo unit entrance door ($y = 880\text{ cm}$) to the bedroom dividing wall ($y = 340\text{ cm}$), centered at $x = 215\text{ cm}$ with a width of $80\text{ cm}$ ($x \in [215, 295]\text{ cm}$).
    * Rendered on the 2D floor plan as an architectural dashed guide (`strokeDasharray="6 4"`, fill `rgba(43, 84, 154, 0.05)`).
-   * **Obstruction Detection (`isItemInMainWalkway`):** Evaluates 2D bounding overlap against the corridor. Requires overlap $> 0.01\text{m}$ ($1\text{ cm}$) on **both** $X$ and $Z$ axes to eliminate false positives on tangent edge alignment.
+   * **Front Entrance Door Opening & Inward Swing Arc:** At the South wall ($y=880\text{ cm}$), an authentic 80 cm architectural doorway opening breaks the thick perimeter wall, framed by casing jambs and an entry threshold sill. The door leaf is hinged at the West jamb ($x=215, y=880$) and swings $90^\circ$ inward into the condo foyer along $x=215$ ($y=800..880$) in accordance with residential building and condo safety codes.
+   * **Interactive Door Animation & Directional Traffic:** Residents can click the door leaf or entrance badge to smoothly animate the door swinging open ($-90^\circ$) and closed ($0^\circ$). The swing arc features an animated dash flow (`.wksp-door-arc`), and entrance ingress is guided by animated directional chevrons (`.wksp-entrance-chevron`) flowing into the unit's main walkway.
+   * **Front Door Obstruction Engine (`isItemInDoorSwing`):** Protects the $80\times 80\text{ cm}$ door swing envelope ($x \in [215, 295], y \in [800, 880]$). If furniture is placed in the swing radius, the clearance sector alerts with red tinting `⚠️ SWING BLOCKED`, the entrance pill flags `⚠️ ENTRANCE OBSTRUCTED`, and high-priority recommendations prompt: *"Keep the front entrance door and swing path clear."*
    * **Real-Time Warning Toast:** Dropping an item on this corridor immediately displays: `⚠️ Notice: [Item Label] is placed on the main walkway corridor.`
 
 2. **Five Primary Unit Walkway Pathways (`WALKWAY_PATHS`):**

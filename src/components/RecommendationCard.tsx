@@ -24,7 +24,7 @@ export default function RecommendationCard({
         <div style={headerRow}>
           <span style={itemTitle}>{recommendation.furnitureLabel}</span>
           {isResolved ? (
-            <span style={resolvedBadge}>✓ Looks good</span>
+            <span style={resolvedBadge}>Looks good</span>
           ) : (
             <span style={statusBadge(isRed)}>
               {isRed ? 'Needs Attention' : 'Recommendation'}

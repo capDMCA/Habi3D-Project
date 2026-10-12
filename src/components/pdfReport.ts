@@ -142,6 +142,34 @@ function drawPlan(
     }
   });
 
+  // Front Entrance Door & Swing Arc (x: 215..295, y: 880)
+  const doorHingeXmm = originXmm + 215 * scale;
+  const doorHingeYmm = originYmm + 880 * scale;
+  const doorOpenEndYmm = originYmm + (880 - 80) * scale;
+
+  // Door leaf panel (swung inward into unit)
+  doc.setDrawColor(30, 41, 59);
+  doc.setLineWidth(0.45);
+  doc.line(doorHingeXmm, doorHingeYmm, doorHingeXmm, doorOpenEndYmm);
+
+  // Door swing arc trajectory
+  doc.setDrawColor(37, 99, 235);
+  doc.setLineWidth(0.25);
+  doc.setLineDashPattern([1.2, 1], 0);
+  doc.line(doorHingeXmm, doorOpenEndYmm, originXmm + 295 * scale, doorHingeYmm);
+  doc.setLineDashPattern([], 0);
+
+  // Doorway threshold sill
+  doc.setDrawColor(148, 163, 184);
+  doc.setLineWidth(0.3);
+  doc.line(doorHingeXmm, doorHingeYmm, originXmm + 295 * scale, doorHingeYmm);
+
+  // Entrance callout label
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5);
+  doc.setTextColor(37, 99, 235);
+  doc.text('ENTRANCE (80cm)', originXmm + 255 * scale, doorHingeYmm + 2.5, { align: 'center', baseline: 'top' });
+
   // Furniture — coloured by final clearance status, same palette as the
   // live plan and the rest of this report.
   const rects = projectItems(items);
