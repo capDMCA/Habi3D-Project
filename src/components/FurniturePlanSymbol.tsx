@@ -27,10 +27,10 @@ const pointerNone: React.CSSProperties = { pointerEvents: 'none' };
 
 export const FurniturePlanSymbol: React.FC<FurniturePlanSymbolProps> = ({
   item,
-  xCm,
-  yCm,
-  wCm,
-  hCm,
+  xCm: propXCm,
+  yCm: propYCm,
+  wCm: propWCm,
+  hCm: propHCm,
   fill,
   stroke,
   strokeWidth,
@@ -49,6 +49,31 @@ export const FurniturePlanSymbol: React.FC<FurniturePlanSymbolProps> = ({
   const isWall = placementType === 'wall';
   const detailColor = stroke;
   const detailOpacity = isRecommendationFocused ? 0.6 : isSelected ? 0.45 : 0.28;
+
+  // Center of the item footprint
+  const cx = propXCm + propWCm / 2;
+  const cy = propYCm + propHCm / 2;
+
+  // Normalized rotation in degrees (0..359)
+  const rotationDeg = Number.isFinite(item.rotationY)
+    ? ((Math.round((item.rotationY * 180) / Math.PI) % 360) + 360) % 360
+    : 0;
+
+  // Canonical (unrotated) dimensions:
+  // When an item is rotated orthogonally (e.g. 90° or 270°), propWCm and propHCm
+  // in CondoFloorPlan might already be swapped due to bounding box projection.
+  // We draw the canonical unrotated symbol (where lengthCm is width and widthCm is depth),
+  // then apply SVG rotation around (cx, cy) so the architectural shapes and details
+  // face the correct cardinal direction while perfectly aligning with the bounding box.
+  const isOrthogonallyRotated = rotationDeg === 90 || rotationDeg === 270;
+  const canonicalW = item.lengthCm || (isOrthogonallyRotated ? propHCm : propWCm);
+  const canonicalH = item.widthCm || (isOrthogonallyRotated ? propWCm : propHCm);
+
+  // Top-left origin of the canonical unrotated shape centered at (cx, cy)
+  const xCm = cx - canonicalW / 2;
+  const yCm = cy - canonicalH / 2;
+  const wCm = canonicalW;
+  const hCm = canonicalH;
 
   // Render top-down architectural furniture symbols
   const renderArchitecturalDetails = () => {
@@ -924,18 +949,18 @@ export const FurniturePlanSymbol: React.FC<FurniturePlanSymbolProps> = ({
 
   return (
     <g>
-      {/* 1. Base Geometry Envelope */}
-      {renderBaseShape()}
+      {/* 1. Rotated Geometry Group (base shape + architectural detailing) */}
+      <g transform={rotationDeg !== 0 ? `rotate(${rotationDeg}, ${cx}, ${cy})` : undefined}>
+        {renderBaseShape()}
+        {renderArchitecturalDetails()}
+      </g>
 
-      {/* 2. Architectural Blueprint Detailing */}
-      {renderArchitecturalDetails()}
-
-      {/* 3. Text Label & Wall Badge */}
+      {/* 2. Text Label & Wall Badge — kept unrotated so it's always readable */}
       {showLabel && (
         <>
           <text
-            x={xCm + wCm / 2}
-            y={isWall ? yCm + hCm / 2 - 7 : yCm + hCm / 2}
+            x={cx}
+            y={isWall ? cy - 7 : cy}
             fontSize={15}
             fontWeight={700}
             fill={t.ink}
@@ -948,8 +973,8 @@ export const FurniturePlanSymbol: React.FC<FurniturePlanSymbolProps> = ({
 
           {isWall && (
             <text
-              x={xCm + wCm / 2}
-              y={yCm + hCm / 2 + 10}
+              x={cx}
+              y={cy + 10}
               fontSize={11}
               fontWeight={800}
               fill="#2563EB"
