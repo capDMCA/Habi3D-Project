@@ -354,6 +354,7 @@ export default function WorkspaceScreen() {
 
   // ── Drag handlers ─────────────────────────────────────────────────────────
   const handleDragStart = useCallback((id: string) => {
+    setSelectedId(id);
     const it = previewRef.current.find((p) => p.id === id);
     if (!it) return;
     // Remember where it came from, so an impossible drop can fall back to a
@@ -634,17 +635,13 @@ export default function WorkspaceScreen() {
               focusedRoomId={focusedRoomId}
               onFocusRoom={setFocusedRoomId}
               focusTarget={focusTarget}
-              interactive={
-                selectedItem
-                  ? {
-                      draggableItemId: selectedItem.id,
-                      infeasible,
-                      onDragStart: handleDragStart,
-                      onDragMove: handleDragMove,
-                      onDragEnd: handleDragEnd,
-                    }
-                  : undefined
-              }
+              interactive={{
+                draggableItemId: selectedItem?.id,
+                infeasible,
+                onDragStart: handleDragStart,
+                onDragMove: handleDragMove,
+                onDragEnd: handleDragEnd,
+              }}
             />
 
             {/* Contextual Recommendation Card attached near focused problem area */}
@@ -687,19 +684,6 @@ export default function WorkspaceScreen() {
               )}
             </span>
             <div style={toolbarTextRow}>
-              {/* Quick Mobile Access to Insights / Sheet */}
-              <button
-                className="wksp-text-btn wksp-mobile-toolbar-btn"
-                style={textToolbarBtn(false)}
-                onClick={() => {
-                  setPanelTab('recommendations');
-                  setRecSheetOpen(true);
-                }}
-                aria-label="View actionable improvements, items, and rules"
-                title="View actionable improvements, items, and rules"
-              >
-                {recommendationList.length > 0 ? `${recommendationList.length} Fixes` : 'All Clear'}
-              </button>
               <button
                 className="wksp-text-btn"
                 style={textToolbarBtn(!selectedItem)}

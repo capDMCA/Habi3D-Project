@@ -20,7 +20,7 @@ import type { FurnitureItem } from '../types';
 import { MAIN_ENTRY_WALKWAY_RECT, isItemInDoorSwing } from '../engine/walkways';
 
 export interface CondoFloorPlanInteraction {
-  draggableItemId: string;
+  draggableItemId?: string;
   infeasible: boolean;
   onDragStart: (itemId: string) => void;
   onDragMove: (itemId: string, worldXMetres: number, worldZMetres: number) => void;
@@ -108,6 +108,21 @@ export default function CondoFloorPlan({
   const [activeGuides, setActiveGuides] = useState<AlignmentGuide[]>([]);
   const [collidingIds, setCollidingIds] = useState<string[]>([]);
   const [dropRoomId, setDropRoomId] = useState<string | null>(null);
+
+  // Floor plan canvas pan and zoom state
+  const [isPanning, setIsPanning] = useState(false);
+  const [isUserPanned, setIsUserPanned] = useState(false);
+  const panRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    startVbX: number;
+    startVbY: number;
+    pxPerCmX: number;
+    pxPerCmY: number;
+    hasMoved: boolean;
+  } | null>(null);
+  const wasPanningRef = useRef(false);
+  const isPanningRef = useRef(false);
 
   // Real-time check if placed furniture encroaches on front door inward swing
   const isDoorObstructed = useMemo(() => items.some(isItemInDoorSwing), [items]);
@@ -219,17 +234,24 @@ export default function CondoFloorPlan({
 
   const [vb, setVb] = useState(targetViewBox);
   const vbRef = useRef(vb);
+  const prevTargetVbRef = useRef(targetViewBox);
 
   useEffect(() => {
     vbRef.current = vb;
   }, [vb]);
 
   useEffect(() => {
-    // Never re-frame mid-grab: the drag maps screen pixels to world units using
-    // the scale captured at pointerdown, and animating the camera under the
-    // cursor would fight the user's hand.
-    if (dragRef.current) {
-      setVb(targetViewBox);
+    const hasTargetChanged =
+      prevTargetVbRef.current.x !== targetViewBox.x ||
+      prevTargetVbRef.current.y !== targetViewBox.y ||
+      prevTargetVbRef.current.w !== targetViewBox.w ||
+      prevTargetVbRef.current.h !== targetViewBox.h;
+
+    prevTargetVbRef.current = targetViewBox;
+
+    if (hasTargetChanged) {
+      setIsUserPanned(false);
+    } else if (isUserPanned || isPanningRef.current || dragRef.current) {
       return;
     }
 
@@ -255,7 +277,164 @@ export default function CondoFloorPlan({
 
     raf = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(raf);
-  }, [targetViewBox]);
+  }, [targetViewBox, isUserPanned]);
+
+  // ─── Floor Plan Canvas Dragging (Pan) & Zooming ───────────────────────────
+  function handleCanvasPointerDown(e: ReactPointerEvent<HTMLDivElement | SVGSVGElement>) {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const ctm = svg.getScreenCTM();
+    if (!ctm || ctm.a === 0 || ctm.d === 0) return;
+
+    panRef.current = {
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startVbX: vbRef.current.x,
+      startVbY: vbRef.current.y,
+      pxPerCmX: ctm.a,
+      pxPerCmY: ctm.d,
+      hasMoved: false,
+    };
+
+    const onMove = (evt: PointerEvent) => {
+      const pan = panRef.current;
+      if (!pan) return;
+
+      const dxPx = evt.clientX - pan.startClientX;
+      const dyPx = evt.clientY - pan.startClientY;
+
+      if (!pan.hasMoved) {
+        if (Math.hypot(dxPx, dyPx) <= DRAG_THRESHOLD_PX) return;
+        pan.hasMoved = true;
+        wasPanningRef.current = true;
+        isPanningRef.current = true;
+        setIsPanning(true);
+        setIsUserPanned(true);
+      }
+
+      const dxCm = dxPx / pan.pxPerCmX;
+      const dyCm = dyPx / pan.pxPerCmY;
+
+      setVb((prev) => ({
+        ...prev,
+        x: pan.startVbX - dxCm,
+        y: pan.startVbY - dyCm,
+      }));
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+
+      isPanningRef.current = false;
+      setIsPanning(false);
+
+      setTimeout(() => {
+        wasPanningRef.current = false;
+        panRef.current = null;
+      }, 60);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    const zoomFactor = e.deltaY < 0 ? 0.88 : 1.14;
+
+    const ratioX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const ratioY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+    const currentVb = vbRef.current;
+    const currentW = currentVb.w;
+    const currentH = currentVb.h;
+
+    const minW = 110;
+    const maxW = VB_WIDTH * 2.2;
+    const targetW = Math.max(minW, Math.min(maxW, currentW * zoomFactor));
+    const actualFactor = targetW / currentW;
+    const targetH = currentH * actualFactor;
+
+    const focalX = currentVb.x + ratioX * currentW;
+    const focalY = currentVb.y + ratioY * currentH;
+
+    const newX = focalX - ratioX * targetW;
+    const newY = focalY - ratioY * targetH;
+
+    setIsUserPanned(true);
+    setVb({
+      x: newX,
+      y: newY,
+      w: targetW,
+      h: targetH,
+    });
+  }
+
+  function handleZoomIn() {
+    setIsUserPanned(true);
+    setVb((prev) => {
+      const factor = 0.8;
+      const minW = 110;
+      const newW = Math.max(minW, prev.w * factor);
+      const actualFactor = newW / prev.w;
+      const newH = prev.h * actualFactor;
+      return {
+        x: prev.x + (prev.w - newW) / 2,
+        y: prev.y + (prev.h - newH) / 2,
+        w: newW,
+        h: newH,
+      };
+    });
+  }
+
+  function handleZoomOut() {
+    setIsUserPanned(true);
+    setVb((prev) => {
+      const factor = 1.25;
+      const maxW = VB_WIDTH * 2.2;
+      const newW = Math.min(maxW, prev.w * factor);
+      const actualFactor = newW / prev.w;
+      const newH = prev.h * actualFactor;
+      return {
+        x: prev.x + (prev.w - newW) / 2,
+        y: prev.y + (prev.h - newH) / 2,
+        w: newW,
+        h: newH,
+      };
+    });
+  }
+
+  function handleResetView() {
+    setIsUserPanned(false);
+    const from = { ...vbRef.current };
+    const to = targetViewBox;
+    const duration = 300;
+    let start: number | null = null;
+    const animate = (timestamp: number) => {
+      if (start === null) start = timestamp;
+      const progress = Math.min((timestamp - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      setVb({
+        x: from.x + (to.x - from.x) * ease,
+        y: from.y + (to.y - from.y) * ease,
+        w: from.w + (to.w - from.w) * ease,
+        h: from.h + (to.h - from.h) * ease,
+      });
+      if (progress < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }
 
   // ─── Dragging ───────────────────────────────────────────────────────────────
   function handlePointerDown(e: ReactPointerEvent<SVGElement>, itemId: string) {
@@ -347,11 +526,18 @@ export default function CondoFloorPlan({
   const gapLabel = (cm: number) => (cm < 0 ? '0' : String(cm));
 
   return (
-    <div style={containerStyle}>
+    <div
+      style={containerStyle}
+      onWheel={handleWheel}
+      onPointerDown={handleCanvasPointerDown}
+    >
       <svg
         ref={svgRef}
         viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
-        style={svgStyle}
+        style={{
+          ...svgStyle,
+          cursor: isPanning ? 'grabbing' : 'grab',
+        }}
         role="img"
         aria-label="Mulberry Place Condo Digital Twin Floor Plan"
       >
@@ -483,10 +669,10 @@ export default function CondoFloorPlan({
                 stroke={omitEdge ? 'none' : strokeColor}
                 strokeWidth={strokeW}
                 style={{
-                  cursor: focusedRoomId ? 'default' : 'pointer',
+                  cursor: focusedRoomId ? (isPanning ? 'grabbing' : 'grab') : (isPanning ? 'grabbing' : 'pointer'),
                   transition: 'fill-opacity 0.15s ease, stroke 0.15s ease',
                 }}
-                onClick={() => !focusedRoomId && onFocusRoom?.(room.id)}
+                onClick={() => !wasPanningRef.current && !focusedRoomId && onFocusRoom?.(room.id)}
               />
               {openSidesPath && (
                 <path
@@ -1212,7 +1398,7 @@ export default function CondoFloorPlan({
 
       {/* 6. CORNER CONDO MINIMAP */}
       {focusedRoomId && (
-        <div style={minimapContainerStyle}>
+        <div style={minimapContainerStyle} onPointerDown={(e) => e.stopPropagation()}>
           <svg viewBox={`-5 -5 ${WIDTH_CM + 10} ${HEIGHT_CM + 10}`} style={{ width: '100%', height: '100%' }}>
             <rect x={0} y={0} width={WIDTH_CM} height={HEIGHT_CM} fill="none" stroke="#CBD5E1" strokeWidth={3} rx={4} />
             {CONDO_ROOMS.map((room) => (
@@ -1235,6 +1421,53 @@ export default function CondoFloorPlan({
           </button>
         </div>
       )}
+
+      {/* 7. FLOATING FLOOR PLAN PAN & ZOOM CONTROLS */}
+      <div
+        style={floatingControlsStyle}
+        onPointerDown={(e) => e.stopPropagation()}
+        role="toolbar"
+        aria-label="Floor plan view controls"
+      >
+        <button
+          type="button"
+          style={floatingBtnStyle}
+          onClick={handleZoomIn}
+          title="Zoom in (+)"
+          aria-label="Zoom in"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          style={floatingBtnStyle}
+          onClick={handleZoomOut}
+          title="Zoom out (-)"
+          aria-label="Zoom out"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        {isUserPanned && (
+          <button
+            type="button"
+            style={floatingResetBtnStyle}
+            onClick={handleResetView}
+            title="Reset view & center plan"
+            aria-label="Reset view & center plan"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            <span style={{ fontSize: '11px', fontWeight: 700 }}>Reset</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1309,3 +1542,50 @@ const minimapExitBtn: CSSProperties = {
   textAlign: 'center',
   color: '#475569',
 };
+
+const floatingControlsStyle: CSSProperties = {
+  position: 'absolute',
+  top: 20,
+  left: 20,
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+  background: 'rgba(255, 255, 255, 0.94)',
+  backdropFilter: 'blur(8px)',
+  WebkitBackdropFilter: 'blur(8px)',
+  border: '1px solid #E2E8F0',
+  borderRadius: '10px',
+  padding: '4px',
+  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
+  zIndex: 15,
+};
+
+const floatingBtnStyle: CSSProperties = {
+  width: 32,
+  height: 32,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 'none',
+  background: 'transparent',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  color: t.ink,
+  transition: 'background 0.15s ease',
+};
+
+const floatingResetBtnStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '5px',
+  height: 32,
+  padding: '0 9px',
+  border: 'none',
+  background: '#F1F5F9',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  color: t.ink,
+  fontWeight: 700,
+  transition: 'background 0.15s ease',
+};
+

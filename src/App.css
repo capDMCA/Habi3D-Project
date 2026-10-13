@@ -426,9 +426,6 @@
   .wksp-mobile-hub-bar {
     display: flex !important;
   }
-  .wksp-mobile-toolbar-btn {
-    display: inline-flex !important;
-  }
 }
 
 @media (min-width: 900px) {
@@ -439,9 +436,6 @@
     display: none !important;
   }
   .wksp-mobile-hub-bar {
-    display: none !important;
-  }
-  .wksp-mobile-toolbar-btn {
     display: none !important;
   }
 }

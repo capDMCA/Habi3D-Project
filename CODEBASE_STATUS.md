@@ -1,6 +1,6 @@
 # Habi3D Codebase — Current State, Architecture & Status
 
-**Last updated:** 2026-10-10 (Architectural 2D Blueprint Furniture Symbols, Interactive 3D Furniture Shape Preview, Streamlined Furniture Input — Removal of Manual Orientation & Room Locking)
+**Last updated:** 2026-10-13 (Architectural Front Entrance Door Opening, Animated Swing Arc & Obstruction Engine, Complete 7-Screen Step-by-Step Workflow Documentation)
 **Project phase:** Phase 3 — AR Floor Hit-Test Placement, Streamlined 2D Planning & Read-Only 3D Visualization
 **Target Unit Scope:** Fixed Single Unit — Mulberry Place 2BR (Acacia Estates, Taguig, 5.10m × 8.80m, 8 Rooms)
 
@@ -9,26 +9,22 @@
 ## 0. Recent Updates & Change Log (Top Priority Summary)
 
 > [!NOTE]
-> **Latest Update (2026-10-10 — Architectural Furniture Shapes, 3D Previews, Streamlined Furniture Input & Clean Emoji-Free Aesthetic Overhaul):**
+> **Latest Update (2026-10-13 — Front Entrance Door Clearance, Animated 2D Swing Arc, Obstruction Engine & Complete Screen-by-Screen Workflow):**
 > 1. **Complete Emoji Removal & Clean Architectural Aesthetic Across All Screens:**
->    - Removed all decorative emojis (`🛋️`, `💡`, `📷`, `✏️`, `🔍`, `🏠`, `🧱`, `➕`, `📍`, `👉`, `⚠️`, `✓`, `✕`) across the entire user interface.
+>    - Removed all decorative emojis across the entire user interface.
 >    - Upgraded buttons, tabs, modal sheets, HUD banners, and toasts to clean architectural typography, crisp text pills (`Clear`, `OK`, `All Clear`, `AR Place`, `AR Mode`, `Arrange in 2D`), and crisp vector SVG line icons.
->    - Zero emojis remain in the application source code (`src/`), ensuring an authentic, professional architectural tool aesthetic.
-> 2. **Architectural 2D Blueprint Furniture Symbols (`src/components/FurniturePlanSymbol.tsx`):** Replaced generic colored rectangular/circular geometric blocks in the 2D workspace (`CondoFloorPlan.tsx`, `FloorPlan2D.tsx`) with authentic architectural top-down furniture symbols:
->    - *Beds:* Headboards, dual pillows (or single pillow for single bed), and folded duvet/blanket lines.
->    - *Sofas & Armchairs:* Padded backrest cushions, left/right armrests, and 2- or 3-cushion dividing seam lines (including L-shape sectional geometry).
->    - *Dining Tables:* Inset tabletop bevels and perimeter tucked-in dining chair indicators.
->    - *Work Desks:* Desktop surface, laptop/keyboard workspace mat, and ergonomic chair-well cutout arc.
->    - *Wardrobes & Cabinets:* Double door split lines, door handles, and dashed clothing hanger rails.
->    - *Household Appliances:* Refrigerator freezer/fridge split doors and handles; washing machine drums; stove burner coils.
->    - *Electrical & Fixtures:* Floor lamps with shades and bulb crosses; pedestal fan blades; televisions on stands.
->    - *Decorative Plants & Mirrors:* Planter pots with radiating foliage fronds; framed mirrors with diagonal reflection shimmer glints.
-> 3. **Streamlined Furniture Input Flow (`FurnitureInputScreen.tsx`):**
->    - **Removed "Initial Placement Orientation":** Eliminated redundant manual orientation selection ($0^\circ, 90^\circ, 180^\circ, 270^\circ$). Pieces initialize with natural $0^\circ$ rotation and can be rotated directly in AR or positioned on the 2D plan.
->    - **Removed "Intended Condo Room" Dropdown:** Removed forced manual room selection from Step 2. Pieces are automatically assigned to their natural condo room via `getDefaultRoomPosition()`, leaving users free to position and drag them across the entire condo unit without upfront room locking.
-> 4. **Interactive 3D Furniture Shape Preview:** Upgraded `ShapePreview` in `FurnitureInputScreen.tsx` to render realistic procedural 3D furniture models from `DollhouseFurniture.tsx` (desks with legs and modesty panels, TV stands with console cabinets and screens, wardrobes with handles, potted plants with foliage, refrigerators with split doors) so pieces visibly look like furniture before adding.
-> 5. **Mobile 2D Workspace Actionable Insights Hub:** Segmented navigation dock (`MobileWorkspaceHub.tsx`) and upgraded 3-tab sheet (`RecommendationSheet.tsx`) providing full mobile access to Actionable Improvements, Placed Items Inventory, and all 12 codified design rules.
-> 6. **Automated Verification:** All 10 test suites in `systemRevision.test.ts` passing (25+ assertions); TypeScript compilation and Vite production build pass with 0 errors; ESLint clean with 0 warnings; 0 emojis across `src/`.
+> 2. **Architectural 2D Blueprint Furniture Symbols (`src/components/FurniturePlanSymbol.tsx`):** Authentic architectural top-down furniture symbols for beds, sofas, dining tables, work desks, wardrobes, appliances, electrical fixtures, and potted plants.
+> 3. **Architectural Front Entrance Door & Animated Clearance Arc (`CondoFloorPlan.tsx`, `walkways.ts`, `recommendations.ts`, `pdfReport.ts`):**
+>    - Implemented authentic $80\,\text{cm}$ opening at the bottom unit wall ($x \in [215, 295]\text{cm}, y=880\,\text{cm}$) with jamb caps and threshold sill line.
+>    - Rendered swinging door leaf hinged at $(215, 880)$ with interactive click toggle (`isDoorOpen`).
+>    - Animated $90^\circ$ quarter-circle swing arc (`.wksp-door-arc`, `doorArcSweep`) with shaded $80 \times 80\,\text{cm}$ clearance envelope.
+>    - Dedicated foyer welcome mat and animated directional inward entrance chevrons (`.wksp-entrance-chevron`, `entranceFlowPulse`).
+>    - Integrated front entrance obstruction detection engine (`isItemInDoorSwing`), assigning priority-98 clearance warnings when furniture encroaches on the door swing path.
+>    - Vector PDF export support for door leaf, swing arc, sill, and entrance dimensions in `pdfReport.ts`.
+> 4. **Complete 7-Screen Step-by-Step, Screen-by-Screen Workflow Documentation (Section 3.3):**
+>    - Added comprehensive architectural walkthrough covering Screens 1 through 7 (`EntryScreen`, `AuthScreen`, `FurnitureInputScreen`, `PositionMapScreen`, `WorkspaceScreen`, `ThreeDPreviewScreen`, `ReportScreen`), plus fallback handling and state transition persistence matrix.
+> 5. **Streamlined Furniture Input Flow & 3D Previews:** 57+ presets across 8 domains, custom authoring, procedural 3D `ShapePreview`, and mobile 2D Actionable Insights Hub.
+> 6. **Automated Verification:** All 11 test suites in `systemRevision.test.ts` passing (28+ assertions, 100% success); TypeScript compilation and Vite production build pass with 0 errors; ESLint clean with 0 warnings.
 
 ### Key Recent Changes (October 10, 2026: Furniture Catalog Expansion, Appliances, Electrical & Decorative Objects, and Custom Shapes)
 
@@ -873,6 +869,332 @@ workspace (same furnitureStore layout)
 * **[AnalysisScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/AnalysisScreen.tsx) & [RecommendationScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/RecommendationScreen.tsx):** Legacy pre-WorkspaceScreen screens. Superseded by `WorkspaceScreen.tsx`; retained in directory as unrouted references.
 * **[FloorPlan2D.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/FloorPlan2D.tsx):** Early static 2D renderer. Superseded by `CondoFloorPlan.tsx`.
 * **[PlanSandbox.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/PlanSandbox.tsx):** Development sandbox component; unrouted in production build.
+
+### 3.3 Complete Step-by-Step, Screen-by-Screen Application Workflow
+
+This section provides the definitive, chronological, and behavioral walkthrough of the entire Habi3D application across all 7 routed screens (plus fallback handling), detailing the user interface presentation, user interactions, under-the-hood state transformations, screen handoff logic, guardrails, and architectural features.
+
+```mermaid
+graph TD
+    S1[Screen 1: Landing Gateway<br/>EntryScreen.tsx<br/>'entry'] -->|"Log in" (setAuthMode: 'login')| S2[Screen 2: Authentication<br/>AuthScreen.tsx<br/>'auth']
+    S1 -->|"Create account" (setAuthMode: 'signup')| S2
+    
+    S2 -->|"New User / Start Fresh"| S3[Screen 3: Furniture & Appliances Catalog<br/>FurnitureInputScreen.tsx<br/>'furnitureInput']
+    S2 -->|"Resume Saved Session" (if layout exists in Supabase)| S5[Screen 5: 2D Digital Twin Workspace<br/>WorkspaceScreen.tsx<br/>'workspace']
+    
+    S3 -->|"Add Item" (Loop to catalog)| S3
+    S3 -->|"Position Furniture in AR"| S4[Screen 4: WebXR Floor Hit-Testing<br/>PositionMapScreen.tsx<br/>'positionMap']
+    S3 -->|"Open 2D Workspace Directly"| S5
+    
+    S4 -->|"Single-Tap Room Entry Anchor<br/>+ Confirm Placement"| S5
+    S4 -->|"Back"| S3
+    S4 -->|"WebXR Unsupported Fallback"| S5
+    
+    S5 <-->|"3D View" / "Back to 2D"<br/>(Guarded against position reset)| S6[Screen 6: Read-Only 3D Dollhouse Preview<br/>ThreeDPreviewScreen.tsx<br/>'threeDPreview']
+    S5 -->|"Launch AR" (Re-position single item)| S4
+    S5 -->|"Done"| S7[Screen 7: Layout Clearance Report<br/>ReportScreen.tsx<br/>'report']
+    
+    S7 -->|"Back to Layout Workspace"| S5
+    S7 -->|"Finish and Exit"| S1
+    S7 -->|"Download PDF Report"| PDF[Vector PDF Export<br/>pdfReport.ts]
+```
+
+---
+
+#### 3.3.1 Screen 1: Landing & Gateway (`EntryScreen.tsx` — `'entry'`)
+
+* **Component Source:** [EntryScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/EntryScreen.tsx)
+* **Route Key:** `'entry'` (Initial route defined in [sessionStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/sessionStore.ts))
+* **Primary Objective:** Provide a clean, distraction-free architectural entry point for Mulberry Place residents, establishing trust and presenting unambiguous paths into either an existing account or new account registration.
+
+##### Visual Layout & Key Elements
+1. **Hero Wordmark & Header:** Large architectural title `"Habi3D"` rendered with subtle gradient styling, followed by the concise domain subtitle: *"Furniture clearance planning, built for Mulberry Place residents"*.
+2. **Authentication Gateway Card (`#entry-card`):** Frosted glass container featuring:
+   - Primary Action Button: `"Log in"` (`#login-btn`, `.btn-primary.btn-large`) paired with the explanatory caption *"Access your saved layout and continue planning"*.
+   - Stylized Divider: Centered text divider `"— or —"`.
+   - Secondary Action Button: `"Create account"` (`#create-account-btn`, `.btn-secondary`) paired with the explanatory caption *"Save your layout and pick up where you left off"*.
+3. **Institutional Footer:** Thesis attribution notice (*"A Thesis project by AAC from Mapua University - BSIT / © 2026 Habi3D. All rights reserved."*).
+
+##### Step-by-Step User Journey
+1. The resident lands on the page. All previous session state is either dormant or initialized to default constants.
+2. The resident chooses their identity flow:
+   - If they tap **"Log in"**, the app invokes `setAuthMode('login')` and triggers `navigateTo('auth')`.
+   - If they tap **"Create account"**, the app invokes `setAuthMode('signup')` and triggers `navigateTo('auth')`.
+
+##### State Operations & Handoff
+- **Store Mutations:** Writes `authMode: 'login' | 'signup'` and sets `currentScreen: 'auth'` in [sessionStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/sessionStore.ts).
+- **Handoff Condition:** Immediate routing to Screen 2 (`AuthScreen.tsx`).
+
+---
+
+#### 3.3.2 Screen 2: Authentication & Session Hydration (`AuthScreen.tsx` — `'auth'`)
+
+* **Component Source:** [AuthScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/AuthScreen.tsx)
+* **Route Key:** `'auth'`
+* **Primary Objective:** Authenticate residents through a simplified, privacy-friendly username model and check Supabase for saved floor layouts, allowing instant resumption or fresh setup.
+
+##### Visual Layout & Phases
+The screen operates as a stateful 3-phase flow (`phase: 'form' | 'checking' | 'resumeChoice'`):
+1. **Screen Header:** Back icon button (`navigateTo('entry')`), mode indicator pill (`"Log in"` or `"Create account"`), and greeting title (*"Welcome back"* or *"Set up your account"*).
+2. **Toggle Tabs:** Segmented buttons allowing effortless toggling between `"Log in"` and `"Create account"` without returning to the landing screen.
+3. **Form Phase (`phase: 'form'`):**
+   - Single clean input field for `Username` (auto-capitalized, trimmed).
+   - Single input field for `Password` with standard masking.
+   - Action submit button with dynamic label: `"Log in to your layout"` vs. `"Create account"`.
+   - Inline error alert box if credentials fail or network issues arise.
+4. **Verification Phase (`phase: 'checking'`):** Disables input fields and displays a centered [Spinner.tsx](file:///c:/Users/Dell/Habi3D-Project/src/components/Spinner.tsx) while querying Supabase.
+5. **Resume Choice Phase (`phase: 'resumeChoice'`):**
+   - Displayed *only* if logging in and Supabase returns an existing row in `saved_sessions` with $N > 0$ furniture items.
+   - Displays a confirmation card: *"You have a saved layout — N pieces of furniture, last updated [Date]"*.
+   - Dual action options:
+     - Primary Button: `"Resume your last session"`.
+     - Secondary Button: `"Start fresh"`.
+
+##### Step-by-Step User Journey
+1. Resident enters username and password, then submits the form.
+2. The client intercepts the submission and converts the input username into an internal synthetic email: `${username}@habi3d.local`.
+3. Supabase Auth executes `signInWithPassword()` or `signUp()`. On success, the authenticated user ID and username are stored in [sessionStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/sessionStore.ts).
+4. **Branch A — Registration / No Prior Layout:** The app executes `startFresh()`:
+   - Invokes `clearAll()` in [furnitureStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/furnitureStore.ts).
+   - Generates a new unique `sessionId` in [sessionStore.ts](file:///c:/Users/Dell/Habi3D-Project/src/stores/sessionStore.ts).
+   - Navigates immediately to Screen 3 (`'furnitureInput'`).
+5. **Branch B — Existing Saved Session Detected:**
+   - Client queries `fetchSavedSession(userId)`.
+   - If a saved layout with items exists, transitions to `phase: 'resumeChoice'`.
+   - If the resident chooses **"Resume your last session"**, the client hydrates `furnitureStore.setItems(saved.items)`, sets `sessionId`, configures Mulberry Place 2BR dimensions ($5.10\,\text{m} \times 8.80\,\text{m}$), and navigates directly to Screen 5 (`'workspace'`).
+   - If the resident chooses **"Start fresh"**, the client clears the store and routes to Screen 3 (`'furnitureInput'`).
+
+---
+
+#### 3.3.3 Screen 3: Furniture & Appliances Catalog (`FurnitureInputScreen.tsx` — `'furnitureInput'`)
+
+* **Component Source:** [FurnitureInputScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/FurnitureInputScreen.tsx)
+* **Route Key:** `'furnitureInput'`
+* **Primary Objective:** Serve as Step 1 of layout setup, providing an intuitive, comprehensive 57+ item catalog spanning 8 condo domains, procedural 3D previews, custom item authoring, wall-mount elevation controls, and WebXR AR in-situ camera measurement.
+
+##### Visual Layout & Key Sections
+1. **Header & Progress:** Step badge (`"Step 1 of 2"`), title `"Furniture & Appliances Catalog"`, and 2-step progress bar with step 1 active.
+2. **Fixed Unit Scope Card:** Highlights Mulberry Place 2-Bedroom Unit ($5.10\,\text{m} \times 8.80\,\text{m}$, 8 architectural rooms).
+3. **Furniture Added Summary Panel (`FurnitureAddedPanel`):** Collapsible live roster displaying all pieces added so far during the session, complete with room badges, shape pills, dimensions, and delete buttons.
+4. **Step 1: Catalog Browser:**
+   - **8 Domain Filter Pills:** Horizontally scrollable category selector (`Living Room`, `Bedroom`, `Dining Area`, `Kitchen & Appliances`, `Bathroom`, `Balcony & Outdoor`, `Storage & Hallway`, `Electrical & Household`, or `All`).
+   - **Preset Search Bar:** Real-time text filter querying preset names, dimensions, and architectural descriptions.
+   - **57+ Standardized Preset Cards:** Visual preset selection cards with default dimensions ($L \times W \times H\,\text{cm}$), footprint badges, and placement hints.
+   - **Custom Item Authoring Mode:** Dedicated button to switch from preset picking to bespoke custom furniture/fixture configuration.
+5. **Step 2: Dimensions & Configuration:**
+   - **Item Name Input:** Auto-populated from preset or editable custom label.
+   - **Furniture Category Picker:** Dropdown mapping item to one of 18 domain categories.
+   - **Footprint Shape Selector:** Visual selector buttons for `Standard / Rectangular`, `L-Shape (Sectional)`, `Round / Cylindrical`, and `Oval / Elliptical`.
+   - **Placement Type Selector:** Radio buttons toggling between `Floor-standing` and `Wall-Mounted`. Toggling `Wall-Mounted` reveals mounting height input ($10\text{–}250\,\text{cm}$, default $120\,\text{cm}$).
+   - **Dimensions Fields:** High-precision decimal-safe inputs (`inputMode="decimal"`) for Length ($L$), Width ($W$), and Height ($H$) in centimeters.
+   - **AR Camera Measure Button:** Tapping `"Measure with AR Camera"` opens the WebXR measuring overlay (`ARMeasureSession.tsx`) to capture real-world object dimensions via floor hit-test point-to-point laser calculation.
+   - **Quantity Stepper ($1\text{–}10$):** Touch-friendly stepper allowing batch configuration of matching items (e.g. 4 dining chairs).
+6. **Live Procedural 3D Shape Preview (`ShapePreview`):** Real-time Three.js canvas rendering the exact 3D furniture model corresponding to the selected category, shape, proportions, and wall mount elevation.
+7. **Summary Review Card:** Crisp blue review panel displaying Item Name, Layout destination, Category, Shape, Dimensions, and Placement status prior to commitment.
+8. **Navigation Bottom Action Bar:**
+   - Button 1: `"Add Item to Condo Layout"` (commits item to session and resets form).
+   - When $N \ge 1$ items exist in the layout:
+     - Primary Button: `"Position Furniture in AR (N items)"` $\to$ Screen 4 (`'positionMap'`).
+     - Secondary Button: `"Open 2D Workspace Directly"` $\to$ Screen 5 (`'workspace'`).
+
+##### Step-by-Step User Journey
+1. Resident browses presets or enters custom specifications.
+2. Resident verifies or tweaks dimensions, footprint shape, mounting height, and quantity.
+3. Taps **"Add Item to Condo Layout"**:
+   - Item is instantiated with a unique UUID, dimensions, shape, category, and automatic condo room centroid via `getDefaultRoomPosition()`.
+   - Appended to `furnitureStore.items`.
+   - Automatically saved to Supabase via background `useAutosaveLayout`.
+4. When all desired pieces are added:
+   - If the resident wants to place furniture in physical space using WebXR hit-testing, they tap **"Position Furniture in AR"**.
+   - If the resident wants to bypass AR and plan entirely on the digital blueprint, they tap **"Open 2D Workspace Directly"**.
+
+---
+
+#### 3.3.4 Screen 4: Augmented Reality Floor Placement (`PositionMapScreen.tsx` — `'positionMap'`)
+
+* **Component Source:** [PositionMapScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/PositionMapScreen.tsx)
+* **Route Key:** `'positionMap'`
+* **Primary Objective:** Step 2 of layout setup. Project real-time 3D furniture models onto the physical condominium floor using WebXR floor hit-testing, align physical coordinates with the Mulberry Place blueprint using a Single-Tap Room Entry Anchor, and transfer verified physical placements into the 2D planning engine.
+
+##### Visual Layout & Key Elements
+1. **Screen Header & Progress:** Step badge (`"Step 2 of 2"`), title `"Position Furniture"`, back button to `'furnitureInput'`, and progress bar with step 2 active.
+2. **WebXR AR Camera Viewport:** Fullscreen pass-through camera feed with WebXR DOM overlay:
+   - **Floor Hit-Test Reticle:** Circular target indicating detected physical plane and orientation.
+   - **Calibration Banner (`waitingForAnchor`):** Prompts the user: *"Tap the room entry corner to align"*.
+   - **3D Ghost Model (`PlacementMesh.tsx`):** Semi-transparent procedural 3D model of the active piece rendered directly at the hit-test point. Color-coded real-time feedback: Green if inside condo bounds and collision-free; Red if obstructed or out of bounds.
+   - **Yaw Rotation Slider:** Floating touch slider enabling full $360^\circ$ rotation adjustment of the piece on the physical floor.
+   - **HUD Action Controls:** `"Re-place"` button, dynamic status toast, and `"Confirm placement"` button.
+3. **Graceful Fallback Card:** Rendered automatically if WebXR AR is unsupported on the resident's device/browser (e.g. desktop browsers, iOS Safari without WebXR Viewer), providing an explicit notice and a single primary button: `"Open 2D Workspace"`.
+
+##### Step-by-Step User Journey
+1. Resident enters AR mode. The WebXR session initializes and starts detecting floor feature points.
+2. **Anchor Calibration:** The resident points the camera toward the condominium room entrance and taps the corner. This establishes the physical coordinate origin against `ENTRY_DOOR_BLUEPRINT` ($X=0.2\,\text{m}, Z=0.1\,\text{m}$) using viewer pose yaw.
+3. **Piece Positioning:** The resident moves their phone to position the 3D ghost model on the floor. The reticle locks to physical surfaces, and `validatePlacement()` verifies clearances in real time against room boundaries and other placed items.
+4. **Rotation & Fine-Tuning:** The resident drags the rotation slider to orient the furniture piece correctly against walls.
+5. **Confirming Placement:** Resident taps **"Confirm placement"**:
+   - The AR coordinate $(X, Z)$ is transformed into the blueprint coordinate space via `applyCalibration()`.
+   - The coordinates are clamped within the architectural room boundaries.
+   - **Multi-Quantity Chair Replication:** If `quantity > 1` (e.g. 4 dining chairs), the system automatically replicates the items into a neat, non-overlapping 2-column spatial arrangement around the placement point ($X \pm 0.28\,\text{m}, Z \pm \text{row offset}$).
+   - The items are committed to `furnitureStore`.
+   - Immediate full clearance analysis (`runClearanceAnalysis`) runs across all items, populating `violationStore`.
+   - The AR session closes cleanly, and the app transitions directly to Screen 5 (`'workspace'`).
+
+---
+
+#### 3.3.5 Screen 5: Interactive 2D Digital Twin Workspace (`WorkspaceScreen.tsx` — `'workspace'`)
+
+* **Component Source:** [WorkspaceScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/WorkspaceScreen.tsx)
+* **Route Keys:** `'workspace'`, `'analysis'`, `'recommendations'`, `'recommendation'` (Unified workspace hub)
+* **Primary Objective:** Core optimization hub of Habi3D. Renders an interactive 2D digital twin of the entire Mulberry Place 2BR unit (~82% viewport hero canvas), providing free-drag physics, live gap readouts, front entrance door swing clearance validation, pedestrian walkway corridor analysis, and a closed-loop recommendation resolution system.
+
+##### Visual Layout & Key Components
+1. **Responsive Scroll-Aware Workspace Header (`WorkspaceHeader.tsx`):**
+   - Breadcrumb navigation indicating unit and active room focus (e.g. *"Mulberry Place > Living Room"*).
+   - Action Buttons:
+     - `"AR Place"` / Camera Icon: Launches AR placement for the selected piece.
+     - `"3D View"`: Navigates to the read-only 3D dollhouse preview (`'threeDPreview'`).
+     - `"Done"`: Finalizes the session and opens the clearance report (`'report'`).
+2. **Digital Twin SVG Canvas (`CondoFloorPlan.tsx`):**
+   - High-fidelity vector blueprint of the Mulberry Place 2BR unit ($5.10\,\text{m} \times 8.80\,\text{m}$).
+   - Complete 8-Room Architectural Layout: Living Room, Dining Area, Master Bedroom (Bedroom 1), Second Bedroom (Bedroom 2), Kitchen Area, Bathroom / T&B, Balcony, and Hallway / Storage.
+   - **Architectural Front Entrance Door Feature:**
+     - Outer bottom wall opening at $y = 880\,\text{cm}$ across $x \in [215, 295]\text{cm}$ ($80\,\text{cm}$ clear width).
+     - Door jamb end caps and threshold sill line.
+     - Swinging door leaf hinged at $(215, 880)$ rotated $90^\circ$ inward into the dining foyer.
+     - Interactive click toggle (`isDoorOpen`) allowing residents to toggle the door open or closed.
+     - $90^\circ$ circular quarter-arc (`.wksp-door-arc`) with animated dashed sweep keyframes (`doorArcSweep`).
+     - Shaded door swing clearance envelope ($80 \times 80\,\text{cm}$).
+     - Foyer welcome mat ($x \in [220, 290]\text{cm}, y \in [785, 815]\text{cm}$).
+     - Directional entrance chevrons (`.wksp-entrance-chevron`) pulsing with inward entry flow animation (`entranceFlowPulse`).
+     - Exterior entrance badge (`🚪 MAIN ENTRANCE`) positioned at $x = 255\,\text{cm}, y = 905\,\text{cm}$.
+     - Real-time door swing obstruction detection: any furniture intruding into the $80 \times 80\,\text{cm}$ swing rect turns the clearance zone red and triggers a priority-98 violation.
+   - **Authentic Blueprint Furniture Symbols (`FurniturePlanSymbol.tsx`):** Top-down vector symbols for beds (headboards and pillows), sofas (padded cushions and armrests), dining tables (with tucked chairs), work desks (workspace mat and chair cutout), wardrobes (hanger rails and split doors), appliances (refrigerator split doors, washing machine drum, stove burners), electrical fixtures, and potted plants.
+   - **Dynamic HUD Feedback:** Real-time distance gap callouts (measuring in cm to nearest wall/partition), alignment guide crosshairs, bounding box collision outlines, and pedestrian walkway corridor overlays.
+3. **Contextual Actionable Recommendation Card (`RecommendationCard.tsx`):**
+   - Floats directly above the focused problem area.
+   - Displays affected item name, plain-language ergonomic instruction (e.g. *"Move it slightly away from the wall"* or *"Keep the front entrance door swing clear for safe entry and egress"*), and status confirmation.
+4. **Desktop Drawer & Mobile Hub (`RecommendationPanel.tsx` / `MobileWorkspaceHub.tsx`):**
+   - **3 Dedicated Tabs:**
+     1. *Recommendations:* Prioritized list of all active clearance warnings with severity pills (`RED` / `YELLOW`).
+     2. *Items:* Room-by-room inventory of placed furniture with visibility toggles and selection.
+     3. *Rules:* Real-time status of all 12 codified design rules (L1–L5, D1–D5, B1–B2).
+5. **Interactive Controls & Keyboard Shortcuts:**
+   - On-screen toolbar: `"Rotate"` ($90^\circ$ increments), `"Undo"`, `"Delete"` (with confirmation dialog).
+   - Keyboard controls: Arrow keys nudge selected item by $1\,\text{cm}$ (Shift + Arrow for $10\,\text{cm}$), `'R'` key rotates $90^\circ$, `'Ctrl+Z'` / `'Cmd+Z'` triggers undo, `'Escape'` closes dialogs.
+
+##### Step-by-Step User Journey & Optimization Loop
+1. **Mount & Normalization Guard:**
+   - On mount, if pieces lack positions, `normalizeFurniturePositions()` packs them into their designated room without overlapping.
+   - *3D Return Guard:* If `previousScreen === 'threeDPreview'`, the initializer ref skips all normalization writes, preserving the resident's exact custom arrangement without mutation.
+2. **Dragging & Positioning:** Resident drags any piece across the floor plan.
+   - Physics bounds keep the piece inside the condo unit outer walls.
+   - Height overlap engine prevents false collisions between wall-mounted items (e.g. TV at $120\,\text{cm}$) and floor items (e.g. TV console at $0\,\text{cm}$).
+   - Walkway engine dynamically evaluates pedestrian circulation paths and the front door swing envelope.
+3. **Interactive Recommendation Resolution:**
+   - Resident taps a recommendation from the mobile sheet or desktop panel.
+   - The canvas smoothly auto-frames (`targetViewBox`) onto the affected room.
+   - Unaffected pieces dim to 28% opacity; the affected piece pulses with an animated glow outline; an animated 2D directional arrow shows the exact vector and distance to clear space (*"Move +15 cm"*).
+   - Resident drags the piece in the indicated direction.
+   - Upon release (`handleDragEnd`), the clearance engine recalculates. If the issue is resolved, the card displays `"✓ Looks good"` and auto-dismisses after $1.2\,\text{s}$.
+4. **Autosave:** Any committed layout change is saved to Supabase in the background via `useAutosaveLayout`.
+5. **Navigation:** Resident taps **"3D View"** to inspect dollhouse geometry, or **"Done"** to view the final clearance report.
+
+---
+
+#### 3.3.6 Screen 6: Read-Only 3D Dollhouse Preview (`ThreeDPreviewScreen.tsx` — `'threeDPreview'`)
+
+* **Component Source:** [ThreeDPreviewScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/ThreeDPreviewScreen.tsx)
+* **Route Key:** `'threeDPreview'`
+* **Primary Objective:** Provide a realistic, read-only 3D dollhouse visualization of the resident's active layout within the Mulberry Place 2BR architectural shell, allowing spatial evaluation from any perspective without accidental layout modification.
+
+##### Visual Layout & Key Elements
+1. **Header Bar:**
+   - Back Action: Button labeled `"Back to 2D"` with back icon (`navigateTo('workspace')`).
+   - Title: Unit identifier `"Mulberry Place 2BR"` with subtitle `"3D Layout Preview"`.
+   - Item Counter Pill: Displays total furniture pieces rendered (e.g. *"7 items"*).
+2. **3D Dollhouse Stage (`ThreeDLayoutPreview.tsx`):**
+   - Three.js Canvas with soft architectural ambient lighting, directional sun shadow casting, and floor ground shadow plane.
+   - Extruded architectural room walls with open Living/Dining transition divider.
+   - **Procedural 3D Furniture Models (`DollhouseFurniture.tsx`):** Beds with mattresses, headboards, and frames; wardrobes with dual handles; dining tables and chairs; sofas and armchairs with proportioned cushions; entertainment consoles with televisions; kitchen appliances (refrigerators, stoves, washing machines); electrical fixtures (fans, lamps); and potted plants.
+   - **Bounded Camera Controls (`OrbitControls`):** Full $360^\circ$ orbital rotation, pitch tilting ($15^\circ\text{–}85^\circ$), and smooth zoom, with min/max distance clamping preventing clipping through floor geometry.
+
+##### Step-by-Step User Journey
+1. Resident arrives from WorkspaceScreen via the **"3D View"** header button.
+2. Resident orbits, tilts, and zooms around the 3D condo to visually verify clearances, window views, and sightlines.
+3. Resident cannot move, drag, or delete furniture in this mode (pure read-only inspection; zero clearance calculations or store mutations occur).
+4. When finished, resident taps **"Back to 2D"**:
+   - Routes back to Screen 5 (`'workspace'`).
+   - `previousScreen: 'threeDPreview'` is detected by `WorkspaceScreen`, ensuring the layout is loaded without any reset or auto-packing mutations.
+
+---
+
+#### 3.3.7 Screen 7: Layout Clearance Report & Keepsake PDF (`ReportScreen.tsx` — `'report'`)
+
+* **Component Source:** [ReportScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/ReportScreen.tsx)
+* **Route Key:** `'report'`
+* **Primary Objective:** Deliver the final ergonomic and clearance evaluation of the layout in calm, plain-language terms, showing progress made during the session, per-room qualitative comfort ratings, and generating a formal multi-page vector PDF keepsake.
+
+##### Visual Layout & Key Sections
+1. **Header:** Back button returning to workspace (`navigateTo('analysis')`), step badge (`"Report"`), and title `"Session Results"`.
+2. **Session Progress Summary Card:**
+   - Border colored by worst remaining finding (Green if comfortable, Yellow if tight, Red if obstruction remains).
+   - Plain-Language Headline based on diff against session-start snapshot:
+     - *"Everything already fit comfortably"* (if 0 violations existed throughout).
+     - *"You made N spots more comfortable"* (if violations were resolved during the session).
+     - *"Current room layout reviewed and preserved"*.
+   - Reassuring closing text: *"Your furniture arrangement has been saved. Every room is unique — you can always come back and keep adjusting anytime."*
+3. **Room-by-Room Breakdown Card:**
+   - Lists every condo room containing furniture.
+   - Color-coded indicator dots and qualitative status pills:
+     - `"Comfortable"` (Green)
+     - `"A bit tight"` (Yellow)
+     - `"Extra space suggested"` (Red)
+   - Validation Level Disclosures:
+     - `"Full Validation"` (Living Room & Dining Area — evaluated against rules L1–L5, D1–D5, walkways, and front door swing).
+     - `"Bedroom Standards"` (Bedrooms 1 & 2 — evaluated against rules B1 & B2 and walls).
+     - `"Limited Analysis"` (Kitchen, Bathroom, Balcony, Storage — basic boundary containment).
+4. **Detailed Findings Accordion (`StatusRow.tsx`):** Collapsible section listing each specific finding, consequences (e.g. *"Walkway circulation restricted"*), and plain-language adjustment advice.
+5. **PDF Keepsake Export Section (`DownloadReportButton.tsx`):**
+   - Informative card: *"Get the full report — A PDF with every room and every finding, laid out in detail — handy to keep or share."*
+   - Primary Download Button: Triggers client-side vector PDF generation via [pdfReport.ts](file:///c:/Users/Dell/Habi3D-Project/src/components/pdfReport.ts).
+   - **Vector PDF Contents:**
+     - Cover banner with resident name, Mulberry Place 2BR metadata, and session timestamp.
+     - High-precision 2D floor plan drawing with all placed furniture, room labels, and the **front entrance door opening, swinging leaf, $90^\circ$ swing arc, threshold sill, and clearance envelope**.
+     - Complete rule-by-rule status matrix across all 12 design standards.
+     - Item-by-item dimensional table ($L \times W \times H\,\text{cm}$, placement type, room assignment).
+6. **Screen Actions Footer:**
+   - Primary Button: `"Finish and Exit"` $\to$ Returns to Screen 1 (`'entry'`).
+   - Secondary Button: `"Back to Layout Workspace"` $\to$ Returns to Screen 5 (`'workspace'`).
+
+##### Step-by-Step User Journey
+1. Resident reviews session progress and qualitative room badges.
+2. Resident expands the detailed findings list if any tight spots remain.
+3. Resident taps **"Download Report (PDF)"** to download their layout document for moving day or contractor coordination.
+4. If adjustments are desired, resident taps **"Back to Layout Workspace"** to resume editing in 2D.
+5. If satisfied, resident taps **"Finish and Exit"**, concluding their planning session.
+
+---
+
+#### 3.3.8 Defensive Fallback: Unrecognized Route Handler (`PlaceholderScreen.tsx` — `default`)
+
+* **Component Source:** [PlaceholderScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/PlaceholderScreen.tsx)
+* **Route Key:** `default` branch in [App.tsx](file:///c:/Users/Dell/Habi3D-Project/src/App.tsx) switch statement
+* **Primary Objective:** Provide defensive architectural resilience against corrupted state or invalid route navigation.
+* **UI & Behavior:** Renders an uncluttered error card showing the unrecognized screen name identifier and a recovery button: `"Back to Start"` which resets navigation via `navigateTo('entry')`.
+
+---
+
+#### 3.3.9 Screen-by-Screen State Transition & Data Persistence Matrix
+
+| Screen | File Link | Route Key | Previous Route | Next Primary Routes | Triggering Action / Event | Active Stores & Persistence |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Screen 1: Landing** | [EntryScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/EntryScreen.tsx) | `'entry'` | *Initial* or S7 | S2 (`'auth'`) | Click "Log in" or "Create account" | `sessionStore.setAuthMode()` |
+| **Screen 2: Auth** | [AuthScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/AuthScreen.tsx) | `'auth'` | S1 | S3 (`'furnitureInput'`) or S5 (`'workspace'`) | Form submit: Start fresh $\to$ S3; Resume layout $\to$ S5 | `sessionStore.setUser()`, Supabase Auth, `saved_sessions` query |
+| **Screen 3: Catalog** | [FurnitureInputScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/FurnitureInputScreen.tsx) | `'furnitureInput'` | S2 or S4 | S4 (`'positionMap'`) or S5 (`'workspace'`) | Click "Position Furniture in AR" or "Open 2D Workspace" | `furnitureStore.addItem()`, `useAutosaveLayout` $\to$ Supabase |
+| **Screen 4: AR Position** | [PositionMapScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/PositionMapScreen.tsx) | `'positionMap'` | S3 or S5 | S5 (`'workspace'`) or S3 (`'furnitureInput'`) | Tap Entry Anchor $\to$ "Confirm placement" $\to$ S5 | `applyCalibration()`, `runClearanceAnalysis()`, `violationStore` |
+| **Screen 5: Workspace** | [WorkspaceScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/WorkspaceScreen.tsx) | `'workspace'` | S2, S3, S4, S6, S7 | S6 (`'threeDPreview'`), S7 (`'report'`), S4 (`'positionMap'`) | Click "3D View" $\to$ S6; "Done" $\to$ S7; "AR Place" $\to$ S4 | Drag commit $\to$ `furnitureStore`, `violationStore`, `useAutosaveLayout` |
+| **Screen 6: 3D Preview** | [ThreeDPreviewScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/ThreeDPreviewScreen.tsx) | `'threeDPreview'` | S5 | S5 (`'workspace'`) | Click "Back to 2D" $\to$ S5 | Read-only; `previousScreen: 'threeDPreview'` guards S5 positions |
+| **Screen 7: Report** | [ReportScreen.tsx](file:///c:/Users/Dell/Habi3D-Project/src/screens/ReportScreen.tsx) | `'report'` | S5 | S5 (`'workspace'`) or S1 (`'entry'`) | Click "Back to Layout" $\to$ S5; "Finish and Exit" $\to$ S1; PDF Download | `stableViolationKey` diff, `pdfReport.ts` vector generation |
 
 ---
 
