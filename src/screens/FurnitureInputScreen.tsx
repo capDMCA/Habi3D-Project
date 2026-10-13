@@ -518,13 +518,8 @@ export default function FurnitureInputScreen() {
               <div style={intentIconCircleStyle}>🏠</div>
               <h3 style={intentCardHeadingStyle}>Furniture I Already Own</h3>
               <p style={intentCardDescStyle}>
-                For furniture the user currently has and wants to arrange in the condo.
+                For furniture you currently have and want to arrange in your condo.
               </p>
-              <ul style={intentFeatureListStyle}>
-                <li>Prioritize entering or confirming actual piece dimensions</li>
-                <li>Measure physical items using in-room AR camera or tape</li>
-                <li>Browse catalog presets or define custom owned objects</li>
-              </ul>
               <button
                 type="button"
                 id="select-owned-btn"
@@ -559,13 +554,8 @@ export default function FurnitureInputScreen() {
               <div style={intentIconCircleStyle}>🛍️</div>
               <h3 style={intentCardHeadingStyle}>Furniture I Plan to Buy</h3>
               <p style={intentCardDescStyle}>
-                For furniture the user is considering purchasing and wants to check for fit before buying.
+                For furniture you are considering purchasing and want to check for fit before buying.
               </p>
-              <ul style={intentFeatureListStyle}>
-                <li>Enter dimensions from retailer product listings (e.g. IKEA, stores)</li>
-                <li>Clearly tags unverified listing measurements as estimated</li>
-                <li>Check Time-Saver clearance & door swing fit before purchasing</li>
-              </ul>
               <button
                 type="button"
                 id="select-planned-btn"
@@ -1818,20 +1808,10 @@ const intentCardHeadingStyle: CSSProperties = {
 };
 
 const intentCardDescStyle: CSSProperties = {
-  fontSize: 13,
+  fontSize: 13.5,
   color: 'var(--text-secondary)',
-  margin: '0 0 14px',
-  lineHeight: 1.45,
-};
-
-const intentFeatureListStyle: CSSProperties = {
   margin: '0 0 20px',
-  paddingLeft: 18,
-  fontSize: 12.5,
-  color: 'var(--text-muted)',
-  lineHeight: 1.6,
-  display: 'grid',
-  gap: 4,
+  lineHeight: 1.5,
 };
 
 const ownershipBannerStyle: CSSProperties = {
