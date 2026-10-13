@@ -51,27 +51,26 @@ export const FurniturePlanSymbol: React.FC<FurniturePlanSymbolProps> = ({
   const detailOpacity = isRecommendationFocused ? 0.6 : isSelected ? 0.45 : 0.28;
 
   // Center of the item footprint
-  const cx = propXCm + propWCm / 2;
-  const cy = propYCm + propHCm / 2;
+  const cx = Math.round(propXCm + propWCm / 2);
+  const cy = Math.round(propYCm + propHCm / 2);
 
-  // Normalized rotation in degrees (0..359)
-  const rotationDeg = Number.isFinite(item.rotationY)
-    ? ((Math.round((item.rotationY * 180) / Math.PI) % 360) + 360) % 360
+  // Snapped orthogonal cardinal rotation in degrees (0, 90, 180, 270)
+  // Keeps all 2D architectural furniture symbols straight and perfectly aligned with condo walls
+  const rawDeg = Number.isFinite(item.rotationY)
+    ? (item.rotationY * 180) / Math.PI
     : 0;
+  const rotationDeg = ((Math.round(rawDeg / 90) * 90) % 360 + 360) % 360;
 
   // Canonical (unrotated) dimensions:
-  // When an item is rotated orthogonally (e.g. 90° or 270°), propWCm and propHCm
-  // in CondoFloorPlan might already be swapped due to bounding box projection.
-  // We draw the canonical unrotated symbol (where lengthCm is width and widthCm is depth),
-  // then apply SVG rotation around (cx, cy) so the architectural shapes and details
-  // face the correct cardinal direction while perfectly aligning with the bounding box.
+  // When an item is rotated orthogonally (90° or 270°), propWCm and propHCm
+  // are swapped. We draw the canonical shape then apply SVG rotation around (cx, cy).
   const isOrthogonallyRotated = rotationDeg === 90 || rotationDeg === 270;
-  const canonicalW = item.lengthCm || (isOrthogonallyRotated ? propHCm : propWCm);
-  const canonicalH = item.widthCm || (isOrthogonallyRotated ? propWCm : propHCm);
+  const canonicalW = Math.round(isOrthogonallyRotated ? propHCm : propWCm);
+  const canonicalH = Math.round(isOrthogonallyRotated ? propWCm : propHCm);
 
   // Top-left origin of the canonical unrotated shape centered at (cx, cy)
-  const xCm = cx - canonicalW / 2;
-  const yCm = cy - canonicalH / 2;
+  const xCm = Math.round(cx - canonicalW / 2);
+  const yCm = cy - Math.round(canonicalH / 2);
   const wCm = canonicalW;
   const hCm = canonicalH;
 
@@ -171,40 +170,86 @@ export const FurniturePlanSymbol: React.FC<FurniturePlanSymbolProps> = ({
     // 2. SOFA / SECTIONAL
     if (category === 'sofa') {
       if (shape === 'l-shape') {
-        const legW = wCm * 0.45;
-        const legH = hCm * 0.45;
-        const backD = Math.min(22, hCm * 0.22);
+        const depth = Math.min(Math.round(Math.min(wCm, hCm) * 0.45), 90);
+        const backD = Math.min(18, Math.max(12, Math.round(depth * 0.22)));
+        const horizSeatW = wCm - depth;
+        const vertSeatH = hCm - depth;
         return (
           <g style={pointerNone}>
-            {/* Backrest along top & side leg */}
+            {/* Top Backrest along horizontal section */}
             <rect
               x={xCm}
               y={yCm}
               width={wCm}
               height={backD}
               fill={detailColor}
-              opacity={detailOpacity}
-              rx={3}
+              opacity={detailOpacity + 0.08}
+              rx={2}
             />
+            {/* Left Backrest along vertical return section */}
             <rect
               x={xCm}
               y={yCm}
-              width={legW * 0.45}
+              width={backD}
               height={hCm}
               fill={detailColor}
-              opacity={detailOpacity}
-              rx={3}
+              opacity={detailOpacity + 0.08}
+              rx={2}
             />
-            {/* Cushion seam line */}
+            {/* Corner Backrest Joint Accent */}
+            <rect
+              x={xCm + 2}
+              y={yCm + 2}
+              width={backD - 2}
+              height={backD - 2}
+              fill={detailColor}
+              opacity={detailOpacity + 0.12}
+              rx={1}
+            />
+            {/* Seam between corner seat and horizontal bench */}
             <line
-              x1={xCm + legW}
+              x1={xCm + depth}
               y1={yCm + backD}
-              x2={xCm + legW}
-              y2={yCm + legH}
+              x2={xCm + depth}
+              y2={yCm + depth}
               stroke={detailColor}
               strokeWidth={1.2}
-              opacity={detailOpacity}
+              opacity={detailOpacity + 0.15}
             />
+            {/* Seam between corner seat and vertical chaise */}
+            <line
+              x1={xCm + backD}
+              y1={yCm + depth}
+              x2={xCm + depth}
+              y2={yCm + depth}
+              stroke={detailColor}
+              strokeWidth={1.2}
+              opacity={detailOpacity + 0.15}
+            />
+            {/* Horizontal bench cushion divider */}
+            {horizSeatW >= 100 && (
+              <line
+                x1={xCm + depth + horizSeatW / 2}
+                y1={yCm + backD}
+                x2={xCm + depth + horizSeatW / 2}
+                y2={yCm + depth}
+                stroke={detailColor}
+                strokeWidth={1}
+                opacity={detailOpacity}
+              />
+            )}
+            {/* Vertical chaise cushion divider */}
+            {vertSeatH >= 80 && (
+              <line
+                x1={xCm + backD}
+                y1={yCm + depth + vertSeatH / 2}
+                x2={xCm + depth}
+                y2={yCm + depth + vertSeatH / 2}
+                stroke={detailColor}
+                strokeWidth={1}
+                opacity={detailOpacity}
+              />
+            )}
           </g>
         );
       }
@@ -927,9 +972,11 @@ export const FurniturePlanSymbol: React.FC<FurniturePlanSymbolProps> = ({
     }
 
     if (shape === 'l-shape') {
+      const depth = Math.min(Math.round(Math.min(wCm, hCm) * 0.45), 90);
       return (
         <polygon
-          points={`${xCm},${yCm} ${xCm + wCm},${yCm} ${xCm + wCm},${yCm + hCm * 0.45} ${xCm + wCm * 0.45},${yCm + hCm * 0.45} ${xCm + wCm * 0.45},${yCm + hCm} ${xCm},${yCm + hCm}`}
+          points={`${xCm},${yCm} ${xCm + wCm},${yCm} ${xCm + wCm},${yCm + depth} ${xCm + depth},${yCm + depth} ${xCm + depth},${yCm + hCm} ${xCm},${yCm + hCm}`}
+          strokeLinejoin="round"
           {...commonProps}
         />
       );
@@ -941,7 +988,7 @@ export const FurniturePlanSymbol: React.FC<FurniturePlanSymbolProps> = ({
         y={yCm}
         width={wCm}
         height={hCm}
-        rx={category === 'sofa' || category === 'armchair' ? 6 : 4}
+        rx={category === 'sofa' || category === 'armchair' ? 4 : 2}
         {...commonProps}
       />
     );

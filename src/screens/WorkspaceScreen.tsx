@@ -482,8 +482,10 @@ export default function WorkspaceScreen() {
     // A circle's bounding box (and clearance footprint) is identical at
     // every angle — spinning it changes nothing visible or measurable, so
     // rotation is a no-op rather than a control that pretends to do something.
-    if (selectedItem.shape === 'round') return;
-    const rotation = selectedItem.rotationY + Math.PI / 2;
+    // Snap to exact cardinal 90-degree steps (0, 90, 180, 270) to ensure straight orthogonal alignment
+    const currentDeg = Math.round((selectedItem.rotationY * 180) / Math.PI);
+    const nextDeg = ((Math.round(currentDeg / 90) * 90 + 90) % 360 + 360) % 360;
+    const rotation = (nextDeg * Math.PI) / 180;
     const rotated = { ...selectedItem, rotationY: rotation };
 
     // Keep the turned footprint inside the unit before judging it.

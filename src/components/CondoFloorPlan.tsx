@@ -1195,6 +1195,15 @@ export default function CondoFloorPlan({
           const directHeightCm = isRotated90 ? item.lengthCm : item.widthCm;
           const directRadiusCm = item.widthCm / 2;
 
+          const rawItemDeg = Number.isFinite(item.rotationY) ? (item.rotationY * 180) / Math.PI : 0;
+          const itemRotationDeg = ((Math.round(rawItemDeg / 90) * 90) % 360 + 360) % 360;
+          const cx = r.xCm + directWidthCm / 2;
+          const cy = r.yCm + directHeightCm / 2;
+          const canonicalW = isRotated90 ? directHeightCm : directWidthCm;
+          const canonicalH = isRotated90 ? directWidthCm : directHeightCm;
+          const unrotatedX = cx - canonicalW / 2;
+          const unrotatedY = cy - canonicalH / 2;
+
           return (
             <g
               key={r.id}
@@ -1204,49 +1213,91 @@ export default function CondoFloorPlan({
               }}
             >
               {isDragging && (
-                <rect
-                  x={r.xCm - 3}
-                  y={r.yCm - 3}
-                  width={directWidthCm + 6}
-                  height={directHeightCm + 6}
-                  fill="none"
-                  stroke={isColliding ? t.ink : t.inkSoft}
-                  strokeWidth={2}
-                  strokeOpacity={0.35}
-                  rx={7}
-                  style={pointerNone}
-                />
+                <g transform={itemRotationDeg !== 0 ? `rotate(${itemRotationDeg}, ${cx}, ${cy})` : undefined} style={pointerNone}>
+                  {item.shape === 'round' ? (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={directRadiusCm + 3}
+                      fill="none"
+                      stroke={isColliding ? t.ink : t.inkSoft}
+                      strokeWidth={2}
+                      strokeOpacity={0.35}
+                    />
+                  ) : item.shape === 'l-shape' ? (
+                    (() => {
+                      const depth = Math.min(Math.round(Math.min(canonicalW, canonicalH) * 0.45), 90);
+                      return (
+                        <polygon
+                          points={`${unrotatedX - 3},${unrotatedY - 3} ${unrotatedX + canonicalW + 3},${unrotatedY - 3} ${unrotatedX + canonicalW + 3},${unrotatedY + depth + 3} ${unrotatedX + depth + 3},${unrotatedY + depth + 3} ${unrotatedX + depth + 3},${unrotatedY + canonicalH + 3} ${unrotatedX - 3},${unrotatedY + canonicalH + 3}`}
+                          fill="none"
+                          stroke={isColliding ? t.ink : t.inkSoft}
+                          strokeWidth={2}
+                          strokeOpacity={0.35}
+                          strokeLinejoin="round"
+                        />
+                      );
+                    })()
+                  ) : (
+                    <rect
+                      x={unrotatedX - 3}
+                      y={unrotatedY - 3}
+                      width={canonicalW + 6}
+                      height={canonicalH + 6}
+                      fill="none"
+                      stroke={isColliding ? t.ink : t.inkSoft}
+                      strokeWidth={2}
+                      strokeOpacity={0.35}
+                      rx={5}
+                    />
+                  )}
+                </g>
               )}
 
               {/* Glowing pulsing focus ring around affected recommendation furniture */}
               {isRecommendationFocused && (
-                r.shape === 'round' ? (
-                  <circle
-                    cx={r.xCm + directWidthCm / 2}
-                    cy={r.yCm + directHeightCm / 2}
-                    r={directRadiusCm + 7}
-                    fill="none"
-                    stroke="#2563EB"
-                    strokeWidth={4}
-                    filter="url(#focus-glow-furniture)"
-                    className="wksp-glow-ring"
-                    style={pointerNone}
-                  />
-                ) : (
-                  <rect
-                    x={r.xCm - 7}
-                    y={r.yCm - 7}
-                    width={directWidthCm + 14}
-                    height={directHeightCm + 14}
-                    rx={8}
-                    fill="none"
-                    stroke="#2563EB"
-                    strokeWidth={4}
-                    filter="url(#focus-glow-furniture)"
-                    className="wksp-glow-ring"
-                    style={pointerNone}
-                  />
-                )
+                <g transform={itemRotationDeg !== 0 ? `rotate(${itemRotationDeg}, ${cx}, ${cy})` : undefined} style={pointerNone}>
+                  {r.shape === 'round' ? (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={directRadiusCm + 7}
+                      fill="none"
+                      stroke="#2563EB"
+                      strokeWidth={4}
+                      filter="url(#focus-glow-furniture)"
+                      className="wksp-glow-ring"
+                    />
+                  ) : item.shape === 'l-shape' ? (
+                    (() => {
+                      const depth = Math.min(Math.round(Math.min(canonicalW, canonicalH) * 0.45), 90);
+                      return (
+                        <polygon
+                          points={`${unrotatedX - 7},${unrotatedY - 7} ${unrotatedX + canonicalW + 7},${unrotatedY - 7} ${unrotatedX + canonicalW + 7},${unrotatedY + depth + 7} ${unrotatedX + depth + 7},${unrotatedY + depth + 7} ${unrotatedX + depth + 7},${unrotatedY + canonicalH + 7} ${unrotatedX - 7},${unrotatedY + canonicalH + 7}`}
+                          fill="none"
+                          stroke="#2563EB"
+                          strokeWidth={4}
+                          filter="url(#focus-glow-furniture)"
+                          className="wksp-glow-ring"
+                          strokeLinejoin="round"
+                        />
+                      );
+                    })()
+                  ) : (
+                    <rect
+                      x={unrotatedX - 7}
+                      y={unrotatedY - 7}
+                      width={canonicalW + 14}
+                      height={canonicalH + 14}
+                      rx={8}
+                      fill="none"
+                      stroke="#2563EB"
+                      strokeWidth={4}
+                      filter="url(#focus-glow-furniture)"
+                      className="wksp-glow-ring"
+                    />
+                  )}
+                </g>
               )}
 
               <FurniturePlanSymbol

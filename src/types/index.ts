@@ -34,6 +34,8 @@ export type FurnitureCategory =
 
 export type PlacementType = 'floor' | 'wall';
 
+export type OwnershipStatus = 'owned' | 'planned';
+
 export interface FurnitureItem {
   id: string;
   label: string;
@@ -50,6 +52,8 @@ export interface FurnitureItem {
   placementType?: PlacementType;
   mountHeightCm?: number;
   wallSide?: 'west' | 'east' | 'north' | 'south';
+  ownershipStatus?: OwnershipStatus;
+  isDimensionEstimated?: boolean;
 }
 
 export interface RoomDimensions {

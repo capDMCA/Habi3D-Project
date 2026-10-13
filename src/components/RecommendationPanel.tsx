@@ -168,7 +168,21 @@ export default function RecommendationPanel({
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 650, color: t.ink, fontSize: 14 }}>{item.label}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 650, color: t.ink, fontSize: 14 }}>{item.label}</span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 750,
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                          background: item.ownershipStatus === 'planned' ? '#FEF3C7' : '#DBEAFE',
+                          color: item.ownershipStatus === 'planned' ? '#B45309' : '#1D4ED8',
+                        }}
+                      >
+                        {item.ownershipStatus === 'planned' ? 'Plan to Buy' : 'Owned'}
+                      </span>
+                    </div>
                     <div style={{ fontSize: 11.5, color: t.inkSoft, marginTop: 2 }}>{roomName}</div>
                   </div>
 

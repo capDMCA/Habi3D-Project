@@ -60,6 +60,8 @@ export const useFurnitureStore = create<FurnitureState>((set) => ({
             posX,
             posZ,
             roomId: targetRoom,
+            ownershipStatus: item.ownershipStatus ?? 'owned',
+            isDimensionEstimated: item.isDimensionEstimated ?? (item.ownershipStatus === 'planned'),
           },
         ],
       };

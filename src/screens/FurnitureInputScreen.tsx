@@ -174,6 +174,12 @@ function FurnitureAddedPanel({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <p style={addedItemTitleStyle}>{item.label}</p>
                 <span style={roomTagStyle}>{getRoomName(item.roomId)}</span>
+                <span style={item.ownershipStatus === 'planned' ? plannedBadgeStyle : ownedBadgeStyle}>
+                  {item.ownershipStatus === 'planned' ? 'Plan to Buy' : 'Owned'}
+                </span>
+                {item.isDimensionEstimated && (
+                  <span style={estimatedBadgeStyle}>Estimated Dims</span>
+                )}
                 {item.placementType === 'wall' && (
                   <span style={wallBadgeStyle}>Wall ({item.mountHeightCm ?? 120} cm)</span>
                 )}
@@ -204,6 +210,10 @@ export default function FurnitureInputScreen() {
   const removeItem = useFurnitureStore((s) => s.removeItem);
 
   useAutosaveLayout(items);
+
+  // Ownership & Purchase-Intent Selection State
+  const [ownershipIntent, setOwnershipIntent] = useState<'owned' | 'planned' | null>(null);
+  const [isDimensionEstimated, setIsDimensionEstimated] = useState(false);
 
   // Catalog Domain & Preset Selection State
   const [selectedDomain, setSelectedDomain] = useState<CatalogDomain | 'all'>('living');
@@ -268,6 +278,9 @@ export default function FurnitureInputScreen() {
     setQuantity(preset.quantity ?? 1);
     setPlacementType(preset.placementType ?? 'floor');
     setMountHeightCm(preset.mountHeightCm ? String(preset.mountHeightCm) : '120');
+    if (ownershipIntent === 'planned') {
+      setIsDimensionEstimated(true);
+    }
   }
 
   // Handle switching to custom item mode
@@ -283,6 +296,9 @@ export default function FurnitureInputScreen() {
     setQuantity(1);
     setPlacementType('floor');
     setMountHeightCm('120');
+    if (ownershipIntent === 'planned') {
+      setIsDimensionEstimated(true);
+    }
   }
 
   const selectedCategoryDef = CATEGORIES.find((option) => option.key === category);
@@ -396,6 +412,7 @@ export default function FurnitureInputScreen() {
     setMeasureTarget(null);
     setMeasurementReview(null);
     setArError('');
+    setIsDimensionEstimated(ownershipIntent === 'planned');
   }
 
   function handleAddItem() {
@@ -422,6 +439,8 @@ export default function FurnitureInputScreen() {
       quantity: Math.max(1, quantity),
       placementType,
       mountHeightCm: parsedMountHeight,
+      ownershipStatus: ownershipIntent ?? 'owned',
+      isDimensionEstimated: ownershipIntent === 'planned' ? isDimensionEstimated : false,
     });
 
     resetForm();
@@ -430,12 +449,166 @@ export default function FurnitureInputScreen() {
     }
   }
 
+  if (ownershipIntent === null) {
+    return (
+      <div className="screen">
+        {/* Header */}
+        <div className="screen-header">
+          <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
+            <BackIcon />
+          </button>
+          <div className="screen-header-info">
+            <span className="step-label">Initial Step</span>
+            <h2>Furniture Selection</h2>
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div className="progress-bar">
+          <div className="progress-step active" />
+          <div className="progress-step" />
+        </div>
+
+        {/* Room dims summary */}
+        {roomDimensions && (
+          <div className="card card-sm">
+            <div className="card-header" style={{ marginBottom: 0 }}>
+              <div className="card-icon card-icon-success">OK</div>
+              <div>
+                <p className="card-title">Mulberry Place — 2-Bedroom Unit</p>
+                <p className="card-subtitle">
+                  Whole-condo layout: Living, Dining, 2 Bedrooms, Kitchen, Bath, Balcony & Storage
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Added Items Panel if items already configured */}
+        {items.length > 0 && <FurnitureAddedPanel items={items} onRemove={removeItem} />}
+
+        {/* 1. INITIAL SELECTION CARD */}
+        <div className="card" style={{ padding: '24px 20px', textAlign: 'center' }}>
+          <span style={selectionQuestionBadgeStyle}>Step 1 · Furniture Intent</span>
+          <h2 style={selectionQuestionTitleStyle} id="ownership-question-heading">
+            Which type of furniture are you adding?
+          </h2>
+          <p style={selectionQuestionSubtitleStyle}>
+            Choose whether you are arranging items you already own or planning prospective purchases to verify clearances and spatial fit in your condo.
+          </p>
+
+          <div style={intentCardsGridStyle}>
+            {/* Option 1: Furniture I Already Own */}
+            <div
+              id="ownership-owned-card"
+              role="button"
+              tabIndex={0}
+              style={intentCardStyle}
+              onClick={() => {
+                setOwnershipIntent('owned');
+                setIsDimensionEstimated(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  setOwnershipIntent('owned');
+                  setIsDimensionEstimated(false);
+                }
+              }}
+            >
+              <div style={intentIconCircleStyle}>🏠</div>
+              <h3 style={intentCardHeadingStyle}>Furniture I Already Own</h3>
+              <p style={intentCardDescStyle}>
+                For furniture the user currently has and wants to arrange in the condo.
+              </p>
+              <ul style={intentFeatureListStyle}>
+                <li>Prioritize entering or confirming actual piece dimensions</li>
+                <li>Measure physical items using in-room AR camera or tape</li>
+                <li>Browse catalog presets or define custom owned objects</li>
+              </ul>
+              <button
+                type="button"
+                id="select-owned-btn"
+                className="btn btn-primary"
+                style={{ width: '100%', marginTop: 'auto' }}
+                onClick={() => {
+                  setOwnershipIntent('owned');
+                  setIsDimensionEstimated(false);
+                }}
+              >
+                Add Furniture I Own →
+              </button>
+            </div>
+
+            {/* Option 2: Furniture I Plan to Buy */}
+            <div
+              id="ownership-planned-card"
+              role="button"
+              tabIndex={0}
+              style={intentCardStyle}
+              onClick={() => {
+                setOwnershipIntent('planned');
+                setIsDimensionEstimated(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  setOwnershipIntent('planned');
+                  setIsDimensionEstimated(true);
+                }
+              }}
+            >
+              <div style={intentIconCircleStyle}>🛍️</div>
+              <h3 style={intentCardHeadingStyle}>Furniture I Plan to Buy</h3>
+              <p style={intentCardDescStyle}>
+                For furniture the user is considering purchasing and wants to check for fit before buying.
+              </p>
+              <ul style={intentFeatureListStyle}>
+                <li>Enter dimensions from retailer product listings (e.g. IKEA, stores)</li>
+                <li>Clearly tags unverified listing measurements as estimated</li>
+                <li>Check Time-Saver clearance & door swing fit before purchasing</li>
+              </ul>
+              <button
+                type="button"
+                id="select-planned-btn"
+                className="btn btn-secondary"
+                style={{
+                  width: '100%',
+                  marginTop: 'auto',
+                  border: '2px solid var(--primary)',
+                  color: 'var(--primary)',
+                  fontWeight: 800,
+                }}
+                onClick={() => {
+                  setOwnershipIntent('planned');
+                  setIsDimensionEstimated(true);
+                }}
+              >
+                Check Fit Before Buying →
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation to AR or Workspace if items already exist */}
+        {items.length > 0 && (
+          <div style={{ display: 'grid', gap: 10, marginTop: 'var(--space-sm)' }}>
+            <button className="btn btn-primary" onClick={() => navigateTo('positionMap')}>
+              Position Furniture in AR ({items.length} item{items.length === 1 ? '' : 's'})
+            </button>
+            <button className="btn btn-secondary" onClick={() => navigateTo('workspace')}>
+              Open 2D Workspace Directly
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="screen">
         {/* Header */}
         <div className="screen-header">
-          <button className="back-btn" onClick={() => navigateTo('entry')} aria-label="Go back">
+          <button className="back-btn" onClick={() => setOwnershipIntent(null)} aria-label="Go back to selection">
             <BackIcon />
           </button>
           <div className="screen-header-info">
@@ -448,6 +621,37 @@ export default function FurnitureInputScreen() {
         <div className="progress-bar">
           <div className="progress-step active" />
           <div className="progress-step" />
+        </div>
+
+        {/* Active Ownership Intent Banner with Change Button */}
+        <div style={ownershipBannerStyle} id="ownership-intent-banner">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+            <span style={{ fontSize: 26 }}>{ownershipIntent === 'planned' ? '🛍️' : '🏠'}</span>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+                  {ownershipIntent === 'planned' ? 'Furniture I Plan to Buy' : 'Furniture I Already Own'}
+                </strong>
+                <span style={ownershipIntent === 'planned' ? plannedBadgeStyle : ownedBadgeStyle}>
+                  {ownershipIntent === 'planned' ? 'Prospective Purchase' : 'Owned Inventory'}
+                </span>
+              </div>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+                {ownershipIntent === 'planned'
+                  ? 'Configuring prospective product listing measurements to check condo fit.'
+                  : 'Prioritizing actual physical measurements for items you currently possess.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            id="ownership-back-btn"
+            className="btn btn-secondary"
+            style={{ fontSize: 12, padding: '6px 12px', minHeight: 34, flexShrink: 0, fontWeight: 700 }}
+            onClick={() => setOwnershipIntent(null)}
+          >
+            ← Change Selection
+          </button>
         </div>
 
         {/* Room dims summary */}
@@ -550,7 +754,7 @@ export default function FurnitureInputScreen() {
               style={{ width: '100%', fontSize: 13, fontWeight: 700 }}
               onClick={handleCustomItemMode}
             >
-              Add Custom / Non-Catalog Item
+              {ownershipIntent === 'planned' ? 'Add Prospective / Non-Catalog Product' : 'Add Custom / Non-Catalog Item'}
             </button>
           </div>
         </div>
@@ -562,10 +766,55 @@ export default function FurnitureInputScreen() {
             <div>
               <p className="card-title">Configure Item & Dimensions</p>
               <p className="card-subtitle">
-                {isCustomEntry ? 'Define your custom piece dimensions' : 'Adjust preset dimensions and furniture shape'}
+                {ownershipIntent === 'planned'
+                  ? 'Enter product listing dimensions and verify clearance fit before buying'
+                  : isCustomEntry
+                  ? 'Define your custom piece dimensions'
+                  : 'Adjust preset dimensions and furniture shape'}
               </p>
             </div>
           </div>
+
+          {/* Dimension Estimation Notice / Verification */}
+          {ownershipIntent === 'planned' ? (
+            <div style={estimatedNoticeBoxStyle} id="dimension-notice-box">
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{ fontSize: 20 }}>🏷️</span>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ fontSize: 13, color: '#92400e' }}>
+                    Product Listing Dimensions (Prospective Purchase)
+                  </strong>
+                  <p style={{ margin: '2px 0 8px', fontSize: 12, color: '#b45309', lineHeight: 1.4 }}>
+                    Enter product dimensions from the store listing (e.g. IKEA, retailer specs). Unverified measurements are clearly indicated as estimated.
+                  </p>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#78350f' }}>
+                    <input
+                      type="checkbox"
+                      id="dimension-estimated-checkbox"
+                      checked={isDimensionEstimated}
+                      onChange={(e) => setIsDimensionEstimated(e.target.checked)}
+                      style={{ width: 16, height: 16, accentColor: 'var(--primary)' }}
+                    />
+                    Mark dimensions as user-provided / estimated from product listing (unverified in-person)
+                  </label>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={ownedNoticeBoxStyle} id="dimension-notice-box">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 20 }}>📏</span>
+                <div>
+                  <strong style={{ fontSize: 13, color: '#1e40af' }}>
+                    Actual Measured Dimensions (Owned Furniture)
+                  </strong>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: '#3b82f6', lineHeight: 1.3 }}>
+                    Prioritizing the actual physical dimensions of your furniture piece. Confirm measurements below or measure with the AR camera.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Item Name */}
           <div className="form-group">
@@ -577,7 +826,7 @@ export default function FurnitureInputScreen() {
               className="form-input"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. 3-Seater Sofa, Refrigerator, Floor Lamp"
+              placeholder={ownershipIntent === 'planned' ? 'e.g. IKEA Friheten Sectional, Mandaue Bed' : 'e.g. 3-Seater Sofa, Queen Bed, Dining Table'}
             />
           </div>
 
@@ -671,7 +920,9 @@ export default function FurnitureInputScreen() {
           <div className="form-group" style={{ marginBottom: 8 }}>
             <label className="form-label">Dimensions</label>
             <p style={dimNoticeStyle}>
-              Preset dimensions are standard defaults. Adjust length, width, and height in centimetres to match your actual furniture.
+              {ownershipIntent === 'planned'
+                ? 'Enter or confirm product measurements from listing or retailer specs in centimetres. Unverified dimensions are flagged as estimated.'
+                : 'Enter or confirm actual physical dimensions in centimetres to ensure exact fit.'}
             </p>
           </div>
 
@@ -874,8 +1125,29 @@ export default function FurnitureInputScreen() {
                   {placementType === 'wall' ? `Wall (${mountHeightCm} cm)` : 'Floor-standing'}
                 </strong>
               </div>
+              <div>
+                <span style={{ color: '#64748b' }}>Ownership Intent:</span>{' '}
+                <strong style={{ color: ownershipIntent === 'planned' ? '#b45309' : '#1d4ed8' }}>
+                  {ownershipIntent === 'planned' ? 'Plan to Buy (Prospective)' : 'Already Owned'}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: '#64748b' }}>Dim. Verification:</span>{' '}
+                <strong>
+                  {isDimensionEstimated ? 'User-provided / Estimated' : 'Actual Verified'}
+                </strong>
+              </div>
             </div>
           </div>
+
+          {/* Missing or non-positive dimension validation message */}
+          {(!toPositiveNumber(lengthCm) || !toPositiveNumber(widthCm) || !toPositiveNumber(heightCm)) && (
+            <p className="form-error" style={{ margin: '8px 0 0', fontSize: 13 }} id="dimension-validation-error">
+              {ownershipIntent === 'planned'
+                ? 'Please enter valid positive listing measurements for Length, Width, and Height (> 0 cm).'
+                : 'Please enter valid positive actual dimensions for Length, Width, and Height (> 0 cm).'}
+            </p>
+          )}
 
           {arError && <p className="form-error">{arError}</p>}
 
@@ -1476,4 +1748,147 @@ const stepperHintStyle: CSSProperties = {
   fontSize: 13,
   color: 'var(--text-muted)',
   fontWeight: 550,
+};
+
+const selectionQuestionBadgeStyle: CSSProperties = {
+  display: 'inline-block',
+  fontSize: 11,
+  fontWeight: 800,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  padding: '4px 10px',
+  borderRadius: 99,
+  background: '#eff6ff',
+  color: '#2563eb',
+  marginBottom: 10,
+};
+
+const selectionQuestionTitleStyle: CSSProperties = {
+  fontSize: 22,
+  fontWeight: 800,
+  color: 'var(--text-primary)',
+  margin: '0 0 8px',
+  lineHeight: 1.25,
+};
+
+const selectionQuestionSubtitleStyle: CSSProperties = {
+  fontSize: 14,
+  color: 'var(--text-secondary)',
+  maxWidth: 580,
+  margin: '0 auto 24px',
+  lineHeight: 1.5,
+};
+
+const intentCardsGridStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+  gap: 16,
+  textAlign: 'left',
+};
+
+const intentCardStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '22px 20px',
+  borderRadius: 16,
+  border: '2px solid var(--border)',
+  background: 'var(--card)',
+  cursor: 'pointer',
+  transition: 'all 0.2s ease',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+};
+
+const intentIconCircleStyle: CSSProperties = {
+  width: 48,
+  height: 48,
+  borderRadius: 12,
+  background: 'rgba(37,99,235,0.08)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: 24,
+  marginBottom: 14,
+};
+
+const intentCardHeadingStyle: CSSProperties = {
+  fontSize: 17,
+  fontWeight: 800,
+  color: 'var(--text-primary)',
+  margin: '0 0 8px',
+};
+
+const intentCardDescStyle: CSSProperties = {
+  fontSize: 13,
+  color: 'var(--text-secondary)',
+  margin: '0 0 14px',
+  lineHeight: 1.45,
+};
+
+const intentFeatureListStyle: CSSProperties = {
+  margin: '0 0 20px',
+  paddingLeft: 18,
+  fontSize: 12.5,
+  color: 'var(--text-muted)',
+  lineHeight: 1.6,
+  display: 'grid',
+  gap: 4,
+};
+
+const ownershipBannerStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  flexWrap: 'wrap',
+  gap: 12,
+  padding: '12px 16px',
+  borderRadius: 14,
+  border: '1px solid #bfdbfe',
+  background: 'linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)',
+  marginBottom: 16,
+};
+
+const plannedBadgeStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 800,
+  padding: '2px 7px',
+  borderRadius: 6,
+  background: '#fef3c7',
+  color: '#b45309',
+  border: '1px solid #fde68a',
+};
+
+const ownedBadgeStyle: CSSProperties = {
+  fontSize: 11,
+  fontWeight: 800,
+  padding: '2px 7px',
+  borderRadius: 6,
+  background: '#dbeafe',
+  color: '#1d4ed8',
+  border: '1px solid #bfdbfe',
+};
+
+const estimatedBadgeStyle: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 700,
+  padding: '1px 6px',
+  borderRadius: 4,
+  background: '#fffbeb',
+  color: '#d97706',
+  border: '1px solid #fef3c7',
+};
+
+const estimatedNoticeBoxStyle: CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: 12,
+  background: '#fffbeb',
+  border: '1px solid #fde68a',
+  marginBottom: 14,
+};
+
+const ownedNoticeBoxStyle: CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: 12,
+  background: '#eff6ff',
+  border: '1px solid #bfdbfe',
+  marginBottom: 14,
 };

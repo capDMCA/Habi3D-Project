@@ -286,9 +286,21 @@ export default function RecommendationSheet({
                       tabIndex={0}
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <span style={{ fontWeight: 750, color: t.ink, fontSize: 14.5 }}>
                             {item.label}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 750,
+                              padding: '1px 5px',
+                              borderRadius: 4,
+                              background: item.ownershipStatus === 'planned' ? '#FEF3C7' : '#DBEAFE',
+                              color: item.ownershipStatus === 'planned' ? '#B45309' : '#1D4ED8',
+                            }}
+                          >
+                            {item.ownershipStatus === 'planned' ? 'Plan to Buy' : 'Owned'}
                           </span>
                           {item.placementType === 'wall' && (
                             <span style={wallBadge}>Wall ({item.mountHeightCm ?? 120}cm)</span>

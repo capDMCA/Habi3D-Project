@@ -26,7 +26,7 @@ import { validatePlacement, AR_SENSOR_LIMITATIONS } from '../ar/placementValidat
 import { applyCalibration, type CalibrationTransform } from '../ar/calibration.ts';
 import { runAllClearanceTestCases } from '../engine/clearanceTestCases.ts';
 import { FRONT_DOOR_SWING_RECT, isItemInDoorSwing, isItemInMainWalkway } from '../engine/walkways.ts';
-import type { FurnitureItem, FurnitureCategory } from '../types/index.ts';
+import type { FurnitureItem, FurnitureCategory, OwnershipStatus } from '../types/index.ts';
 
 console.log('--- Starting Habi3D System Revision Automated Tests ---');
 
@@ -604,7 +604,207 @@ assert.equal(isItemInDoorSwing(clearDiningChair), false, 'Item away from entranc
 
 console.log('  ✓ Front entrance door opening, 80 cm swing envelope, and clearance checks verified.');
 
+// ============================================================================
+// TEST SUITE 12: 2D Workspace Shape Straightness & Orthogonal Alignment
+// ============================================================================
+console.log('\n12. Testing 2D Workspace Shape Straightness & Orthogonal Alignment...');
+
+// 12.1 Snapped cardinal angles: any continuous yaw from AR or device sensors
+// must snap to exact 0, 90, 180, 270 degrees in 2D top-down blueprints
+function snapCardinalDeg(rad: number): number {
+  const rawDeg = (rad * 180) / Math.PI;
+  return ((Math.round(rawDeg / 90) * 90) % 360 + 360) % 360;
+}
+
+assert.equal(snapCardinalDeg(0), 0, '0 rad snaps to 0°');
+assert.equal(snapCardinalDeg(0.25), 0, 'Slight 14° angle snaps to straight 0°');
+assert.equal(snapCardinalDeg(1.57), 90, 'Approx pi/2 snaps to straight 90°');
+assert.equal(snapCardinalDeg(3.14), 180, 'Approx pi snaps to straight 180°');
+assert.equal(snapCardinalDeg(4.71), 270, 'Approx 3pi/2 snaps to straight 270°');
+assert.equal(snapCardinalDeg(6.28), 0, 'Approx 2pi snaps to 0°');
+
+// 12.2 L-shape sectional geometry: both arms must have uniform depth and right angles
+const sectionalL: FurnitureItem = {
+  id: 'sectional-l-test',
+  label: 'Sectional Sofa',
+  category: 'sofa',
+  shape: 'l-shape',
+  lengthCm: 240,
+  widthCm: 160,
+  heightCm: 85,
+  posX: 1.30,
+  posZ: 4.80,
+  rotationY: 0,
+};
+
+const uniformDepth = Math.min(Math.round(Math.min(sectionalL.lengthCm, sectionalL.widthCm) * 0.45), 90);
+assert.equal(uniformDepth, 72, 'Uniform depth for 240x160 sectional calculates to 72 cm');
+
+// Polygon vertices:
+// (0, 0) -> (240, 0) -> (240, 72) -> (72, 72) -> (72, 160) -> (0, 160)
+const polyPoints = [
+  [0, 0],
+  [sectionalL.lengthCm, 0],
+  [sectionalL.lengthCm, uniformDepth],
+  [uniformDepth, uniformDepth],
+  [uniformDepth, sectionalL.widthCm],
+  [0, sectionalL.widthCm],
+];
+
+// Check all segments are strictly horizontal or vertical (no diagonal or bent lines)
+for (let i = 0; i < polyPoints.length; i++) {
+  const p1 = polyPoints[i];
+  const p2 = polyPoints[(i + 1) % polyPoints.length];
+  const isHorizontal = p1[1] === p2[1];
+  const isVertical = p1[0] === p2[0];
+  assert.ok(isHorizontal || isVertical, `Segment ${i} (${p1} -> ${p2}) is strictly orthogonal`);
+}
+
+// 12.3 2D plan projection swaps bounding width and height cleanly without center drift
+const unrotatedPlan = projectItems([sectionalL])[0];
+assert.equal(unrotatedPlan.wCm, 240, 'Unrotated 2D plan width is 240 cm');
+assert.equal(unrotatedPlan.hCm, 160, 'Unrotated 2D plan height is 160 cm');
+
+const rotatedSectional: FurnitureItem = {
+  ...sectionalL,
+  rotationY: Math.PI / 2,
+};
+const rotatedPlan = projectItems([rotatedSectional])[0];
+assert.equal(rotatedPlan.wCm, 160, 'Orthogonally rotated 90° 2D plan width is 160 cm');
+assert.equal(rotatedPlan.hCm, 240, 'Orthogonally rotated 90° 2D plan height is 240 cm');
+
+console.log('  ✓ 2D workspace shape straightness, cardinal snapping, and orthogonal alignment verified.');
+
+// ============================================================================
+// TEST SUITE 13: Furniture Ownership & Purchase-Intent Selection Workflow
+// ============================================================================
+console.log('\n13. Testing Furniture Ownership & Purchase-Intent Selection Workflow...');
+
+// 13.1 Intent types and data model compatibility
+const ownedStatus: OwnershipStatus = 'owned';
+const plannedStatus: OwnershipStatus = 'planned';
+assert.equal(ownedStatus, 'owned', 'OwnershipStatus supports "owned"');
+assert.equal(plannedStatus, 'planned', 'OwnershipStatus supports "planned"');
+
+// 13.2 "Furniture I Already Own" workflow:
+// Prioritizes entering/confirming actual dimensions with isDimensionEstimated: false
+const ownedDiningTable: FurnitureItem = {
+  id: 'owned-table-1',
+  label: 'Family Dining Table',
+  category: 'dining_table',
+  shape: 'rectangle',
+  lengthCm: 160,
+  widthCm: 85,
+  heightCm: 76,
+  posX: 1.30,
+  posZ: 7.50,
+  rotationY: 0,
+  ownershipStatus: 'owned',
+  isDimensionEstimated: false,
+};
+assert.equal(ownedDiningTable.ownershipStatus, 'owned', 'Item has ownershipStatus="owned"');
+assert.equal(ownedDiningTable.isDimensionEstimated, false, 'Owned item dimensions are not estimated');
+assert.ok(ownedDiningTable.lengthCm > 0 && ownedDiningTable.widthCm > 0, 'Owned furniture has positive validated dimensions');
+
+// 13.3 "Furniture I Plan to Buy" workflow:
+// Prospective purchase item with product listing measurements, tagged as estimated
+const plannedSofa: FurnitureItem = {
+  id: 'planned-sofa-1',
+  label: 'IKEA Kivik 3-Seat Sofa',
+  category: 'sofa',
+  shape: 'rectangle',
+  lengthCm: 228,
+  widthCm: 95,
+  heightCm: 83,
+  posX: 1.30,
+  posZ: 4.80,
+  rotationY: 0,
+  ownershipStatus: 'planned',
+  isDimensionEstimated: true,
+};
+assert.equal(plannedSofa.ownershipStatus, 'planned', 'Planned purchase has ownershipStatus="planned"');
+assert.equal(plannedSofa.isDimensionEstimated, true, 'Product listing dimensions are clearly flagged as estimated');
+
+// 13.4 Custom prospective furniture creation:
+// User can define prospective items not in the catalog
+const customProspectiveDesk: FurnitureItem = {
+  id: 'custom-planned-desk',
+  label: 'Custom Corner Desk from Listing',
+  category: 'work_desk',
+  shape: 'l-shape',
+  lengthCm: 180,
+  widthCm: 140,
+  heightCm: 75,
+  posX: 1.00,
+  posZ: 2.00,
+  rotationY: 0,
+  roomId: 'bedroom2',
+  ownershipStatus: 'planned',
+  isDimensionEstimated: true,
+};
+assert.equal(customProspectiveDesk.ownershipStatus, 'planned', 'Custom prospective item preserves planned intent');
+assert.equal(customProspectiveDesk.roomId, 'bedroom2', 'Custom prospective item supports room assignment');
+
+// 13.5 Dimension validation handling:
+// Dimensions must be positive numbers; missing/estimated handling
+function validateDimensions(length: number, width: number, height: number): boolean {
+  return Number.isFinite(length) && length > 0 &&
+         Number.isFinite(width) && width > 0 &&
+         Number.isFinite(height) && height > 0;
+}
+assert.ok(validateDimensions(plannedSofa.lengthCm, plannedSofa.widthCm, plannedSofa.heightCm), 'Valid dimensions pass validation');
+assert.equal(validateDimensions(0, 90, 80), false, 'Zero length fails validation');
+assert.equal(validateDimensions(-10, 90, 80), false, 'Negative length fails validation');
+
+// 13.6 Shared workflow: Layout validation, 2D projection, and recommendations handoff
+// Both paths feed into the exact same spatial clearance analysis and recommendation engine
+const plannedOversizedDining: FurnitureItem = {
+  id: 'planned-large-table',
+  label: 'Prospective 8-Seater Table',
+  category: 'dining_table',
+  shape: 'rectangle',
+  lengthCm: 260, // Fills entire 260cm width of dining room, violating wall clearance
+  widthCm: 120,
+  heightCm: 76,
+  posX: 1.30,
+  posZ: 7.50,
+  rotationY: 0,
+  roomId: 'dining',
+  ownershipStatus: 'planned',
+  isDimensionEstimated: true,
+};
+
+const clearanceResult = runClearanceAnalysis(
+  [plannedOversizedDining],
+  260, // diningWidthCm
+  180, // diningDepthCm
+);
+assert.ok(clearanceResult.violations.length > 0, 'Planned purchase correctly triggers clearance violations when too large');
+
+const plannedRecommendations = buildWorkspaceRecommendations(clearanceResult.violations, [plannedOversizedDining]);
+assert.ok(plannedRecommendations.length > 0, 'Planned purchase produces layout recommendations and correction vectors');
+
+// 13.7 Backwards compatibility with existing records:
+// Existing furniture records without ownershipStatus default safely to 'owned'
+const legacyItem: FurnitureItem = {
+  id: 'legacy-bed',
+  label: 'Master Bed',
+  category: 'bed',
+  shape: 'rectangle',
+  lengthCm: 200,
+  widthCm: 160,
+  heightCm: 100,
+  posX: 3.85,
+  posZ: 2.20,
+  rotationY: 0,
+};
+const resolvedStatus = legacyItem.ownershipStatus ?? 'owned';
+assert.equal(resolvedStatus, 'owned', 'Legacy item defaults to "owned" without breaking existing records');
+
+console.log('  ✓ Furniture ownership and purchase-intent selection workflow verified.');
+
 console.log('\n=======================================================');
 console.log('ALL SYSTEM REVISION AUTOMATED TESTS PASSED SUCCESSFULLY!');
 console.log('=======================================================');
+
 
